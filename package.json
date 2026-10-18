@@ -1,15 +1,20 @@
 {
   "name": "rbclone",
-  "version": "0.2.0",
+  "productName": "Reboxed",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "DJ library and performance app inspired by Rekordbox",
+  "description": "Reboxed - DJ library and performance software",
+  "author": "mateo",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "smoke": "electron . --smoke",
     "test": "node --test",
-    "demo": "node scripts/serve.js"
+    "demo": "node scripts/serve.js",
+    "icon": "electron scripts/make-icon.mjs",
+    "dist": "electron-builder --win --x64",
+    "dist:dir": "electron-builder --win --x64 --dir"
   },
   "engines": {
     "node": ">=20"
@@ -19,6 +24,51 @@
     "onnxruntime-node": "^1.30.0"
   },
   "devDependencies": {
-    "electron": "^44.8.0"
+    "electron": "^44.8.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.reboxed.app",
+    "productName": "Reboxed",
+    "copyright": "Reboxed",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.map",
+      "!node_modules/onnxruntime-node/bin/napi-v*/{darwin,linux}/**",
+      "!node_modules/onnxruntime-node/bin/napi-v*/win32/arm64/**"
+    ],
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "executableName": "Reboxed"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Reboxed",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "Reboxed-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    }
   }
 }

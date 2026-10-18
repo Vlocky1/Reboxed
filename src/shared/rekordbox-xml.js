@@ -214,7 +214,7 @@ export function exportRekordboxXml(library, { productVersion = '0.2.0' } = {}) {
       children: (node.trackIds ?? []).filter((id) => idOf.has(id)).map((id) => ({ name: 'TRACK', attrs: { Key: idOf.get(id) }, children: [] })) });
 
   const doc = { name: 'DJ_PLAYLISTS', attrs: { Version: '1.0.0' }, children: [
-    { name: 'PRODUCT', attrs: { Name: 'RBClone', Version: productVersion, Company: 'RBClone' }, children: [] },
+    { name: 'PRODUCT', attrs: { Name: 'Reboxed', Version: productVersion, Company: 'Reboxed' }, children: [] },
     { name: 'COLLECTION', attrs: { Entries: String(trackNodes.length) }, children: trackNodes },
     { name: 'PLAYLISTS', attrs: {}, children: [
       { name: 'NODE', attrs: { Type: '0', Name: 'ROOT', Count: String(library.playlists.length) }, children: library.playlists.map(convert) },

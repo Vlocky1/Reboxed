@@ -68,7 +68,7 @@ test('export round-trips through import', () => {
   const xml = exportRekordboxXml(lib);
   assert.equal(parseXml(xml).name, 'DJ_PLAYLISTS');
   const again = importRekordboxXml(xml);
-  assert.equal(again.product, 'RBClone');
+  assert.equal(again.product, 'Reboxed');
   for (const field of ['path', 'title', 'artist', 'rating', 'key', 'color', 'comments', 'bpm', 'year']) {
     assert.deepEqual(again.tracks.map((t) => t[field]), tracks.map((t) => t[field]), field);
   }

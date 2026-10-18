@@ -130,7 +130,7 @@ class App {
     const root = h('div.app', {},
       h('header.gbar', {},
         h('div.gbar-left', {},
-          h('div.wordmark', {}, 'rb', h('b', {}, 'clone')),
+          h('div.wordmark', {}, 'Re', h('b', {}, 'boxed')),
           this.modeSel,
           h('div.lbtns', {}, this.layoutBtns)),
         h('div.gbar-center', {}, this.fxBtn, this.samplerBtn, this.mixerBtn, this.mplBtn, this.automixBtn, this.automixStatus, this.dlBtn),
@@ -826,7 +826,7 @@ class App {
     if (!this.engine.recording) {
       this.engine.resume();
       const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-      await this.engine.startRecording(`RBClone-mix-${stamp}`);
+      await this.engine.startRecording(`Reboxed-mix-${stamp}`);
       this.recBtn.classList.add('on');
       return null;
     }

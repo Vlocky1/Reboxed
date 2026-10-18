@@ -53,7 +53,7 @@ export function openRekordboxImport(app, file = null) {
         h('div.rbi-note', {},
           h('b', {}, 'Imported: '), 'title, artist, album, genre, composer, remixer, label, mix, year, BPM, key, comments, rating, colour, play count, date added, ',
           'hot cues (A–H with names and colours), memory cues, loops, beatgrid, playlists and folders.',
-          h('br'), h('b', {}, 'Not in rekordbox.xml: '), 'My Tags, histories and waveforms. RBClone redraws waveforms by analysing the audio; ',
+          h('br'), h('b', {}, 'Not in rekordbox.xml: '), 'My Tags, histories and waveforms. Reboxed redraws waveforms by analysing the audio; ',
           'your grid, cues and key are kept.'));
       setButtons([{ label: 'Cancel', onclick: () => close(null) }]);
     }
@@ -111,14 +111,14 @@ export function openRekordboxImport(app, file = null) {
             h('h3', {}, 'Tracks'),
             radio('scope', 'all', 'Whole collection'),
             radio('scope', 'playlists', 'Only tracks in the selected playlists'),
-            h('h3', {}, 'Tracks already in RBClone'),
+            h('h3', {}, 'Tracks already in Reboxed'),
             radio('metadata', 'overwrite', 'rekordbox wins', 'titles, comments, rating… exactly as in rekordbox'),
-            radio('metadata', 'fill', 'Keep my RBClone edits', 'only fill what is empty here'),
+            radio('metadata', 'fill', 'Keep my Reboxed edits', 'only fill what is empty here'),
             h('h3', {}, 'Cues'),
             radio('cues', 'replace', "Take rekordbox's cues"),
             radio('cues', 'merge', 'Merge', 'add rekordbox cues on free pads / new positions'),
             radio('cues', 'keep', 'Keep mine'),
-            check('beatgrid', 'Import beatgrids', 'RBClone keeps them when analysing'),
+            check('beatgrid', 'Import beatgrids', 'Reboxed keeps them when analysing'),
             h('h3', {}, 'Playlists go to'),
             radio('placement', 'sync', 'A "rekordbox" folder', 're-importing updates it, no duplicates'),
             radio('placement', 'new', 'A new dated folder'),
@@ -209,7 +209,7 @@ export function openRekordboxImport(app, file = null) {
       missingBox.replaceChildren(
         h('div.rbi-warn', {},
           h('span', {}, `${n} music file${n > 1 ? 's' : ''} not found at the path rekordbox knows${moved ? ` (${moved} relocated)` : ''}. `,
-            'They are imported anyway (shown in red) with their cues. Point RBClone to the folder where they are now:'),
+            'They are imported anyway (shown in red) with their cues. Point Reboxed to the folder where they are now:'),
           h('button.dbtn.small', { onclick: relocate }, 'Search in folder…')),
         h('details.rbi-list', {}, h('summary', {}, 'Show missing files'),
           ...list.map((t) => h('div', { title: t.path }, `${t.artist ? `${t.artist} — ` : ''}${t.title}`, h('span.dim', {}, `  ${t.path}`))),

@@ -40,7 +40,7 @@ async function stemsSection(library, apply) {
     h('label', {}, 'Stem waveform'), sel('stemWaveform', [
       ['muted', 'Colour by stem, dim muted stems'], ['always', 'Always colour by stem'], ['off', 'Classic waveform']]),
     h('label', {}, 'Keep stems'), sel('stemsLocation', [
-      ['beside', 'Beside the music: <folder>/stems/<track>/*.wav'], ['appdata', 'In the RBClone cache (hidden)']]),
+      ['beside', 'Beside the music: <folder>/stems/<track>/*.wav'], ['appdata', 'In the Reboxed cache (hidden)']]),
     h('label', {}, 'Processing'), sel('stemsProvider', [
       ['cpu', 'CPU (recommended)'], ['dml', 'DirectML GPU (experimental, falls back to CPU)']]),
     h('label', {}, 'Cache'), clear);

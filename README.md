@@ -1,6 +1,6 @@
-# RBClone
+# Reboxed
 
-Logiciel DJ desktop (Electron + Web Audio) qui reprend les fonctionnalités de Rekordbox. Les fonctionnalités sont réimplémentées : aucun code, visuel ni asset de Pioneer/AlphaTheta n'est utilisé.
+Reboxed (projet RBClone) est un logiciel DJ desktop (Electron + Web Audio) qui reprend les fonctionnalités de Rekordbox. Les fonctionnalités sont réimplémentées : aucun code, visuel ni asset de Pioneer/AlphaTheta n'est utilisé.
 
 ```sh
 npm install
@@ -9,6 +9,18 @@ npm test           # 65 tests unitaires (recherche, DSP, grilles, phrases, Camel
 npm run smoke      # test de bout en bout dans Electron, sans toucher à ta bibliothèque
                    # (avec RBCLONE_SPLEETER_DIR=<dossier des 4 .fp16.onnx> et/ou RBCLONE_STEM_MODEL=<HT-Demucs .onnx>, il teste aussi les stems FAST/HQ)
 ```
+
+## Installeur Windows
+
+```sh
+npm run icon       # (re)génère build/icon.ico et build/icon.png
+npm run dist       # dist/Reboxed-Setup-<version>.exe : installeur, avec le choix du dossier et des raccourcis Bureau et menu Démarrer
+npm run dist:dir   # dist/win-unpacked/Reboxed.exe : version portable, sans installation
+```
+
+- **Données** : l'appli garde ses données dans `%APPDATA%\rbclone`, qui contient la bibliothèque, les analyses, les modèles de stems et les caches. La désinstallation ne les supprime pas.
+- **Avertissement Windows** : l'installeur n'est pas signé, donc SmartScreen affiche « Éditeur inconnu ». Clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
+- **Version empaquetée** : on la teste avec `dist\win-unpacked\Reboxed.exe --smoke "--shot=<png>"`.
 
 ## Fonctionnalités
 

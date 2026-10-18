@@ -14,6 +14,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
 const smoke = process.argv.includes('--smoke');
 
+// Product name "Reboxed"; the data stays where earlier versions put it (%APPDATA%/rbclone: library,
+// analysis, stem models and caches), so renaming the app loses nothing.
+app.setName('Reboxed');
+app.setPath('userData', join(app.getPath('appData'), 'rbclone'));
+if (process.platform === 'win32') app.setAppUserModelId('com.reboxed.app');
+
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
@@ -142,7 +148,7 @@ function registerIpc(win) {
   // Streaming WAV recorder: PCM chunks are appended in order, the header is patched on stop.
   const recordings = new Map();
   ipcMain.handle('rec:start', async (_e, name) => {
-    const dir = join(smoke ? store.dir : app.getPath('music'), 'RBClone Recordings');
+    const dir = join(smoke ? store.dir : app.getPath('music'), 'Reboxed Recordings');
     await mkdir(dir, { recursive: true });
     const path = join(dir, `${name.replace(/[^\w.-]/g, '_')}.wav`);
     const fh = await open(path, 'w');
@@ -172,7 +178,7 @@ function registerIpc(win) {
 async function createWindow() {
   const win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 1100, minHeight: 700,
-    backgroundColor: '#111315', title: 'RBClone', autoHideMenuBar: true,
+    backgroundColor: '#111315', title: 'Reboxed', autoHideMenuBar: true,
     // Smoke runs need real animation frames (hidden windows get almost none): show it fully transparent.
     ...(smoke ? { opacity: 0, focusable: false, skipTaskbar: true } : {}),
     webPreferences: {

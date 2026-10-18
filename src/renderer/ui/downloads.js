@@ -38,7 +38,7 @@ export class DownloadCenter {
   async folder() {
     if (this.cfg.folder) return this.cfg.folder;
     const { music } = await window.rb.paths();
-    return `${music}\\RBClone Downloads`;
+    return `${music}\\Reboxed Downloads`;
   }
 
   tools() { return window.rb.dl.tools(this.cfg.toolsDir); }

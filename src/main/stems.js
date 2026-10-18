@@ -150,7 +150,7 @@ export class StemService {
 
   ensureChild() {
     if (this.child) return this.child;
-    this.child = utilityProcess.fork(join(here, 'stems-worker.js'), [], { serviceName: 'RBClone stems' });
+    this.child = utilityProcess.fork(join(here, 'stems-worker.js'), [], { serviceName: 'Reboxed stems' });
     this.child.on('message', (m) => this.onChild(m));
     this.child.on('exit', (code) => {
       const job = this.current;
