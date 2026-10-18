@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RBClone Search</title>
+<style>
+  :root { --bg:#16181b; --panel:#1f2226; --line:#2d3136; --text:#e6e8ea; --dim:#8b9197; --accent:#2fb4ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.4 system-ui, sans-serif; }
+  header { display:flex; gap:8px; align-items:center; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .search { display:flex; align-items:center; background:#0f1113; border:1px solid var(--line); border-radius:4px; }
+  .search select, .search input, .search button { background:transparent; color:var(--text); border:0; font:inherit; padding:6px 8px; }
+  .search select { border-right:1px solid var(--line); }
+  .search input { width:260px; outline:none; }
+  .search button { color:var(--dim); cursor:pointer; visibility:hidden; }
+  .search.has-text button { visibility:visible; }
+  .count { color:var(--dim); margin-left:auto; }
+  #filters { display:flex; gap:18px; padding:8px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; color:var(--dim); }
+  #filters fieldset { border:0; padding:0; margin:0; display:flex; gap:6px; align-items:center; }
+  #filters legend { float:left; margin-right:4px; }
+  #filters select, #filters input[type=number] { background:#0f1113; color:var(--text); border:1px solid var(--line); border-radius:3px; font:inherit; }
+  #filters input[type=number] { width:64px; }
+  main { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; min-width:760px; }
+  th, td { text-align:left; padding:5px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--dim); font-weight:500; position:sticky; top:0; background:var(--bg); }
+  td.num { font-variant-numeric:tabular-nums; }
+  mark { background:none; color:var(--accent); }
+  .log { padding:8px 16px; color:var(--dim); font-family:ui-monospace, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="search" id="searchBox">
+    <select id="field" aria-label="Search field"></select>
+    <input id="query" placeholder="Search (space = AND)" autocomplete="off" aria-label="Search">
+    <button id="clear" aria-label="Clear search">✕</button>
+  </div>
+  <label><input type="checkbox" id="foldAccents"> Fold accents (beyond Rekordbox)</label>
+  <span class="count" id="count"></span>
+</header>
+<section id="filters">
+  <fieldset><label><input type="checkbox" id="bpmOn"> BPM</label>
+    <input type="number" id="bpmBase" value="128" step="0.1" aria-label="Base BPM">±
+    <select id="bpmPct" aria-label="BPM range"></select></fieldset>
+  <fieldset><label><input type="checkbox" id="keyOn"> KEY</label>
+    <select id="keys" multiple size="1" aria-label="Keys"></select></fieldset>
+  <fieldset><label><input type="checkbox" id="ratingOn"> RATING ≥</label>
+    <select id="rating" aria-label="Minimum rating"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>5</option></select></fieldset>
+  <fieldset><label><input type="checkbox" id="colorOn"> COLOR</label>
+    <select id="color" aria-label="Color"></select></fieldset>
+  <fieldset><label><input type="checkbox" id="tagOn"> My Tag</label>
+    <select id="tags" multiple size="1" aria-label="My Tags"></select>
+    <select id="tagMode" aria-label="My Tag mode"><option value="all">Match all</option><option value="any">Match any</option></select></fieldset>
+</section>
+<main><table><thead><tr>
+  <th>Title</th><th>Artist</th><th>Album</th><th>Genre</th><th>BPM</th><th>Key</th><th>Year</th><th>Rating</th><th>My Tag</th>
+</tr></thead><tbody id="rows"></tbody></table></main>
+<div class="log" id="log"></div>
+
+<script type="module">
+import { TrackLibrary, SearchController, SEARCH_FIELDS, BPM_RANGE_PERCENTS, formatBpm } from '../src/search/index.js';
+import { sampleTracks } from './tracks.js';
+
+const $ = (id) => document.getElementById(id);
+const uniq = (xs) => [...new Set(xs.filter(Boolean))].sort();
+const fill = (sel, items) => { sel.innerHTML = items.map(([v, l]) => `<option value="${v}">${l}</option>`).join(''); };
+
+fill($('field'), SEARCH_FIELDS.map((f) => [f.id, f.label]));
+fill($('bpmPct'), BPM_RANGE_PERCENTS.map((p) => [p, `${p}%`]));
+fill($('keys'), uniq(sampleTracks.map((t) => t.key)).map((k) => [k, k]));
+fill($('color'), uniq(sampleTracks.map((t) => t.color)).map((c) => [c, c]));
+fill($('tags'), uniq(sampleTracks.flatMap((t) => t.myTags ?? [])).map((t) => [t, t]));
+for (const id of ['keys', 'tags']) $(id).size = Math.min(4, $(id).options.length);
+
+let library = new TrackLibrary(sampleTracks);
+let current = { text: '', tokens: [], field: 'all' };
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+const selected = (sel) => [...sel.selectedOptions].map((o) => o.value);
+
+function filterState() {
+  return {
+    bpm: { enabled: $('bpmOn').checked, base: Number($('bpmBase').value), rangePercent: Number($('bpmPct').value) },
+    key: { enabled: $('keyOn').checked, keys: selected($('keys')) },
+    rating: { enabled: $('ratingOn').checked, ratings: [1, 2, 3, 4, 5].filter((r) => r >= Number($('rating').value)) },
+    color: { enabled: $('colorOn').checked, colors: [$('color').value] },
+    myTag: { enabled: $('tagOn').checked, tags: selected($('tags')), mode: $('tagMode').value },
+  };
+}
+
+function render() {
+  const t0 = performance.now();
+  const results = library.search(current.text, { field: current.field, filter: filterState() });
+  const ms = (performance.now() - t0).toFixed(2);
+  $('rows').innerHTML = results.map((t) => `<tr>
+    <td>${esc(t.title)}${t.mixName ? ` <span style="color:var(--dim)">(${esc(t.mixName)})</span>` : ''}</td>
+    <td>${esc(t.artist)}</td><td>${esc(t.album)}</td><td>${esc(t.genre)}</td>
+    <td class="num">${formatBpm(t.bpm)}</td><td>${esc(t.key)}</td><td class="num">${t.year || ''}</td>
+    <td>${'★'.repeat(t.rating ?? 0)}</td><td>${esc((t.myTags ?? []).join(', '))}</td></tr>`).join('');
+  $('count').textContent = `${results.length} / ${sampleTracks.length} tracks`;
+  $('log').textContent = `search field=${current.field} tokens=${JSON.stringify(current.tokens)} · ${ms} ms`;
+}
+
+const controller = new SearchController({ onSearch: (q) => { current = q; render(); } });
+const box = $('searchBox');
+$('query').addEventListener('input', (e) => { box.classList.toggle('has-text', e.target.value !== ''); controller.textChanged(e.target.value); });
+$('query').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') controller.submit();
+  if (e.key === 'Escape') { e.target.value = ''; box.classList.remove('has-text'); controller.clear(); }
+});
+$('clear').addEventListener('click', () => { $('query').value = ''; box.classList.remove('has-text'); controller.clear(); $('query').focus(); });
+$('field').addEventListener('change', (e) => controller.setField(e.target.value));
+$('foldAccents').addEventListener('change', (e) => { library = new TrackLibrary(sampleTracks, { foldAccents: e.target.checked }); render(); });
+$('filters').addEventListener('input', render);
+render();
+</script>
+</body>
+</html>

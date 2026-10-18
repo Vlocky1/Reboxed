@@ -1,0 +1,1413 @@
+import { Library } from './library.js';
+import { AudioEngine } from './audio/engine.js';
+import { Analyzer, mediaUrl } from './analysis/analyzer.js';
+import { DeckView } from './ui/deck-view.js';
+import { MixerView, FxView } from './ui/mixer-view.js';
+import { Browser } from './ui/browser.js';
+import { drawDetail } from './ui/waveform.js';
+import { installKeyboard } from './ui/keyboard.js';
+import { openSettings } from './ui/settings.js';
+import { MidiController } from './ui/midi.js';
+import { Sampler } from './audio/sampler.js';
+import { SamplerView } from './ui/sampler-view.js';
+import { Automix } from './automix.js';
+import { DrumSwap } from './audio/groove.js';
+import { BeatFxUnit } from './audio/fx.js';
+import { encodeWav } from '../shared/wav.js';
+import { toBeatgrid, shiftGrid, doubleGrid, halveGrid, setDownbeatAt, constantGridAt, tapBpm } from '../shared/beatgrid.js';
+import { createCues } from '../shared/autocues.js';
+import { h, toast, fmtTime, contextMenu, modal } from './ui/dom.js';
+import { icon } from './ui/icons.js';
+import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.js';
+import { openRekordboxImport } from './ui/rekordbox-import.js';
+import { DownloadCenter } from './ui/downloads.js';
+
+/** One cached stem as interleaved 16-bit stereo: WAV beside the track (skip the 44-byte header) or legacy raw PCM. */
+async function readStem(meta, name) {
+  const wav = meta.format === 'wav';
+  const res = await fetch(mediaUrl(`${meta.dir}/${name}.${wav ? 'wav' : 'pcm'}`));
+  if (!res.ok) throw new Error(`stem ${name}: ${res.status}`);
+  const buf = await res.arrayBuffer();
+  return wav ? new Int16Array(buf, 44, (buf.byteLength - 44) >> 1) : new Int16Array(buf);
+}
+
+const DECK_COLORS = ['#ffffff', '#ffffff', '#ffffff', '#ffffff']; // play head: white like rekordbox
+
+class App {
+  async init() {
+    this.library = await Library.load();
+    this.engine = new AudioEngine();
+    await this.engine.init(4); // 4 decks always exist; the layout shows 2 or 4
+    this.analyzer = new Analyzer(this.engine.ctx);
+    this.queue = [];
+    this.analyzing = false;
+    this.modeOverride = new Map(); // trackId -> 'normal' | 'dynamic' for one re-analysis
+    this.applySettingsToEngine();
+
+    this.engine.onCuesChanged = (id, cues) => this.library.update(id, { cues });
+    this.engine.onTrackPlayed = (deck) => this.library.addToHistory(deck.track.id);
+    this.sampler = new Sampler(this.engine);
+    this.automix = new Automix(this);
+    // Groove Circuit DRUM SWAP per deck (loops enter the channel before trim/EQ) and PAD FX units.
+    this.groove = this.engine.decks.map((d, i) => new DrumSwap(d, this.engine.channels[i].trim));
+    this.padFx = this.engine.decks.map((d, i) => {
+      const unit = new BeatFxUnit(this.engine.ctx, this.engine.fx.inserts, this.engine.fx.bpmOf);
+      unit.setTarget(`ch${i + 1}`);
+      unit.held = null;
+      return unit;
+    });
+    this.automix.settings = { ...this.automix.settings, ...(this.library.settings.automix ?? {}) };
+
+    this.deckViews = this.engine.decks.map((d) => new DeckView(d, this));
+    this.sampler.addEventListener('change', () => {
+      this.deckViews.forEach((v) => { if (v.padMode === 'SAMPLER') v.renderPads(); });
+      this.library.settings = { ...this.library.settings, sampler: this.sampler.config() };
+      this.library.scheduleSave();
+    });
+    this.engine.decks.forEach((d) => d.addEventListener('change', (e) => {
+      if (e.detail !== 'load') return;
+      if (this.browser?.seedDependent) this.browser.refreshRows(); else this.browser?.renderBody();
+    }));
+    this.engine.addEventListener('master', () => { if (this.browser?.seedDependent) this.browser.refreshRows(); });
+    this.deckViews.forEach((v, i) => {
+      v.el.querySelector('.deck-headbtns').append(
+        h('button.dbtn.small.icon-btn', { title: 'Beatgrid', onclick: (e) => this.gridMenu(e, i) }, icon('grid')),
+        h('button.dbtn.small.icon-btn', { title: 'Deck menu', onclick: (e) => this.deckMenu(e, i) }, icon('more')));
+    });
+    this.mixer = new MixerView(this.engine, {
+      colorFx: this.library.settings.colorFx,
+      onColorFx: (type) => this.library.setSetting('colorFx', type),
+    });
+    this.fxView = new FxView(this.engine.fx, this.engine.decks.length);
+    this.browser = new Browser(this);
+    this.waveCanvases = this.engine.decks.map((d, i) => {
+      const c = h('canvas.detail', { title: 'Drag to scrub, wheel to zoom' });
+      this.attachScrub(c, d);
+      return c;
+    });
+    // Enlarged waveforms with a coloured deck marker on the left, like rekordbox.
+    // The canvas sits absolutely inside a box so its size always equals the visible area
+    // (a flex canvas can be sized from its own pixel width and get clipped, off-centring the play head).
+    this.waveRows = this.waveCanvases.map((c, i) => h(`div.wave-row.deck${i + 1}`, {}, h('div.wave-badge', {}, String(i + 1)), h('div.canvas-box', {}, c)));
+    this.zoom = 8;
+
+    // ---- global section (top bar) ----
+    const s = this.library.settings;
+    const gtoggle = (iconName, label, title, onclick) => h('button.gbtn', { title, onclick }, icon(iconName), h('span', {}, label));
+    this.recBtn = gtoggle('rec', 'REC', 'Record the master output (WAV)', () => this.toggleRecording());
+    this.recBtn.classList.add('rec');
+    this.recTime = h('span.rec-time');
+    this.downloads = new DownloadCenter(this);
+    this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download new tracks (YouTube search, links, followed channels)', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'search'));
+    this.dlBadge = h('span.dl-badge', { hidden: true });
+    this.dlBtn.append(this.dlBadge);
+    this.samplerView = new SamplerView(this.sampler, this);
+    this.samplerView.el.hidden = !s.showSampler;
+    this.samplerBtn = gtoggle('sampler', 'SAMPLER', 'Show/hide the sampler', () => this.toggleSampler());
+    this.samplerBtn.classList.toggle('on', !this.samplerView.el.hidden);
+    this.fxBtn = gtoggle('fx', 'FX', 'Show/hide the Beat FX panel', () => this.togglePanel('fx'));
+    this.mixerBtn = gtoggle('mixer', 'MIXER', 'Show/hide the mixer', () => this.togglePanel('mixer'));
+    this.automixBtn = gtoggle('automix', 'AUTOMIX', 'Automix the current list', (e) => this.automixMenu(e));
+    this.automixStatus = h('span.automix-status');
+    this.automix.addEventListener('change', () => this.refreshAutomix());
+    this.mplBtn = gtoggle('link', 'MIX POINT LINK', 'Mix Point Link: when a deck reaches its MIX OUT, start the other deck from its MIX IN (synced)', () => {
+      this.library.setSetting('mixPointLink', !this.library.settings.mixPointLink);
+      this.mplBtn.classList.toggle('on', this.library.settings.mixPointLink);
+    });
+    this.mplBtn.classList.toggle('on', !!s.mixPointLink);
+    this.modeSel = h('select.mode-select', { title: 'Mode', onchange: (e) => document.body.classList.toggle('browse-full', e.target.value === 'library') },
+      h('option', { value: 'performance' }, 'PERFORMANCE'), h('option', { value: 'library' }, 'LIBRARY'));
+    this.layoutBtns = [
+      h('button.lbtn', { title: '2 decks', onclick: () => { this.library.setSetting('deckCount', 2); this.applyLayout(); } }, icon('layout2')),
+      h('button.lbtn', { title: '4 decks', onclick: () => { this.library.setSetting('deckCount', 4); this.applyLayout(); } }, icon('layout4')),
+      h('button.lbtn', { title: 'Full browser (Space)', onclick: () => this.toggleLayout() }, icon('browser')),
+    ];
+    this.midiStatus = h('span.gstat.midi', { title: 'MIDI controller' }, icon('midi'), h('span', {}, '—'));
+    this.stemStatus = h('span.stem-status', { hidden: true, title: 'Stem separation' }, h('span.ss-dot'), h('span.ss-label', {}, 'STEMS'), h('span.ss-text'));
+    this.clock = h('span.gstat.clock');
+    this.fxPanel = h('section.fxpanel', {}, this.fxView.el);
+    this.lastPos = [];
+    const root = h('div.app', {},
+      h('header.gbar', {},
+        h('div.gbar-left', {},
+          h('div.wordmark', {}, 'rb', h('b', {}, 'clone')),
+          this.modeSel,
+          h('div.lbtns', {}, this.layoutBtns)),
+        h('div.gbar-center', {}, this.fxBtn, this.samplerBtn, this.mixerBtn, this.mplBtn, this.automixBtn, this.automixStatus, this.dlBtn),
+        h('div.gbar-right', {}, this.stemStatus, this.recBtn, this.recTime, this.midiStatus, this.clock,
+          h('button.lbtn', { onclick: () => this.openSettings(), title: 'Preferences' }, icon('gear')))),
+      this.fxPanel,
+      (this.wavesEl = h('section.waves')),
+      (this.decksEl = h('section.decks')),
+      this.samplerView.el,
+      this.browser.el);
+    document.body.replaceChildren(root);
+    this.applyPanels();
+    this.applyLayout();
+    this.restoreSampler();
+
+    installKeyboard(this);
+    this.installFileDrop();
+    this.installStems();
+    this.midi = new MidiController(this);
+    this.midi.init();
+    this.library.addEventListener('change', (e) => this.onLibraryChange(e.detail));
+    requestAnimationFrame((t) => this.frame(t));
+    // New releases from followed channels, quietly, a few seconds after start.
+    if (!new URLSearchParams(location.search).has('smoke') && this.downloads.cfg.checkOnStart && this.downloads.cfg.subs.length) {
+      setTimeout(() => this.downloads.checkFeeds().catch(() => {}), 8000);
+    }
+    window.addEventListener('beforeunload', () => { this.library.saveNow(); });
+  }
+
+  // ---- settings --------------------------------------------------------------------------------
+
+  applySettingsToEngine() {
+    const s = this.library.settings;
+    this.engine.setCrossfaderCurve(s.crossfaderCurve);
+    this.engine.setFaderCurve(s.faderCurve);
+    this.engine.autoGainOn = s.autoGain;
+    this.engine.syncMode = s.syncMode;
+    this.engine.syncDoubleHalf = s.syncDoubleHalf;
+    this.engine.decks.forEach((d) => { if (!d.loaded) d.tempoRange = s.defaultTempoRange; });
+    if (s.masterDevice) {
+      this.engine.setMasterDevice(s.masterDevice)
+        .then(() => { if (s.outputLayout === 'quad') this.engine.setOutputLayout('quad'); })
+        .catch(() => toast('Master output device unavailable'));
+    }
+    if (s.phonesDevice) this.engine.setPhonesDevice(s.phonesDevice).catch(() => toast('Headphone device unavailable'));
+  }
+
+  openSettings() {
+    return openSettings(this.library, this.engine, (key, value) => {
+      this.library.setSetting(key, value);
+      if (key === 'masterDevice') this.engine.setMasterDevice(value).catch((e) => toast(String(e)));
+      else if (key === 'outputLayout') { try { this.engine.setOutputLayout(value); } catch (e) { toast(e.message, 6000); } }
+      else if (key === 'phonesDevice') this.engine.setPhonesDevice(value).catch((e) => toast(String(e)));
+      else if (key === 'deckCount') this.applyLayout();
+      else this.applySettingsToEngine();
+      this.deckViews.forEach((v) => v.refresh());
+    }, this.midi);
+  }
+
+  onLibraryChange({ kind, id }) {
+    if (kind === 'track' && id) {
+      const t = this.library.get(id);
+      for (const d of this.engine.decks) if (d.track?.id === id) d.updateTrack(t, this.deckAnalysis(t, d.analysis));
+    }
+  }
+
+  toggleLayout() {
+    const full = document.body.classList.toggle('browse-full');
+    if (this.modeSel) this.modeSel.value = full ? 'library' : 'performance';
+  }
+
+  /** FX / MIXER panels shown or hidden from the global section (saved). */
+  togglePanel(name) {
+    const key = name === 'fx' ? 'hideFx' : 'hideMixer';
+    this.library.settings = { ...this.library.settings, [key]: !this.library.settings[key] };
+    this.library.scheduleSave();
+    this.applyPanels();
+  }
+
+  applyPanels() {
+    const s = this.library.settings;
+    this.fxPanel.hidden = !!s.hideFx;
+    this.fxBtn.classList.toggle('on', !s.hideFx);
+    document.body.classList.toggle('no-mixer', !!s.hideMixer);
+    this.mixerBtn.classList.toggle('on', !s.hideMixer);
+  }
+
+  get deckCount() { return this.library.settings.deckCount === 4 ? 4 : 2; }
+  visibleDecks() { return this.engine.decks.slice(0, this.deckCount); }
+
+  /** 2-deck: [1] mixer [2]   4-deck: [1][2] mixer [3][4] */
+  applyLayout() {
+    const n = this.deckCount;
+    this.engine.decks.slice(n).forEach((d) => { if (d.playing) d.pause(); });
+    const views = this.deckViews.slice(0, n).map((v) => v.el);
+    this.decksEl.classList.toggle('four', n === 4);
+    this.wavesEl.classList.toggle('four', n === 4);
+    this.decksEl.replaceChildren(...views.slice(0, n / 2), this.mixer.el, ...views.slice(n / 2));
+    this.wavesEl.replaceChildren(...this.waveRows.slice(0, n));
+    this.layoutBtns?.forEach((b, k) => b.classList.toggle('on', k === (n === 4 ? 1 : 0)));
+    this.mixer.setDeckCount(n);
+    this.browser?.renderTree();
+  }
+
+  // ---- loading & analysis ----------------------------------------------------------------------
+
+  /** Stored analysis merged with the track's own grid/key (from xml import or edits). */
+  deckAnalysis(track, stored) {
+    if (!stored && !track.beatgrid) return stored;
+    return { ...(stored ?? {}), beatgrid: track.beatgrid ?? stored?.beatgrid ?? null, key: track.key || stored?.key || '' };
+  }
+
+  loadToFreeDeck(trackId) {
+    const decks = this.visibleDecks();
+    const target = decks.find((d) => !d.loaded) ?? decks.find((d) => !d.playing) ?? null;
+    if (!target) { toast('All decks are playing'); return; }
+    this.loadTrack(target.index, trackId);
+  }
+
+  async loadTrack(deckIndex, trackId) {
+    const deck = this.engine.decks[deckIndex];
+    const track = this.library.get(trackId);
+    if (!deck || !track) return;
+    if (deck.playing) { toast(`Deck ${deckIndex + 1} is playing — pause it first`); return; }
+    deck.loading = true;
+    try {
+      const buffer = await this.analyzer.decode(track.path);
+      let stored = await window.rb.getAnalysis(trackId);
+      if (!stored) stored = await this.storeAnalysis(trackId, await this.analyzer.analyzeBuffer(buffer, this.analysisOptions(track)), buffer.duration);
+      const fresh = this.library.get(trackId);
+      deck.setLoaded(fresh, buffer, this.deckAnalysis(fresh, stored));
+      if (fresh.missing) this.library.update(trackId, { missing: false });
+      if (stored?.vocals) deck.vocals = stored.vocals;
+      // Cached stems load in the background; the deck plays the original mix meanwhile.
+      // With "Separate stems on load" (like Serato's "Analyze Stems on song load") new tracks start right away.
+      window.rb.stems.meta(trackId, fresh.path).then((meta) => {
+        if (meta) return this.loadStemsInto(deck, meta);
+        if (this.library.settings.stemsOnLoad) return this.separateStems(trackId, { deck });
+        return null;
+      }).catch((err) => console.warn('stems', err));
+    } catch (err) {
+      console.error(err);
+      toast(`Cannot load "${track.title}": ${err.message}`, 5000);
+      this.library.update(trackId, { missing: true });
+    } finally {
+      deck.loading = false;
+      this.browser.renderBody();
+    }
+  }
+
+  /** Options for the analysis worker; a track's own grid (xml import, edits, lock) is kept. */
+  analysisOptions(track) {
+    const s = this.library.settings;
+    const mode = this.modeOverride.get(track?.id) ?? s.analysisMode;
+    this.modeOverride.delete(track?.id);
+    return { bpmRange: s.bpmRange, mode, fixedGrid: track?.beatgrid ?? null };
+  }
+
+  async storeAnalysis(trackId, result, duration) {
+    await window.rb.putAnalysis(trackId, result);
+    const t = this.library.get(trackId);
+    if (t) {
+      const patch = { analyzed: true, key: (t.source === 'rekordbox' && t.key) || result.key || t.key, duration: duration || t.duration, features: result.features };
+      if (!t.beatgrid && result.beatgrid) { patch.beatgrid = result.beatgrid; patch.bpm = result.beatgrid.bpm; }
+      // Intelligent cue creation (Preferences > Analysis), never overwriting the DJ's cues.
+      if (this.library.settings.autoCues && result.phrases?.phrases?.length && !t.cues?.length) {
+        patch.cues = createCues(result.phrases, toBeatgrid(patch.beatgrid ?? t.beatgrid), t.cues ?? []);
+      }
+      const fresh = this.library.update(trackId, patch);
+      // Decks holding this track pick up the new grid/phrases immediately.
+      for (const d of this.engine.decks) if (d.track?.id === trackId) d.updateTrack(fresh, this.deckAnalysis(fresh, { ...d.analysis, ...result }));
+    }
+    return result;
+  }
+
+  /** Deck/browser action: add phrase-based cues to a track (keeps existing hot cue slots). */
+  async createCuesFor(trackId) {
+    const t = this.library.get(trackId);
+    const stored = await window.rb.getAnalysis(trackId);
+    if (!t || !stored?.phrases?.phrases?.length) { toast('No phrase analysis for this track yet (analyze it first)'); return; }
+    const cues = createCues(stored.phrases, toBeatgrid(t.beatgrid ?? stored.beatgrid), t.cues ?? []);
+    const added = cues.length - (t.cues?.length ?? 0);
+    this.library.update(trackId, { cues });
+    toast(added ? `${added} cue(s) created from phrases` : 'Cues already present');
+  }
+
+  analyzeTracks(ids) {
+    const queued = new Set(this.queue);
+    for (const id of ids) if (!queued.has(id)) this.queue.push(id);
+    this.analyzeTotal = (this.analyzeTotal ?? 0) + ids.length;
+    this.runQueue();
+  }
+
+  async runQueue() {
+    if (this.analyzing) return;
+    this.analyzing = true;
+    let done = 0;
+    while (this.queue.length) {
+      const id = this.queue.shift();
+      const t = this.library.get(id);
+      done++;
+      this.browser.setStatus(`Analyzing ${done}/${done + this.queue.length}: ${t?.title ?? ''}`);
+      if (!t) continue;
+      try {
+        const r = await this.analyzer.analyzePath(t.path, this.analysisOptions(t));
+        const { duration, ...result } = r;
+        await this.storeAnalysis(id, result, duration);
+      } catch (err) {
+        console.warn('analysis failed', t.path, err);
+        this.library.update(id, { missing: /Cannot read/.test(err.message) });
+      }
+    }
+    this.analyzing = false;
+    this.analyzeTotal = 0;
+    this.browser.setStatus(done ? `Analysis finished (${done} track${done > 1 ? 's' : ''})` : '');
+  }
+
+  // ---- import / export -------------------------------------------------------------------------
+
+  /** @returns {Promise<string[]>} ids of the tracks added */
+  async importPaths(paths) {
+    if (!paths.length) return [];
+    const off = window.rb.onScanProgress((d, n) => this.browser.setStatus(`Reading tags ${d}/${n}`));
+    try {
+      const results = await window.rb.scanPaths(paths);
+      const added = this.library.addScanned(results);
+      this.browser.setStatus(`${added.length} track(s) added`);
+      toast(`${added.length} track(s) added to the collection`);
+      if (added.length && this.library.settings.autoAnalyze) this.analyzeTracks(added);
+      return added;
+    } finally { off(); }
+  }
+
+  async importFolder() { this.importPaths(await window.rb.openFolder()); }
+  async importFiles() { this.importPaths(await window.rb.openFiles('audio')); }
+
+  /** File > Import from rekordbox: the import tool (preview, playlists, merge rules, moved files). */
+  importXml(file = null) { return openRekordboxImport(this, file); }
+
+  async exportXml() {
+    const path = await window.rb.saveFileDialog('rekordbox.xml', 'xml');
+    if (!path) return;
+    // Intelligent playlists are exported as their current contents (rekordbox.xml has no smart nodes).
+    const resolve = (nodes) => nodes.map((n) => (n.type === 'folder' ? { ...n, children: resolve(n.children) }
+      : n.type === 'smart' ? { type: 'playlist', name: n.name, trackIds: this.library.rowsFor(n.id).map((r) => r.track.id) } : n));
+    await window.rb.writeFile(path, exportRekordboxXml({ tracks: this.library.all(), playlists: resolve(this.library.playlists) }));
+    toast('Collection exported');
+  }
+
+  async exportM3u(node) {
+    const path = await window.rb.saveFileDialog(`${node.name}.m3u8`, 'm3u8');
+    if (!path) return;
+    const lines = ['#EXTM3U', ...node.trackIds.map((id) => this.library.get(id)).filter(Boolean)
+      .flatMap((t) => [`#EXTINF:${Math.round(t.duration ?? 0)},${t.artist ? `${t.artist} - ` : ''}${t.title}`, t.path])];
+    await window.rb.writeFile(path, `${lines.join('\n')}\n`);
+    toast('Playlist exported');
+  }
+
+  async findMissing() {
+    const tracks = this.library.all();
+    let missing = 0;
+    for (const t of tracks) {
+      const exists = await window.rb.exists(t.path);
+      if (!exists) missing++;
+      if (!!t.missing !== !exists) this.library.update(t.id, { missing: !exists }, { silent: true });
+    }
+    this.browser.refreshRows();
+    toast(missing ? `${missing} missing file(s) (shown in red)` : 'All files found');
+  }
+
+  installFileDrop() {
+    window.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); });
+    window.addEventListener('drop', (e) => {
+      if (!e.dataTransfer.files.length) return;
+      e.preventDefault();
+      const paths = [...e.dataTransfer.files].map((f) => window.rb.pathForFile(f)).filter(Boolean);
+      const xml = paths.find((p) => p.toLowerCase().endsWith('.xml'));
+      if (xml) {
+        this.importXml(xml);
+      } else {
+        this.importPaths(paths);
+      }
+    });
+  }
+
+  // ---- sampler ---------------------------------------------------------------------------------
+
+  toggleSampler() {
+    this.samplerView.el.hidden = !this.samplerView.el.hidden;
+    this.samplerBtn.classList.toggle('on', !this.samplerView.el.hidden);
+    this.library.settings = { ...this.library.settings, showSampler: !this.samplerView.el.hidden };
+    this.library.scheduleSave();
+  }
+
+  async restoreSampler() {
+    const cfg = this.library.settings.sampler ?? [];
+    await Promise.all(cfg.map(async (s, i) => {
+      if (!s?.path) return;
+      try {
+        const buffer = await this.analyzer.decode(s.path);
+        this.sampler.setSlot(i, { ...s, buffer });
+      } catch { /* file moved: leave the slot empty */ }
+    }));
+  }
+
+  async loadSamplerSlot(i, trackId) {
+    const t = this.library.get(trackId);
+    if (!t) return;
+    try {
+      const buffer = await this.analyzer.decode(t.path);
+      this.sampler.setSlot(i, { name: t.title, path: t.path, bpm: t.beatgrid?.bpm ?? t.bpm ?? 0, buffer, mode: buffer.duration < 20 ? 'oneshot' : 'loop' });
+    } catch (err) {
+      toast(`Cannot load sample: ${err.message}`);
+    }
+  }
+
+  /** Save the active loop of a deck as a WAV sample and put it in the first free slot. */
+  async captureLoop(deckIndex) {
+    const d = this.engine.decks[deckIndex];
+    if (!d.loop) { toast('Set a loop first'); return null; }
+    const slot = this.sampler.slots.findIndex((s) => !s.buffer);
+    if (slot < 0) { toast('Sampler is full'); return null; }
+    const full = await this.analyzer.decode(d.track.path);
+    const sr = full.sampleRate;
+    const a = Math.round(d.loop.start * sr); const b = Math.round(d.loop.end * sr);
+    const chans = Array.from({ length: Math.min(2, full.numberOfChannels) }, (_, c) => full.getChannelData(c).slice(a, b));
+    const { userData } = await window.rb.paths();
+    const beats = d.loop.beats ? `${Math.round(d.loop.beats * 100) / 100}b` : 'loop';
+    const name = `${d.track.title} ${beats}`.replace(/[\\/:*?"<>|]/g, '_');
+    const path = `${userData}\\samples\\${name}-${Date.now()}.wav`;
+    await window.rb.writeFile(path, encodeWav(chans, sr));
+    const buffer = new AudioBuffer({ numberOfChannels: chans.length, length: chans[0].length, sampleRate: sr });
+    chans.forEach((c, i) => buffer.copyToChannel(c, i));
+    this.sampler.setSlot(slot, { name, path, bpm: d.originalBpm, buffer, mode: 'loop' });
+    toast(`Loop captured to sampler slot ${slot + 1}`);
+    return slot;
+  }
+
+  // ---- deck menu: instant doubles, eject, capture -------------------------------------------
+
+  deckMenu(e, i) {
+    const d = this.engine.decks[i];
+    const others = this.visibleDecks().filter((x) => x !== d && x.loaded);
+    const r = e.currentTarget.getBoundingClientRect();
+    contextMenu(r.left, r.bottom, [
+      ...others.map((o) => ({ label: `Instant Double from Deck ${o.index + 1}`, disabled: d.playing, action: () => this.instantDouble(o.index, i) })),
+      ...(others.length ? ['-'] : []),
+      { label: 'Capture loop to sampler', disabled: !d.loop, action: () => this.captureLoop(i) },
+      { label: 'Create cues from phrases', disabled: !d.loaded, action: () => this.createCuesFor(d.track.id) },
+      '-',
+      { label: 'Set MIX IN at play head', disabled: !d.loaded, action: () => d.setMixPoint('mixin') },
+      { label: 'Set MIX OUT at play head', disabled: !d.loaded, action: () => d.setMixPoint('mixout') },
+      { label: 'Clear mix points', disabled: !d.mixPoint('mixin') && !d.mixPoint('mixout'), action: () => d.setCues(d.track.cues.filter((c) => c.kind !== 'mixin' && c.kind !== 'mixout')) },
+      '-',
+      { label: 'Eject', disabled: !d.loaded || d.playing, action: () => d.unload() },
+    ]);
+  }
+
+  /** Load the same track on `to` at the same position, tempo and play state as `from`. */
+  async instantDouble(fromIdx, toIdx) {
+    const from = this.engine.decks[fromIdx];
+    const to = this.engine.decks[toIdx];
+    if (!from.track || to.playing) return;
+    await this.loadTrack(toIdx, from.track.id);
+    to.setTempoRange(from.tempoRange);
+    to.setTempoPct(from.tempoPct);
+    if (to.keyLock !== from.keyLock) to.toggleKeyLock();
+    to.seek(from.position());
+    if (from.playing) to.play();
+  }
+
+  // ---- stems -----------------------------------------------------------------------------------
+
+  installStems() {
+    /** trackId -> {quality, state: 'queued'|'running', done, total, started} */
+    this.stemJobs = new Map();
+    const decksFor = (id) => this.engine.decks.filter((d) => d.track?.id === id);
+    window.rb.stems.on('stems:job', (id, quality, phase) => {
+      const job = this.stemJobs.get(id);
+      if (job && phase === 'start') { job.state = 'running'; job.started = performance.now(); }
+      this.onStemsChange();
+    });
+    // Progressive results: each finished block goes straight into the decks holding the track.
+    window.rb.stems.on('stems:block', (id, quality, start, length, pcm, env, done, total) => {
+      const job = this.stemJobs.get(id);
+      if (job) Object.assign(job, { state: 'running', done, total });
+      for (const d of decksFor(id)) {
+        // An HQ pass over existing stems overwrites them block by block (no re-init, no gap).
+        if (!d.stemFrames || (!d.stemsReady && !d.stemsComplete)) {
+          if (!d.stemInitFor || d.stemInitFor !== `${id}|${quality}`) { d.initStems(total, 44100, quality); d.stemInitFor = `${id}|${quality}`; }
+        }
+        d.patchStems(start, pcm.map((a) => a.slice()), env, quality);
+      }
+      this.onStemsChange();
+    });
+    window.rb.stems.on('stems:fallback', (id, ep) => toast(`Stem separation on ${ep.toUpperCase()} failed — retrying on CPU`, 6000));
+  }
+
+  /** Refresh every stems indicator (decks, global bar, browser column). */
+  onStemsChange() {
+    this.engine.decks.forEach((d) => d.emit('stems'));
+    this.refreshStemStatus();
+    if (this.browser.lib.settings.columns.includes('stems')) this.browser.renderBody();
+  }
+
+  async loadStemsInto(deck, meta) {
+    const trackId = deck.track?.id;
+    const pcm = await Promise.all(meta.stems.map((name) => readStem(meta, name)));
+    if (deck.track?.id !== trackId) return; // another track was loaded meanwhile
+    deck.stemMeta = meta;
+    const env = meta.env?.data?.map((b64) => { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; });
+    deck.stemEnvPps = meta.env?.pps ?? 150;
+    deck.setStems(pcm, meta.rate, meta.vocals ?? [], { quality: meta.quality ?? 'hq', env });
+  }
+
+  /** Make sure a stem model is installed; FAST (79 MB) downloads on demand. */
+  async ensureStemModel(quality) {
+    const status = await window.rb.stems.status();
+    if (status.models[quality]) return true;
+    if (quality === 'hq') { toast('The HQ stem model is not installed (Preferences > Stems)', 6000); return false; }
+    const t = toast('Downloading the FAST stem model (79 MB)…', 600000);
+    const off = window.rb.stems.on('stems:download', (_q, got, total) => { t.textContent = `Downloading the FAST stem model… ${Math.round((got / total) * 100)}%`; });
+    try { await window.rb.stems.download('fast'); return true; } catch (err) { toast(`Download failed: ${err.message}`, 6000); return false; } finally { off(); t.remove(); }
+  }
+
+  /**
+   * Separate a track into 4 stems (cached). Results stream into the decks from the play head.
+   * quality: 'fast' | 'hq'; settings 'auto' = FAST now, HQ upgrade in the background.
+   */
+  async separateStems(trackId, { quality, urgent = true, deck: from = null } = {}) {
+    const t = this.library.get(trackId);
+    const mode = this.library.settings.stemsQuality ?? 'auto';
+    const q = quality ?? (mode === 'hq' ? 'hq' : 'fast');
+    const existing = this.stemJobs.get(trackId);
+    if (!t || (existing && existing.quality === q)) return null;
+    if (!(await this.ensureStemModel(q))) return null;
+    this.stemJobs.set(trackId, { quality: q, state: 'queued', done: 0, total: 1 });
+    this.onStemsChange();
+    try {
+      const decoded = await this.analyzer.decode(t.path);
+      const len = Math.ceil(decoded.duration * 44100);
+      const off = new OfflineAudioContext({ numberOfChannels: 2, length: len, sampleRate: 44100 });
+      const src = off.createBufferSource();
+      src.buffer = decoded; src.connect(off.destination); src.start();
+      const r44 = await off.startRendering();
+      // Start where the music is: the play head of a deck holding this track.
+      const holders = this.engine.decks.filter((d) => d.track?.id === trackId);
+      const deck = from?.track?.id === trackId ? from : holders.find((d) => d.playing) ?? holders[0];
+      const startSample = deck ? Math.floor(deck.position() * 44100) : 0;
+      const meta = await window.rb.stems.separate(trackId, r44.getChannelData(0), r44.getChannelData(1),
+        { quality: q, ep: this.library.settings.stemsProvider, startSample, urgent, trackPath: t.path, location: this.library.settings.stemsLocation });
+      const stored = (await window.rb.getAnalysis(trackId)) ?? {};
+      await window.rb.putAnalysis(trackId, { ...stored, vocals: meta.vocals });
+      this.library.update(trackId, { stems: q === 'hq' || t.stems === 'hq' ? 'hq' : 'fast' });
+      for (const d of this.engine.decks) {
+        if (d.track?.id !== trackId) continue;
+        d.stemInitFor = null;
+        // A deck that got the track mid-way missed early blocks: take the complete result from the cache.
+        if (d.stemCoverage() < 0.999) { await this.loadStemsInto(d, meta); continue; }
+        d.stemMeta = meta;
+        d.stemsComplete = true;
+        d.stemQuality = q;
+        d.vocals = meta.vocals ?? d.vocals;
+      }
+      this.browser.setStatus(`Stems ready (${q.toUpperCase()}): ${t.title}`);
+      // AUTO: FAST first for immediate use, then upgrade to HQ quietly if the model is there.
+      if (q === 'fast' && mode === 'auto' && (await window.rb.stems.status()).models.hq) {
+        this.stemJobs.delete(trackId);
+        this.separateStems(trackId, { quality: 'hq', urgent: false });
+      }
+      return meta;
+    } catch (err) {
+      toast(`Stem separation failed: ${err.message}`, 6000);
+      return null;
+    } finally {
+      if (this.stemJobs.get(trackId)?.quality === q) this.stemJobs.delete(trackId);
+      this.onStemsChange();
+    }
+  }
+
+  /** DOWNLOAD button badge: running downloads (with progress), else new releases to look at. */
+  refreshDownloadStatus() {
+    if (!this.dlBadge) return;
+    const dl = this.downloads;
+    const active = [...dl.jobs.values()].filter((j) => ['queued', 'starting', 'downloading', 'converting'].includes(j.state));
+    if (active.length) {
+      const pct = Math.round(active.reduce((a, j) => a + (j.pct ?? 0), 0) / active.length);
+      this.dlBadge.textContent = `${active.length} · ${pct}%`;
+      this.dlBadge.className = 'dl-badge busy';
+    } else if (dl.newCount) {
+      this.dlBadge.textContent = `${dl.newCount} new`;
+      this.dlBadge.className = 'dl-badge new';
+    }
+    this.dlBadge.hidden = !active.length && !dl.newCount;
+  }
+
+  /** Global-bar indicator: running job progress and queue length. */
+  refreshStemStatus() {
+    if (!this.stemStatus) return;
+    const jobs = [...this.stemJobs.entries()];
+    const running = jobs.find(([, j]) => j.state === 'running');
+    this.stemStatus.hidden = jobs.length === 0;
+    if (!jobs.length) return;
+    const [id, j] = running ?? jobs[0];
+    const pct = j.total > 1 ? Math.round((j.done / j.total) * 100) : 0;
+    const eta = j.started && j.done > 0 ? ((performance.now() - j.started) / j.done) * (j.total - j.done) / 1000 : null;
+    this.stemStatus.querySelector('.ss-text').textContent =
+      `${j.quality.toUpperCase()} ${running ? `${pct}%` : 'queued'} · ${this.library.get(id)?.title ?? ''}${eta && eta > 1 ? ` · ${Math.ceil(eta)} s` : ''}${jobs.length > 1 ? ` · +${jobs.length - 1}` : ''}`;
+    this.stemStatus.style.setProperty('--p', `${pct}%`);
+  }
+
+  /** DRUM CAPTURE: store bars of the deck's drum stem into a DRUM SWAP slot. */
+  async drumCapture(i) {
+    const d = this.engine.decks[i];
+    if (!d.stemMeta) { toast('Separate stems first'); return -1; }
+    const slot = this.groove[i].capture(await readStem(d.stemMeta, 'drums'), d.stemMeta.rate);
+    toast(slot >= 0 ? `Drums captured to ${'AB'[this.groove[i].bank]}${slot + 1} (${this.groove[i].captureBars} bar)` : 'Nothing to capture here');
+    return slot;
+  }
+
+  /** A controller was (dis)connected: set up its audio interface (DDJ-GRV6: 4-channel). */
+  async onControllerChange(driver) {
+    if (!driver || !/GRV6/i.test(driver.device)) return;
+    const s = this.library.settings;
+    if (s.controllerAudioAuto === false) return;
+    const devices = await this.engine.outputDevices().catch(() => []);
+    const dev = devices.find((x) => /GRV6/i.test(x.label));
+    if (!dev) { toast('DDJ-GRV6: its sound card was not found — choose the output in Preferences > Audio output', 6000); return; }
+    try {
+      await this.engine.setMasterDevice(dev.deviceId);
+      this.engine.setOutputLayout('quad');
+      this.library.setSetting('masterDevice', dev.deviceId);
+      this.library.setSetting('outputLayout', 'quad');
+      toast('DDJ-GRV6 audio: master on outputs 1/2, headphones on 3/4', 5000);
+    } catch (err) {
+      toast(`DDJ-GRV6 audio: ${err.message}`, 6000);
+    }
+  }
+
+  // ---- Mix Point Link --------------------------------------------------------------------------
+
+  /** When a playing deck crosses its MIX OUT, start a paused deck from its MIX IN, synced. */
+  mixPointTick() {
+    const decks = this.visibleDecks();
+    decks.forEach((d, i) => {
+      const pos = d.position();
+      const prev = this.lastPos[i] ?? pos;
+      this.lastPos[i] = pos;
+      if (!this.library.settings.mixPointLink || this.automix.active || !d.playing) return;
+      const out = d.mixPoint('mixout');
+      if (!out || !(prev < out.start && pos >= out.start)) return;
+      // Prefer the partner deck (1<->2, 3<->4), then any other ready deck.
+      const ready = (o) => o && o !== d && o.loaded && !o.playing && o.mixPoint('mixin');
+      const partner = decks[i ^ 1];
+      const target = ready(partner) ? partner : decks.find(ready);
+      if (!target) return;
+      this.engine.setMasterDeck(d.index);
+      target.seek(target.mixPoint('mixin').start);
+      if (!target.sync) target.toggleSync();
+      target.play();
+      toast(`Mix Point Link: Deck ${target.index + 1} started from MIX IN`);
+    });
+  }
+
+  // ---- automix ---------------------------------------------------------------------------------
+
+  automixMenu(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const a = this.automix;
+    const save = (patch) => {
+      a.settings = { ...a.settings, ...patch };
+      this.library.setSetting('automix', a.settings);
+    };
+    contextMenu(r.left, r.bottom + 2, [
+      a.active
+        ? { label: 'Stop Automix', action: () => a.stop() }
+        : { label: 'Start Automix with the current list', action: () => {
+          const rows = this.browser.rows;
+          if (!rows.length) { toast('The current list is empty'); return; }
+          const from = Math.max(0, this.browser.anchor ?? 0);
+          a.start(rows.map((x) => x.track.id), from);
+        } },
+      '-',
+      { label: 'Crossfade length', submenu: [4, 8, 16, 32].map((b) => ({ label: `${b} beats`, checked: a.settings.mixBeats === b, action: () => save({ mixBeats: b }) })) },
+      { label: 'Repeat', checked: a.settings.repeat, action: () => save({ repeat: !a.settings.repeat }) },
+      { label: 'Shuffle', checked: a.settings.shuffle, action: () => save({ shuffle: !a.settings.shuffle }) },
+    ]);
+  }
+
+  refreshAutomix() {
+    const a = this.automix;
+    this.automixBtn.classList.toggle('on', a.active);
+    this.automixStatus.textContent = a.active ? `${a.mixing ? 'mixing → ' : ''}${a.index + 1}/${a.queue.length}` : '';
+  }
+
+  // ---- beatgrid editing ------------------------------------------------------------------------
+
+  gridMenu(e, deckIndex) {
+    const d = this.engine.decks[deckIndex];
+    if (!d.loaded || !d.grid) { toast('Load an analyzed track first'); return; }
+    const g = d.grid;
+    const locked = !!d.track.gridLocked;
+    const set = (grid) => {
+      if (locked) { toast('Beatgrid is locked'); return; }
+      this.setTrackGrid(d, grid);
+    };
+    const reanalyze = async (mode) => {
+      const t = this.library.update(d.track.id, { beatgrid: locked ? d.track.beatgrid : null });
+      this.modeOverride.set(t.id, mode);
+      await window.rb.putAnalysis(t.id, null);
+      this.analyzeTracks([t.id]);
+      toast(`Re-analyzing (${mode === 'dynamic' ? 'dynamic' : 'normal'} grid)…`);
+    };
+    const beat = d.period;
+    const r = e.currentTarget.getBoundingClientRect();
+    contextMenu(r.left, r.bottom, [
+      { label: `${toBeatgrid(g).dynamic ? 'Dynamic' : 'Constant'} grid · ${g.bpm.toFixed(2)} BPM${locked ? ' · locked' : ''}`, disabled: true },
+      '-',
+      { label: 'Set downbeat (bar start) at play head', disabled: locked, action: () => set(setDownbeatAt(g, d.position())) },
+      { label: 'Shift grid ← 10 ms', disabled: locked, action: () => set(shiftGrid(g, -0.01)) },
+      { label: 'Shift grid → 10 ms', disabled: locked, action: () => set(shiftGrid(g, 0.01)) },
+      { label: 'Shift grid ← 1 beat', disabled: locked, action: () => set(shiftGrid(g, -beat)) },
+      { label: 'Shift grid → 1 beat', disabled: locked, action: () => set(shiftGrid(g, beat)) },
+      { label: 'BPM × 2', disabled: locked, action: () => set(doubleGrid(g)) },
+      { label: 'BPM ÷ 2', disabled: locked, action: () => set(halveGrid(g)) },
+      { label: 'BPM − 0.01', disabled: locked || !!g.beats, action: () => set({ ...g, bpm: Math.round((g.bpm - 0.01) * 100) / 100 }) },
+      { label: 'BPM + 0.01', disabled: locked || !!g.beats, action: () => set({ ...g, bpm: Math.round((g.bpm + 0.01) * 100) / 100 }) },
+      { label: 'Tap tempo…', disabled: locked, action: () => this.tapTempo(d) },
+      { label: 'Convert to constant grid', disabled: locked || !g.beats, action: () => set(constantGridAt(g.bpm, d.bg.snap(d.position()), d.bg.barPos(Math.round(d.bg.indexAt(d.position()))) + 1)) },
+      '-',
+      { label: locked ? 'Unlock beatgrid' : 'Lock beatgrid', action: () => { this.library.update(d.track.id, { gridLocked: !locked }); toast(locked ? 'Beatgrid unlocked' : 'Beatgrid locked'); } },
+      { label: 'Re-analyze (normal grid)', action: () => reanalyze('normal') },
+      { label: 'Re-analyze (dynamic grid)', action: () => reanalyze('dynamic') },
+    ]);
+  }
+
+  setTrackGrid(deck, grid) {
+    const t = this.library.update(deck.track.id, { beatgrid: grid, bpm: Math.round(grid.bpm * 100) / 100 });
+    deck.updateTrack(t, this.deckAnalysis(t, deck.analysis));
+    deck.emit('tempo');
+  }
+
+  async tapTempo(deck) {
+    const taps = [];
+    const readout = h('div.tap-readout', {}, '---.-- BPM');
+    const tapBtn = h('button.tap-btn', {}, 'TAP');
+    const tap = () => {
+      const now = performance.now();
+      if (taps.length && now - taps.at(-1) > 2000) taps.length = 0; // pause = restart
+      taps.push(now);
+      const bpm = tapBpm(taps);
+      readout.textContent = bpm ? `${bpm.toFixed(2)} BPM (${taps.length} taps)` : 'keep tapping…';
+    };
+    tapBtn.addEventListener('pointerdown', tap);
+    const body = h('div.tap', {}, h('p.dim', {}, 'Tap on the beat (button or T key). The beat nearest the play head stays where it is.'), tapBtn, readout);
+    body.tabIndex = 0;
+    body.addEventListener('keydown', (e) => { if (e.code === 'KeyT') tap(); });
+    setTimeout(() => body.focus());
+    const ok = await modal('Tap tempo', body, [{ label: 'Apply', primary: true, value: true }, { label: 'Cancel', value: null }]);
+    const bpm = tapBpm(taps);
+    if (!ok || !bpm) return;
+    const anchor = deck.bg ? deck.bg.snap(deck.position()) : deck.position();
+    const barBeat = deck.bg ? deck.bg.barPos(Math.round(deck.bg.indexAt(anchor))) + 1 : 1;
+    this.setTrackGrid(deck, constantGridAt(bpm, anchor, barBeat));
+  }
+
+  attachScrub(canvas, deck) {
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!deck.loaded) return;
+      canvas.setPointerCapture(e.pointerId);
+      const wasPlaying = deck.playing;
+      if (wasPlaying) deck.pause();
+      const start = deck.position();
+      const x0 = e.clientX;
+      const move = (ev) => deck.seek(start - ((ev.clientX - x0) / canvas.clientWidth) * this.zoom);
+      const up = () => {
+        canvas.removeEventListener('pointermove', move);
+        canvas.removeEventListener('pointerup', up);
+        if (wasPlaying) deck.play();
+      };
+      canvas.addEventListener('pointermove', move);
+      canvas.addEventListener('pointerup', up);
+    });
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      this.zoom = Math.max(2, Math.min(32, this.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
+    }, { passive: false });
+  }
+
+  // ---- recording -------------------------------------------------------------------------------
+
+  async toggleRecording() {
+    if (!this.engine.recording) {
+      this.engine.resume();
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+      await this.engine.startRecording(`RBClone-mix-${stamp}`);
+      this.recBtn.classList.add('on');
+      return null;
+    }
+    const r = await this.engine.stopRecording();
+    this.recBtn.classList.remove('on');
+    this.recTime.textContent = '';
+    if (!r) return null;
+    // Like Rekordbox, recordings land in the collection (and a "Recordings" playlist).
+    const [id] = this.library.addScanned([await window.rb.readTags(r.path)]);
+    if (id) {
+      let node = this.library.playlistList().find((p) => p.label === 'Recordings');
+      if (!node) node = this.library.createNode('playlist', 'Recordings');
+      this.library.addToPlaylist(node.id, [id]);
+    }
+    toast(`Recording saved: ${r.path}`, 6000);
+    return r;
+  }
+
+  // ---- render loop -----------------------------------------------------------------------------
+
+  frame() {
+    this.frames = (this.frames ?? 0) + 1;
+    this.engine.tick();
+    this.automix.tick();
+    this.mixPointTick();
+    this.groove.forEach((g) => g.tick());
+    if (!this.lastClock || performance.now() - this.lastClock > 1000) {
+      this.lastClock = performance.now();
+      const now = new Date();
+      this.clock.textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const names = [...(this.midi?.controllers?.values() ?? [])].map((c) => c.device);
+      this.midiStatus.lastChild.textContent = names.length ? names.join(', ') : 'No controller';
+      this.midiStatus.classList.toggle('on', names.length > 0);
+    }
+    if (this.midi?.controllers) for (const c of this.midi.controllers.values()) c.updateLeds();
+    if (!this.samplerView.el.hidden) this.samplerView.frame();
+    const style = this.library.settings.waveformColor;
+    if (!document.body.classList.contains('browse-full')) {
+      const stemMode = this.library.settings.stemWaveform;
+      this.visibleDecks().forEach((d, i) => drawDetail(this.waveCanvases[i], d, { style, spanSec: this.zoom, color: DECK_COLORS[i], stemMode }));
+      this.deckViews.slice(0, this.deckCount).forEach((v) => v.frame(style));
+      this.mixer.frame();
+    }
+    if (this.engine.recording) this.recTime.textContent = fmtTime((performance.now() - this.engine.recordStarted) / 1000);
+    requestAnimationFrame(() => this.frame());
+  }
+}
+
+// ---- smoke test (npm run smoke): exercises analysis, decks and the mixer without UI input ----
+
+function syntheticTrack(ctx, bpm = 124, seconds = 20) {
+  const buf = ctx.createBuffer(2, Math.round(seconds * ctx.sampleRate), ctx.sampleRate);
+  const sr = ctx.sampleRate;
+  const period = 60 / bpm;
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let t = 0.25; t < seconds; t += period) {
+      const s = Math.round(t * sr);
+      for (let j = 0; j < sr * 0.15 && s + j < d.length; j++) d[s + j] += 0.8 * Math.exp(-j / (sr * 0.03)) * Math.sin(2 * Math.PI * (50 + 80 * Math.exp(-j / (sr * 0.01))) * (j / sr));
+    }
+    for (let i = 0; i < d.length; i++) d[i] += 0.1 * Math.sin((2 * Math.PI * 220 * i) / sr) + 0.06 * Math.sin((2 * Math.PI * 261.63 * i) / sr) + 0.06 * Math.sin((2 * Math.PI * 329.63 * i) / sr);
+  }
+  return buf;
+}
+
+async function smoke(app) {
+  const report = { ok: false, steps: [] };
+  const step = (name, ok, info = '') => { report.steps.push({ name, ok, info }); if (!ok) throw new Error(`${name}: ${info}`); };
+  try {
+    const ctx = app.engine.ctx;
+    await ctx.resume();
+    step('audio context', ctx.state === 'running', ctx.state);
+
+    // Real file path: write WAVs, import (tags via main), analyze through media://, load on a deck.
+    const dir = await window.rb.smokeDir();
+    const files = [[128, 'Kick 128'], [140, 'Kick 140'], [100, 'Kick 100']];
+    for (const [bpm, name] of files) {
+      const b = syntheticTrack(ctx, bpm, 24);
+      await window.rb.writeFile(`${dir}\\${name}.wav`, encodeWav([0, 1].map((c) => b.getChannelData(c).map((x) => x * 0.7)), b.sampleRate));
+    }
+    await app.importPaths([dir]);
+    step('import', app.library.tracks.size === 3, `${app.library.tracks.size} tracks`);
+    while (app.analyzing || app.queue.length) await new Promise((r) => setTimeout(r, 100));
+    const bpms = app.library.all().map((t) => `${t.title}=${t.bpm}`).sort();
+    step('library analysis', app.library.all().every((t) => t.analyzed && files.some(([b, n]) => n === t.title && Math.abs(t.bpm - b) < 0.1)), bpms.join(' '));
+    const pl = app.library.createNode('playlist', 'Smoke set');
+    app.library.addToPlaylist(pl.id, app.library.all().map((t) => t.id));
+    app.browser.select(pl.id);
+    app.browser.controller.textChanged('140'); app.browser.controller.submit();
+    step('search', app.browser.rows.length === 1 && app.browser.rows[0].track.title === 'Kick 140', `${app.browser.rows.length} rows`);
+    app.browser.controller.clear();
+    const id128 = app.library.all().find((t) => t.title === 'Kick 128').id;
+    await app.loadTrack(0, id128);
+    step('load from file', app.engine.decks[0].track?.id === id128 && app.engine.decks[0].duration > 23, String(app.engine.decks[0].duration));
+    app.engine.decks[0].unload();
+    const buf = syntheticTrack(ctx);
+    const analysis = await app.analyzer.analyzeBuffer(buf);
+    step('analysis bpm', Math.abs(analysis.beatgrid.bpm - 124) < 0.05, String(analysis.beatgrid.bpm));
+    // A-C-E drone: A minor (8A) or its relative C major (8B) are both musically correct.
+    step('analysis key', ['8A', '8B'].includes(analysis.key), analysis.key);
+    step('analysis waveform', analysis.waveform.low.length > 100, `${analysis.waveform.low.length} b64 chars`);
+    const [d1, d2] = app.engine.decks;
+    const track = { id: 'smoke', title: 'Smoke', artist: 'Test', cues: [], bpm: 124 };
+    d1.setLoaded(track, buf, analysis);
+    d2.setLoaded({ ...track, id: 'smoke2' }, syntheticTrack(ctx, 120), await app.analyzer.analyzeBuffer(syntheticTrack(ctx, 120)));
+    d1.play();
+    await new Promise((r) => setTimeout(r, 600));
+    const p = d1.position();
+    step('deck plays', p > 0.3 && d1.playing, p.toFixed(3));
+    d2.toggleSync();
+    step('sync tempo', Math.abs(d2.currentBpm - 124) < 0.01, d2.currentBpm.toFixed(2));
+    d2.play();
+    await new Promise((r) => setTimeout(r, 1500));
+    let ph = d1.phase() - d2.phase(); if (ph > 0.5) ph -= 1; if (ph < -0.5) ph += 1;
+    step('sync phase', Math.abs(ph * d2.period) < 0.02, `${(ph * d2.period * 1000).toFixed(1)} ms`);
+    d1.beatLoop(1);
+    await new Promise((r) => setTimeout(r, 1200));
+    const lp = d1.position();
+    step('beat loop holds', d1.loop && lp >= d1.loop.start - 0.02 && lp <= d1.loop.end + 0.02, `${lp.toFixed(3)} in [${d1.loop.start.toFixed(3)}, ${d1.loop.end.toFixed(3)}]`);
+    d1.exitLoop();
+    d1.toggleKeyLock(); d1.setTempoPct(6);
+    await new Promise((r) => setTimeout(r, 300));
+    step('master tempo running', d1.playing, '');
+    d1.hotCuePress(0);
+    step('hot cue set', !!d1.hotCue(0), '');
+    const lv = app.engine.levels();
+    step('master level', lv.master > 0.01, lv.master.toFixed(3));
+    app.engine.fx.setEffect('ECHO'); app.engine.fx.setOn(true);
+    await new Promise((r) => setTimeout(r, 300));
+    app.engine.fx.setOn(false);
+    step('beat fx', true, '');
+    // Leave something on screen for the --shot screenshot: deck 1 playing, loop on deck 2.
+    d2.pause();
+    d2.beatLoop(4);
+    await new Promise((r) => setTimeout(r, 400));
+    d1.pause();
+    // ---- phase 2 ----
+    const lib = app.library;
+    const smartNode = lib.createNode('smart', 'Fast', null, { match: 'all', conditions: [{ field: 'bpm', op: 'gte', value: 130 }] });
+    app.browser.select(smartNode.id);
+    step('intelligent playlist', app.browser.rows.length === 1 && app.browser.rows[0].track.title === 'Kick 140', `${app.browser.rows.length} rows`);
+    lib.addToTagList(lib.all().map((t) => t.id).slice(0, 2));
+    app.browser.select('tag-list');
+    step('tag list', app.browser.rows.length === 2, `${app.browser.rows.length} rows`);
+    app.browser.relatedSelected = lib.all().find((t) => t.title === 'Kick 128');
+    lib.settings = { ...lib.settings, relatedSeed: 'selected', related: { ...lib.settings.related, key: { on: false, mode: 'same' }, bpm: { on: true, pct: 12, doubleHalf: false } } };
+    app.browser.select('related');
+    step('related tracks', app.browser.rows.map((r) => r.track.title).join(',') === 'Kick 140', app.browser.rows.map((r) => r.track.title).join(','));
+    lib.setSetting('deckCount', 4); app.applyLayout();
+    step('4-deck layout', app.decksEl.querySelectorAll('.deck').length === 4 && app.mixer.stripsEl.querySelectorAll('.strip').length === 5, '');
+    // Hot cue bank I–P
+    const dv = app.deckViews[0];
+    dv.bankBtn.click();
+    dv.padDown(0, {});
+    step('hot cue bank I-P', !!d1.hotCue(8) && dv.pads[0].querySelector('.pad-letter').textContent === 'I', '');
+    dv.bankBtn.click(); // back to A–H
+    d1.play();
+    for (const cfx of ['SPACE', 'DUB ECHO', 'NOISE', 'CRUSH', 'FILTER']) {
+      app.engine.setColorFx(cfx);
+      app.engine.channels[0].setFilter(0.6);
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    app.engine.channels[0].setFilter(0);
+    step('color fx', app.engine.levels().master > 0.01, app.engine.levels().master.toFixed(3));
+    for (const id of ['ROLL', 'REV ROLL', 'VINYL BRAKE', 'PITCH', 'UP ECHO', 'DOWN ECHO', 'PAN', 'ROBOT']) {
+      app.engine.fx.setEffect(id); app.engine.fx.setOn(true);
+      await new Promise((r) => setTimeout(r, 250));
+      const lvl = app.engine.levels().master;
+      app.engine.fx.setOn(false);
+      step(`beat fx ${id}`, id === 'VINYL BRAKE' || lvl > 0.005, lvl.toFixed(3));
+    }
+    // MIDI learn + dispatch without hardware: feed raw messages to the controller.
+    app.midi.learnTarget = 'deck1.play';
+    app.midi.onMessage([0x90, 36, 127]);
+    step('midi learn', lib.settings.midiMappings.some((m) => m.key === 'note:1:36' && m.target === 'deck1.play'), '');
+    const wasPlaying = d1.playing;
+    app.midi.onMessage([0x90, 36, 127]);
+    step('midi dispatch', d1.playing !== wasPlaying, `playing ${wasPlaying} -> ${d1.playing}`);
+    if (!d1.playing) d1.play();
+    app.browser.select('collection');
+
+    // ---- phase 3 ----
+    dv.padMode = 'BEAT LOOP'; dv.padDown(4, {});
+    step('pad mode beat loop', d1.loop?.beats === 4, String(d1.loop?.beats));
+    d1.exitLoop();
+    dv.padMode = 'SLICER'; dv.padDown(2, {});
+    const sliceOk = d1.loop?.slice === 2 && d1.slip;
+    await new Promise((r) => setTimeout(r, 300));
+    dv.padUp(2);
+    step('slicer', sliceOk && !d1.loop && !d1.slip, `slice=${sliceOk} after: loop=${!!d1.loop} slip=${d1.slip}`);
+    d1.censorDown(); await new Promise((r) => setTimeout(r, 200)); d1.censorUp();
+    step('censor', !d1.reverse && !d1.slip, '');
+    dv.padMode = 'KEY SHIFT'; dv.padDown(5, {});
+    step('pad key shift', d1.keyShift === 2, String(d1.keyShift));
+    d1.setKeyShift(0);
+    dv.padMode = 'HOT CUE'; dv.renderPads();
+
+    const id100 = lib.all().find((t) => t.title === 'Kick 100').id;
+    const d3 = app.engine.decks[2]; const d4 = app.engine.decks[3];
+    await app.loadTrack(2, id128);
+    d3.play(); d3.beatLoop(4);
+    const slot = await app.captureLoop(2);
+    const cap = app.sampler.slots[slot];
+    step('capture loop to sampler', slot === 0 && Math.abs(cap.buffer.duration - 4 * 60 / 128) < 0.01, `${cap?.buffer?.duration.toFixed(3)} s`);
+    app.sampler.trigger(0);
+    await app.loadSamplerSlot(1, id100);
+    app.sampler.trigger(1);
+    await new Promise((r) => setTimeout(r, 200));
+    step('sampler plays', app.sampler.isPlaying(0) && app.sampler.isPlaying(1), '');
+    dv.padMode = 'SAMPLER'; dv.renderPads();
+    step('sampler pads', dv.pads[0].classList.contains('active'), dv.pads[0].className);
+    app.sampler.stopAll(); dv.padMode = 'HOT CUE'; dv.renderPads();
+    d3.exitLoop();
+    await app.instantDouble(2, 3);
+    step('instant double', d4.track?.id === id128 && d4.playing && Math.abs(d4.position() - d3.position()) < 0.1, `${d3.position().toFixed(2)} vs ${d4.position().toFixed(2)}`);
+    d3.pause(); d4.pause();
+
+    await app.toggleRecording();
+    await new Promise((r) => setTimeout(r, 1200));
+    const rec = await app.toggleRecording();
+    const recPl = lib.playlistList().find((p) => p.label === 'Recordings');
+    step('wav recording', rec?.bytes > 44100 * 4 * 0.8 && recPl && lib.findNode(recPl.id).node.trackIds.length === 1, `${rec?.bytes} bytes`);
+
+    d1.pause(); d2.pause();
+    if (d2.sync) d2.toggleSync();
+    app.automix.settings = { mixBeats: 4, repeat: false, shuffle: false };
+    await app.automix.start([id100, id128]);
+    const first = app.engine.decks[0];
+    step('automix start', app.automix.active && first.track?.id === id100 && first.playing, '');
+    first.seek(first.duration - 5);
+    const t0 = performance.now();
+    while (app.automix.index === 0 && performance.now() - t0 < 12000) await new Promise((r) => setTimeout(r, 100));
+    const second = app.engine.decks[1];
+    step('automix transition', app.automix.index === 1 && second.track?.id === id128 && second.playing && !first.playing && app.engine.crossfader > 0.9,
+      `index=${app.automix.index} xf=${app.engine.crossfader.toFixed(2)}`);
+    app.automix.stop(); second.pause();
+    app.engine.setCrossfader(0);
+    d1.play();
+
+    // ---- phase 4 ----
+    // Dynamic grid on a tempo ramp (120 -> 132 BPM over 40 s).
+    {
+      const sr = ctx.sampleRate; const secs = 40;
+      const ramp = ctx.createBuffer(2, secs * sr, sr);
+      const L = ramp.getChannelData(0);
+      let phase = 0;
+      for (let i = 0; i < L.length; i++) {
+        const t = i / sr;
+        phase += (120 + 12 * t / secs) / 60 / sr;
+        const beatT = (phase % 1) / ((120 + 12 * t / secs) / 60);
+        if (beatT < 0.15) L[i] = 0.8 * Math.exp(-beatT / 0.03) * Math.sin(2 * Math.PI * (50 + 80 * Math.exp(-beatT / 0.01)) * beatT);
+      }
+      ramp.copyToChannel(L, 1);
+      const dyn = await app.analyzer.analyzeBuffer(ramp, { mode: 'dynamic', bpmRange: [88, 175] });
+      const bgd = toBeatgrid(dyn.beatgrid);
+      step('dynamic beatgrid', bgd?.dynamic && Math.abs(bgd.bpmAt(3) - 121) < 2 && Math.abs(bgd.bpmAt(37) - 131) < 2, `${bgd?.dynamic} ${bgd?.bpmAt(3).toFixed(1)} -> ${bgd?.bpmAt(37).toFixed(1)}`);
+      const norm = await app.analyzer.analyzeBuffer(ramp, { mode: 'normal', bpmRange: [88, 175] });
+      step('normal mode keeps a constant grid', !norm.beatgrid.beats, '');
+    }
+    // Phrases + intelligent cues on a structured track imported from a file.
+    {
+      const sr = ctx.sampleRate; const P = 60 / 128; const bars = 48;
+      const buf = ctx.createBuffer(2, Math.ceil(bars * 4 * P * sr) + sr, sr);
+      const L = buf.getChannelData(0);
+      let seed = 5; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+      const kick = (t, gain) => { const s = Math.round(t * sr); for (let j = 0; j < sr * 0.15 && s + j < L.length; j++) L[s + j] += gain * Math.exp(-j / (sr * 0.03)) * Math.sin(2 * Math.PI * (50 + 80 * Math.exp(-j / (sr * 0.01))) * (j / sr)); };
+      const hat = (t, gain) => { const s = Math.round(t * sr); for (let j = 0; j < sr * 0.03 && s + j < L.length; j++) L[s + j] += gain * rnd() * Math.exp(-j / (sr * 0.006)); };
+      const pad = (t0, t1, gain) => { for (let i = Math.round(t0 * sr); i < Math.min(L.length, Math.round(t1 * sr)); i++) { const x = i / sr; L[i] += gain * (Math.sin(2 * Math.PI * 440 * x) + Math.sin(2 * Math.PI * 554.37 * x) + Math.sin(2 * Math.PI * 659.25 * x)) / 3; } };
+      for (let b = 0; b < bars; b++) {
+        const t0 = b * 4 * P; const sec = b < 16 ? 'intro' : b < 24 ? 'down' : b < 40 ? 'chorus' : 'outro';
+        for (let k = 0; k < 4; k++) { if (sec !== 'down') kick(t0 + k * P, sec === 'chorus' ? 0.9 : 0.6); if (sec === 'intro' || sec === 'chorus') hat(t0 + k * P + P / 2, sec === 'chorus' ? 0.35 : 0.15); }
+        if (sec === 'down' || sec === 'chorus') pad(t0, t0 + 4 * P, sec === 'down' ? 0.25 : 0.3);
+      }
+      buf.copyToChannel(L, 1);
+      await window.rb.writeFile(`${dir}\\Structure.wav`, encodeWav([L.map((x) => x * 0.6), L.map((x) => x * 0.6)], sr));
+      await app.importPaths([`${dir}\\Structure.wav`]);
+      while (app.analyzing || app.queue.length) await new Promise((r) => setTimeout(r, 100));
+      const st = lib.all().find((t) => t.title === 'Structure');
+      const stored = await window.rb.getAnalysis(st.id);
+      const labels = (stored.phrases?.phrases ?? []).map((p) => `${p.label}@${p.startBar}`).join(' ');
+      step('phrase analysis', labels === 'INTRO@0 DOWN@16 CHORUS@24 OUTRO@40', `${stored.phrases?.mood}: ${labels}`);
+      // The breakdown starts at bar 16 (30 s): that beat must be a bar start.
+      const sg = toBeatgrid(stored.beatgrid);
+      const idx16 = Math.round(sg.indexAt(16 * 4 * P));
+      step('downbeat', sg.isDownbeat(idx16) && Math.abs(sg.timeOf(idx16) - 16 * 4 * P) < 0.02, `first=${stored.beatgrid.firstBeat} beat=${stored.beatgrid.beat}`);
+      await app.createCuesFor(st.id);
+      const cues = lib.get(st.id).cues;
+      const hotB = cues.find((c) => c.kind === 'hot' && c.slot === 1);
+      step('intelligent cues', hotB?.name === 'CHORUS' && Math.abs(hotB.start - 24 * 4 * P) < 0.05 && cues.filter((c) => c.kind === 'memory').length === 4, `${cues.length} cues, B=${hotB?.name}@${hotB?.start}`);
+      // Grid editing on the loaded track.
+      await app.loadTrack(2, st.id);
+      const before = d3.grid;
+      app.setTrackGrid(d3, setDownbeatAt(before, before.firstBeat + 60 / 128));
+      step('grid edit (downbeat)', d3.bg.isDownbeat(Math.round(d3.bg.indexAt(before.firstBeat + 60 / 128))), `beat=${d3.grid.beat}`);
+      app.setTrackGrid(d3, before);
+      // Suggestions (sound-alike) need features from analysis.
+      app.browser.relatedSelected = lib.get(st.id);
+      lib.settings = { ...lib.settings, relatedSeed: 'selected' };
+      app.browser.select('suggest');
+      step('track suggestion', app.browser.rows.length >= 3 && app.browser.rows.every((r) => r.track.id !== st.id), `${app.browser.rows.length} rows: ${app.browser.rows.map((r) => r.track.title).join(', ')}`);
+      app.browser.select('collection');
+    }
+    // Mix Point Link: deck 3 reaches MIX OUT -> deck 4 starts from MIX IN.
+    {
+      await app.loadTrack(3, id128);
+      d4.seek(4); d4.setMixPoint('mixin');
+      d3.seek(10); d3.play();
+      await new Promise((r) => setTimeout(r, 100));
+      d3.seek(d3.position()); d3.setMixPoint('mixout');
+      const out = d3.mixPoint('mixout').start;
+      d3.seek(Math.max(0, out - 0.6));
+      lib.setSetting('mixPointLink', true);
+      await new Promise((r) => setTimeout(r, 1500));
+      step('mix point link', d4.playing && d4.position() > 4 && d4.position() < 6,
+        `deck4 playing=${d4.playing} pos=${d4.position().toFixed(2)} in=${JSON.stringify(d4.mixPoint('mixin'))} | deck3 playing=${d3.playing} pos=${d3.position().toFixed(2)} out=${out.toFixed(2)} link=${lib.settings.mixPointLink} automix=${app.automix.active}`);
+      lib.setSetting('mixPointLink', false);
+      d3.pause(); d4.pause();
+    }
+    // Play head centred: every waveform canvas fills its box exactly (the marker is drawn at width / 2).
+    {
+      const boxes = [...app.waveRows.slice(0, app.deckCount), ...app.deckViews.slice(0, app.deckCount).map((v) => v.el.querySelector('.ov-box'))]
+        .map((row) => { const box = row.classList.contains('canvas-box') ? row : row.querySelector('.canvas-box'); const c = box.querySelector('canvas').getBoundingClientRect(); const b = box.getBoundingClientRect(); return [c.left - b.left, c.right - b.right, b.width]; });
+      step('play head centred', boxes.every(([l, r, w]) => Math.abs(l) < 1 && Math.abs(r) < 1 && w > 50), JSON.stringify(boxes.map((x) => x.map((v) => Math.round(v)))));
+    }
+    // Stems (only when models are provided: RBCLONE_SPLEETER_DIR / RBCLONE_STEM_MODEL for this test).
+    const stemModels = (await window.rb.stems.status()).models;
+    if (stemModels.fast || stemModels.hq) {
+      const q = stemModels.fast ? 'fast' : 'hq';
+      lib.setSetting('stemsQuality', q);
+      await app.loadTrack(2, id128);
+      for (let i = 0; i < 50 && !d3.loaded; i++) await new Promise((r) => setTimeout(r, 100));
+      d3.seek(12);
+      const t0 = performance.now();
+      const job = app.separateStems(id128, { deck: d3 });
+      // Progressive: the first block lands at the play head well before the whole track is done.
+      let firstAt = null;
+      for (let i = 0; i < 600 && firstAt === null; i++) {
+        if (d3.stemCoverage() > 0) firstAt = performance.now() - t0;
+        else await new Promise((r) => setTimeout(r, 20));
+      }
+      const atHead = d3.stemsAt(12);
+      const firstRanges = JSON.stringify(d3.stemRanges.map(([a, b]) => [+(a / 44100).toFixed(1), +(b / 44100).toFixed(1)])) + ` pos=${d3.position().toFixed(2)} dur=${d3.duration?.toFixed(1)}`;
+      const partial = d3.stemCoverage();
+      const meta = await job;
+      step('stem separation (progressive)', firstAt !== null && atHead && meta?.stems?.length === 4 && meta.frames > 44100 * 23,
+        `${q}: first block after ${firstAt?.toFixed(0)} ms (coverage ${(partial * 100).toFixed(0)}%), playhead covered=${atHead}, total ${(performance.now() - t0).toFixed(0)} ms on ${meta?.ep} ${firstRanges}`);
+      for (let i = 0; i < 50 && !d3.stemsComplete; i++) await new Promise((r) => setTimeout(r, 100));
+      step('stems loaded on deck', d3.stemsReady && d3.stemsComplete && d3.stemCoverage() > 0.999 && d3.stemQuality === q && !!d3.stemEnv,
+        `quality=${d3.stemQuality} coverage=${d3.stemCoverage().toFixed(3)} env=${!!d3.stemEnv} column=${lib.get(id128)?.stems}`);
+      step('stem status hidden when idle', app.stemStatus.hidden && app.deckViews[2].stemSepBtn.textContent === q.toUpperCase(), app.deckViews[2].stemSepBtn.textContent);
+      app.engine.setCrossfader(-1);
+      d3.play();
+      await new Promise((r) => setTimeout(r, 600));
+      const full = app.engine.levels().channels[2];
+      d3.soloStem(3); // vocals only: the synthetic track has no voice, so near silence
+      await new Promise((r) => setTimeout(r, 600));
+      const vocalsOnly = app.engine.levels().channels[2];
+      d3.soloStem(3); // back to all stems
+      d3.setStemOn(0, false); // drums off: the kick disappears but the drone stays
+      await new Promise((r) => setTimeout(r, 600));
+      const noDrums = app.engine.levels().channels[2];
+      d3.setStemOn(0, true);
+      step('stem solo / mute', vocalsOnly < full * 0.2 && noDrums > vocalsOnly, `full ${full.toFixed(3)}, vocals solo ${vocalsOnly.toFixed(3)}, no drums ${noDrums.toFixed(3)}`);
+      d3.pause();
+      app.engine.setCrossfader(0);
+      if (q === 'fast' && stemModels.hq) {
+        const t1 = performance.now();
+        const hqJob = app.separateStems(id128, { quality: 'hq', deck: d3 });
+        // Screenshot while HQ runs: progress pill + button, coloured stem waveform with drums muted.
+        d3.seek(6); d3.setStemOn(0, false);
+        for (let i = 0; i < 300 && !((app.stemJobs.get(id128)?.done ?? 0) > 0); i++) await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 400));
+        await window.rb.smokeShot('stems');
+        d3.setStemOn(0, true);
+        const hq = await hqJob;
+        for (let i = 0; i < 50 && d3.stemQuality !== 'hq'; i++) await new Promise((r) => setTimeout(r, 100));
+        step('stems upgrade to HQ', hq?.quality === 'hq' && d3.stemQuality === 'hq' && d3.stemsComplete && lib.get(id128)?.stems === 'hq',
+          `${(performance.now() - t1).toFixed(0)} ms, deck quality=${d3.stemQuality}, column=${lib.get(id128)?.stems}`);
+      }
+      // Stems are kept as WAV files beside the track: <folder>/stems/<track>/.
+      const kept = await window.rb.stems.meta(id128, lib.get(id128).path);
+      const wavOk = await window.rb.exists(`${kept?.dir}/vocals.wav`);
+      step('stems kept beside the track', kept?.format === 'wav' && /stems.Kick 128$/.test(kept.dir) && wavOk, `${kept?.dir} quality=${kept?.quality} wav=${wavOk}`);
+      lib.setSetting('stemsQuality', 'auto');
+    } else {
+      report.steps.push({ name: 'stems (skipped: no model)', ok: true, info: '' });
+    }
+
+    // ---- DDJ-GRV6 (virtual port: exact messages from its rekordbox mapping) ----
+    {
+      const profile = await (await fetch(new URL('../shared/controllers/ddj-grv6.json', import.meta.url))).json();
+      const sent = [];
+      const grv = app.midi.attachDriver('virtual-grv6', profile, (b) => sent.push(b), 'DDJ-GRV6 (virtual)');
+      const tx = (...msgs) => msgs.forEach((m) => grv.receive(m));
+      const press = (st, d1v) => tx([st, d1v, 0x7f], [st & 0x0f | 0x80, d1v, 0]);
+      const hires = (st, cc, v14) => tx([st, cc, v14 >> 7], [st, cc + 0x20, v14 & 0x7f]);
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      d1.pause(); d2.pause(); d3.pause(); d4.pause();
+      // Load via browser encoder + LOAD (deck 2), then play/pause deck 2 from the controller.
+      app.browser.select('collection');
+      app.browser.setFocus('list');
+      app.browser.anchor = 0;
+      tx([0xb6, 0x40, 0x01]);
+      const want = app.browser.currentTrackId();
+      press(0x96, 0x47);
+      // Deck 2 may already hold this track (automix): wait for the new load to finish, not just the id.
+      for (let k = 0; k < 50 && (d2.loading || d2.track?.id !== want); k++) await wait(100);
+      step('grv6 browse + load', d2.track?.id === want, app.library.get(want)?.title);
+      const pre = `before: playing=${d2.playing} seq=${d2.seq} rep=${JSON.stringify(d2.lastReport)}`;
+      press(0x91, 0x0b);
+      await wait(200);
+      step('grv6 play', d2.playing, `${pre} | after: seq=${d2.seq} rep=${JSON.stringify(d2.lastReport)} loaded=${d2.loaded} dur=${d2.duration} stems=${d2.stemsReady}`);
+      press(0x91, 0x0b);
+      // Mixer: 14-bit channel fader, EQ low kill, crossfader.
+      hires(0xb1, 0x13, 0);
+      hires(0xb0, 0x0f, 0);
+      hires(0xb6, 0x1f, 0);
+      step('grv6 mixer', app.engine.channels[1].state.fader < 0.01 && app.engine.channels[0].state.eq.low <= -39 && app.engine.crossfader < -0.99,
+        `fader2=${app.engine.channels[1].state.fader.toFixed(3)} low1=${app.engine.channels[0].state.eq.low.toFixed(1)} xf=${app.engine.crossfader.toFixed(2)}`);
+      hires(0xb1, 0x13, 16383); hires(0xb0, 0x0f, 8192); hires(0xb6, 0x1f, 8192);
+      // Pads: hot cue B (deck 1, pad 2), beat loop pad 5 (= 4 beats).
+      d1.play();
+      d1.deleteHotCue(1);
+      press(0x97, 0x01);
+      press(0x97, 0x64);
+      step('grv6 pads', !!d1.hotCue(1) && d1.loop?.beats === 4, `hotcueB=${!!d1.hotCue(1)} loop=${d1.loop?.beats}`);
+      d1.exitLoop();
+      // Tempo slider with soft takeover: far away -> ignored, centre -> caught, then moves.
+      d1.setTempoPct(0);
+      hires(0xb0, 0x00, 16383);
+      const ignored = Math.abs(d1.tempoPct) < 0.01;
+      hires(0xb0, 0x00, 8192);
+      hires(0xb0, 0x00, 12288);
+      step('grv6 tempo (soft takeover)', ignored && Math.abs(d1.tempoPct - d1.tempoRange * 0.5) < 0.1, `pct=${d1.tempoPct.toFixed(2)}`);
+      d1.setTempoPct(0);
+      // Jog scratch: touch, spin forward, release.
+      d1.pause();
+      d1.seek(5); // automix left deck 1 at the very end of its track
+      await wait(50);
+      const before = d1.position();
+      tx([0x90, 0x36, 0x7f]);
+      const touched = d1.scratching;
+      for (let k = 0; k < 20; k++) { tx([0xb0, 0x22, 0x40 + 20]); await wait(10); }
+      await wait(150);
+      const mid = JSON.stringify(d1.lastReport);
+      tx([0x90, 0x36, 0x00]);
+      const moved = d1.position() - before;
+      step('grv6 jog scratch', moved > 0.3, `moved ${moved.toFixed(2)} s touched=${touched} vinyl=${d1.vinyl} loaded=${d1.loaded} report=${mid}`);
+      // Beat FX: select ECHO, assign CH2, on.
+      press(0x94, 0x21); press(0x94, 0x11); press(0x94, 0x47);
+      step('grv6 beat fx', app.engine.fx.effectId === 'ECHO' && app.engine.fx.target === 'ch2' && app.engine.fx.on, `${app.engine.fx.effectId} ${app.engine.fx.target} ${app.engine.fx.on}`);
+      press(0x94, 0x47);
+      // Groove Circuit + PART ISOLATOR on a deck that has stems.
+      if (d3.stemsReady) {
+        d3.play();
+        hires(0xb2, 0x08, 0);   // PART ISOLATOR VOCAL knob fully left
+        step('grv6 part isolator', d3.stemGains[3] === 0, JSON.stringify(d3.stemGains));
+        hires(0xb2, 0x08, 16383);
+        press(0x92, 0x08);      // DRUM CAPTURE
+        for (let k = 0; k < 30 && !app.groove[2].slot(0); k++) await wait(100);
+        press(0x92, 0x00);      // DRUM SWAP 1
+        await wait(200);
+        step('grv6 drum capture + swap', !!app.groove[2].slot(0) && app.groove[2].isPlaying(0), '');
+        press(0x92, 0x00);
+        tx([0x92, 0x04, 0x7f]); await wait(200); tx([0x82, 0x04, 0]); // DRUM ROLL 1/8 hold
+        step('grv6 drum roll', true, '');
+        d3.pause();
+      } else {
+        report.steps.push({ name: 'grv6 groove circuit (skipped: no stems)', ok: true, info: '' });
+      }
+      // LEDs: deck 1 hot cue B lit, VU meters and jog ring sent.
+      sent.length = 0;
+      grv.updateLeds(true);
+      const has = (a, b) => sent.some((m) => m[0] === a && m[1] === b);
+      step('grv6 leds', sent.some((m) => m[0] === 0x97 && m[1] === 0x01 && m[2] === 0x7f) && has(0xb0, 0x02) && has(0xbf, 0x00) && has(0x90, 0x0b),
+        `${sent.length} messages`);
+      // 4-channel output: works only on a 4-channel device; on stereo it must refuse cleanly.
+      let quadInfo;
+      try { app.engine.setOutputLayout('quad'); quadInfo = 'quad active'; app.engine.setOutputLayout('stereo'); } catch (err) { quadInfo = err.message; }
+      step('grv6 audio layout', /quad active|channels/.test(quadInfo), quadInfo);
+      app.midi.controllers.delete('virtual-grv6');
+    }
+
+    // ---- rekordbox import tool: a rekordbox.xml with edited info, cues, a playlist and a missing file ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const k140 = lib.all().find((t) => t.title === 'Kick 140');
+      const struct = lib.all().find((t) => t.title === 'Structure');
+      const lost = { id: 'lost', path: `${dir}/gone/Lost.mp3`, title: 'Lost', artist: 'Nobody', cues: [{ kind: 'hot', slot: 0, start: 3 }] };
+      const xml = exportRekordboxXml({
+        tracks: [{ ...k140, title: 'Kick 140 (rb)', comments: 'from rekordbox', rating: 5, genre: 'Techno',
+          cues: [{ kind: 'hot', slot: 3, start: 2, name: 'Drop', color: '#28e214' }, { kind: 'memory', start: 1, name: 'Mem', color: '#ff0000' }] }, struct, lost],
+        playlists: [{ type: 'folder', name: 'Sets', children: [{ type: 'playlist', name: 'Imported set', trackIds: [k140.id, struct.id, 'lost'] }] }],
+      });
+      const file = `${dir}/rekordbox.xml`;
+      await window.rb.writeFile(file, xml);
+      const done = app.importXml(file);
+      let stats = null;
+      for (let k = 0; k < 50 && !(stats = document.querySelector('.rbi-stats')); k++) await wait(100);
+      for (let k = 0; k < 50 && !document.querySelector('.rbi-warn, .rbi-ok'); k++) await wait(100);
+      const warn = document.querySelector('.rbi-warn')?.textContent ?? '';
+      await wait(200);
+      await window.rb.smokeShot('rbimport');
+      [...document.querySelectorAll('.rbi-dialog .dialog-buttons button')].find((b) => b.classList.contains('primary'))?.click();
+      for (let k = 0; k < 50 && !document.querySelector('.rbi-report'); k++) await wait(100);
+      document.querySelector('.rbi-dialog .dialog-buttons button.primary')?.click();
+      const r = await done;
+      const t = lib.get(k140.id);
+      const folder = lib.playlists.find((n) => n.importSource === 'rekordbox');
+      const set = folder?.children[0]?.children[0];
+      step('rekordbox import tool', !!stats && /1 music file not found/.test(warn) && r?.added === 1 && r?.updated === 2
+        && t.title === 'Kick 140 (rb)' && t.comments === 'from rekordbox' && t.rating === 5 && t.genre === 'Techno'
+        && t.cues.some((c) => c.kind === 'hot' && c.slot === 3 && c.name === 'Drop') && t.cues.some((c) => c.kind === 'memory' && c.name === 'Mem')
+        && set?.name === 'Imported set' && set.trackIds.length === 3 && lib.all().find((x) => x.title === 'Lost')?.missing === true,
+        `report=${JSON.stringify(r)} warn="${warn.slice(0, 60)}" set=${set?.name}:${set?.trackIds.length} title=${t.title} cues=${t.cues.length}`);
+      // Re-import: same "rekordbox" folder, no duplicates.
+      const again = lib.importRekordbox(importRekordboxXml(xml), {});
+      step('rekordbox re-import (no duplicates)', again.added === 0 && lib.playlists.filter((n) => n.importSource === 'rekordbox').length === 1
+        && lib.all().filter((x) => x.title === 'Lost').length === 1, JSON.stringify(again));
+    }
+
+    // ---- download centre (yt-dlp from Stacher); the real network test only with RBCLONE_DL_TEST=1 ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const tools = await app.downloads.tools();
+      app.downloads.save({ folder: `${dir}/downloads`, format: 'm4a' });
+      app.downloads.open('search');
+      await wait(300);
+      const panel = !!document.querySelector('.dlc .dlc-tabs');
+      if (tools.ytdlp && (await window.rb.smokeDlTest())) {
+        const found = await window.rb.dl.search('me at the zoo jawed', 5);
+        const zoo = found.find((x) => x.id === 'jNQXAC9IVRw');
+        app.downloads.searchResults = found; app.downloads.query = 'me at the zoo jawed'; app.downloads.renderTab(false);
+        await app.downloads.enqueue([zoo]);
+        let pctSeen = 0;
+        for (let k = 0; k < 600 && !app.downloads.isDone(zoo.id); k++) { pctSeen = Math.max(pctSeen, app.downloads.jobs.get(zoo.id)?.pct ?? 0); await wait(100); }
+        await wait(500);
+        await window.rb.smokeShot('downloads');
+        const file = app.downloads.cfg.done[zoo.id];
+        const t = lib.get(lib.idForPath(file ?? ''));
+        const pl = lib.playlists.find((n) => n.src === 'downloads');
+        step('download centre: search + download', !!zoo && !!t && t.title === 'Me at the zoo' && t.artist === 'jawed' && pl?.trackIds.includes(t.id) && pctSeen > 0,
+          `file=${file} title=${t?.title} artist=${t?.artist} playlist=${pl?.trackIds.length} progress seen=${pctSeen}`);
+      } else {
+        await window.rb.smokeShot('downloads');
+        step('download centre', panel, `panel=${panel} yt-dlp=${tools.ytdlp ?? 'missing'} ffmpeg=${!!tools.ffmpeg} deno=${!!tools.deno}`);
+      }
+      document.querySelector('.dlc-x')?.click();
+    }
+    // RGB waveform look (brighter colours + beat grid lines).
+    {
+      const before = lib.settings.waveformColor;
+      lib.setSetting('waveformColor', 'rgb');
+      await new Promise((r) => setTimeout(r, 400));
+      await window.rb.smokeShot('rgb');
+      lib.setSetting('waveformColor', before);
+    }
+
+    if (!d1.hotCue(0)) d1.hotCuePress(0); // automix replaced deck 1's track
+    const padA = app.deckViews[0].pads[0];
+    step('ui hot cue pad', padA.classList.contains('set'), `${padA.className} cues=${d1.track.cues.length} loop=${!!d1.loop}`);
+    step('ui frames', app.frames > 10, `${app.frames} frames`);
+    await new Promise((r) => setTimeout(r, 1000));
+    step('ui hot cue pad (1 s later)', padA.classList.contains('set'), `${padA.className} cues=${JSON.stringify(d1.track.cues)} playing=${d1.playing} bank=${app.deckViews[0].bank} mode=${app.deckViews[0].padMode}`);
+    report.ok = true;
+    // Back to the default 2-deck layout for the --shot screenshot.
+    lib.setSetting('deckCount', 2); app.applyLayout();
+    app.browser.select('collection');
+    await new Promise((r) => setTimeout(r, 600));
+  } catch (err) {
+    report.error = String(err?.stack ?? err);
+  }
+  window.rb.smokeReady(report);
+}
+
+const app = new App();
+window.rbApp = app;
+app.init().then(() => {
+  if (new URLSearchParams(location.search).has('smoke')) smoke(app);
+}).catch((err) => {
+  console.error(err);
+  document.body.textContent = `Startup failed: ${err.message}`;
+  if (new URLSearchParams(location.search).has('smoke')) window.rb.smokeReady({ ok: false, error: String(err?.stack ?? err) });
+});
