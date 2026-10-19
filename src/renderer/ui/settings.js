@@ -1,4 +1,5 @@
 import { h, modal, toast } from './dom.js';
+import { icon } from './icons.js';
 import { BPM_RANGES } from '../analysis/analyzer.js';
 import { SHORTCUT_HELP } from './keyboard.js';
 import { DEFAULT_SETTINGS } from '../library.js';
@@ -228,19 +229,42 @@ export async function openSettings(library, engine, apply, midi, app) {
     ['keyboard', 'Keyboard', () => h('table.shortcuts', {}, h('tr', {}, h('th', {}, 'Function'), h('th', {}, 'Deck 1'), h('th', {}, 'Deck 2')),
       SHORTCUT_HELP.map(([f, a, b]) => h('tr', {}, h('td', {}, f), h('td', {}, a), h('td', {}, b))))],
   ];
+  // Sidebar icon and one-line description of every tab.
+  const META = {
+    general: ['gear', 'Analysis, key notation, waveform and window.'],
+    appearance: ['palette', 'Theme, accent colour, size of the interface.'],
+    decks: ['layout2', 'Number of decks, sync, tempo range and mixer curves.'],
+    audio: ['headphones', 'Sound cards for the master and the headphones.'],
+    library: ['collection', 'Where your library and stems live, USB drive, Spotify.'],
+    stems: ['wave', 'Stem separation models, quality and files.'],
+    downloads: ['download', 'Quality, folder, name cleaner and tools.'],
+    midi: ['midi', 'Connected controllers, MIDI monitor and learn.'],
+    plugins: ['plug', 'Hardware plugins: install, create, enable.'],
+    keyboard: ['keyboard', 'Keyboard shortcuts.'],
+  };
   const pane = h('div.settings-pane');
   const bar = h('div.settings-tabs', { role: 'tablist' });
   const show = async (id) => {
     const tab = tabs.find((t) => t[0] === id) ?? tabs[0];
     bar.querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.dataset.tab === tab[0]); b.setAttribute('aria-selected', b.dataset.tab === tab[0]); });
     pane.replaceChildren(h('p.dim', {}, 'Loading…'));
-    pane.replaceChildren(await tab[2]());
+    const content = await tab[2]();
+    // Every value cell of a settings grid is a block (a bare checkbox or select becomes one), so the
+    // rows line up and switches keep their size.
+    const grids = content.matches?.('.form-grid') ? [content] : [...content.querySelectorAll('.form-grid')];
+    grids.forEach((g) => [...g.children].forEach((c, i) => {
+      if (i % 2 === 1 && c.tagName !== 'DIV') { const w = document.createElement('div'); c.replaceWith(w); w.append(c); }
+    }));
+    pane.replaceChildren(h('header.settings-head', {}, h('h3', {}, tab[1]), h('p', {}, META[tab[0]]?.[1] ?? '')), h('div.settings-content', {}, content));
+    pane.scrollTop = 0;
     try { localStorage.setItem('reboxed.settingsTab', tab[0]); } catch { /* private storage */ }
   };
-  tabs.forEach(([id, label]) => bar.append(h('button', { role: 'tab', dataset: { tab: id }, onclick: () => show(id) }, label)));
+  tabs.forEach(([id, label]) => bar.append(h('button', { role: 'tab', dataset: { tab: id }, onclick: () => show(id) }, icon(META[id]?.[0] ?? 'gear'), h('span', {}, label))));
+  const version = await window.rb.version();
+  bar.append(h('div.settings-version', {}, `Reboxed ${version}`));
   let first = 'general';
   try { first = localStorage.getItem('reboxed.settingsTab') || first; } catch { /* private storage */ }
   await show(first);
   const body = h('div.settings', {}, bar, pane);
-  await modal(`Preferences — Reboxed ${await window.rb.version()}`, body, [{ label: 'Close', primary: true, value: true }]);
+  await modal(`Preferences — Reboxed ${version}`, body, [{ label: 'Close', primary: true, value: true }]);
 }
