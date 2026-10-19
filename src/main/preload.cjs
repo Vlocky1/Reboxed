@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('rb', {
     export: (job) => ipcRenderer.invoke('cdj:export', job),
     onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cdj:progress', l); return () => ipcRenderer.off('cdj:progress', l); },
   },
+  version: () => ipcRenderer.invoke('app:version'),
   fullscreen: () => ipcRenderer.invoke('win:fullscreen'),
   setFullscreen: (opts) => ipcRenderer.invoke('win:setFullscreen', opts),
   storage: {

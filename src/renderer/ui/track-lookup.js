@@ -112,7 +112,8 @@ export function lookupPanel(t, inputs, pending) {
     if (n) showCandidate();
   };
 
-  const open = h('button.dbtn.small.ti-sp-open', { type: 'button', onclick: search, title: 'Deezer, and Spotify when it is set up (Preferences > Library)' }, 'Search online');
+  const open = h('button.dbtn.small.ti-sp-open', { type: 'button', onclick: search, title: 'Deezer (genres, label…), plus Spotify when it is set up in Preferences > Library' }, 'Search Deezer');
+  window.rb.spotify?.status().then((st) => { if (st.clientId && st.hasSecret) open.textContent = 'Search Deezer + Spotify'; }).catch(() => {});
   panel.append(
     h('div.dlc-bar', {}, query, h('button.dbtn', { type: 'button', onclick: search }, 'Search'), h('button.dbtn.small', { type: 'button', onclick: () => { panel.hidden = true; } }, 'Close')),
     h('div.ti-sp-status', {}, status, ' ', pick), table, applyBtn);

@@ -258,6 +258,7 @@ function registerIpc(win) {
   ipcMain.handle('fs:findFiles', (_e, dir, names) => findFiles(dir, names));
   ipcMain.handle('fs:writeFile', (_e, path, data) => store.writeExternal(path, data));
   ipcMain.handle('shell:showItem', (_e, path) => shell.showItemInFolder(path));
+  ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('app:paths', () => ({ userData: store.dir, appDir, music: smoke ? store.dir : app.getPath('music') }));
 
   // Streaming WAV recorder: PCM chunks are appended in order, the header is patched on stop.
@@ -308,6 +309,9 @@ async function createWindow() {
     if (!smoke && (storage.cfg.startMode ?? 'maximized') === 'maximized') win.maximize();
     win.show();
   });
+  // The version shows in the title bar (the page title would replace it).
+  win.setTitle(`Reboxed ${app.getVersion()}`);
+  win.on('page-title-updated', (e) => e.preventDefault());
   registerIpc(win);
   // Full screen: F11 toggles it.
   win.webContents.on('before-input-event', (e, input) => {
