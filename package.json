@@ -1,7 +1,7 @@
 {
   "name": "reboxed",
   "productName": "Reboxed",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "private": true,
   "type": "module",
   "description": "Comme Rekordbox mais en mieux — free DJ software for Windows (library, 4 decks, stems, DDJ-GRV6).",
@@ -19,6 +19,7 @@
   "scripts": {
     "start": "electron .",
     "smoke": "electron . --smoke",
+    "shots": "electron . --shots=docs/screenshots",
     "test": "node --test",
     "demo": "node scripts/serve.js",
     "icon": "electron scripts/make-icon.mjs",

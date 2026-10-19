@@ -1965,6 +1965,7 @@ const app = new App();
 window.rbApp = app;
 app.init().then(() => {
   if (new URLSearchParams(location.search).has('smoke')) smoke(app);
+  if (new URLSearchParams(location.search).has('shots')) import('./demo-shots.js').then((m) => m.runShots(app));
 }).catch((err) => {
   console.error(err);
   document.body.textContent = `Startup failed: ${err.message}`;

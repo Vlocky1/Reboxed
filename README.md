@@ -24,6 +24,8 @@ Reboxed est un logiciel desktop (Electron + Web Audio) qui reprend les fonctionn
 npm install
 npm start          # lance l'application
 npm test           # 94 tests unitaires (recherche, DSP, grilles, phrases, Camelot, rekordbox.xml, listes, MIDI, contrôleurs, plugins, export CDJ, formes d'onde, stockage…)
+npm run shots      # captures de toutes les fonctionnalités (docs/screenshots), sur une bibliothèque de démo générée
+                   # (avec REBOXED_DEMO_SONG="chemin|Titre|Artiste" : stems HQ d'un vrai morceau, exportés pour le site)
 npm run smoke      # test de bout en bout dans Electron, sans toucher à ta bibliothèque
                    # (avec REBOXED_SPLEETER_DIR=<dossier des 4 .fp16.onnx> et/ou REBOXED_STEM_MODEL=<HT-Demucs .onnx>, il teste aussi les stems FAST/HQ ;
                    #  avec REBOXED_DL_TEST=1, il fait une vraie recherche et un vrai téléchargement YouTube)
