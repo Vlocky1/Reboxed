@@ -294,10 +294,13 @@ export class Library extends EventTarget {
   }
 
   /** Remove entries by position (a playlist may hold a track more than once). */
+  /** Remove entries by position from a playlist or a history (a list may hold a track twice). */
   removeFromPlaylist(playlistId, positions) {
+    const drop = new Set(positions);
+    const hist = this.histories.find((x) => x.id === playlistId);
+    if (hist) { hist.trackIds = hist.trackIds.filter((_, i) => !drop.has(i)); this.emit('history', { id: playlistId }); return; }
     const r = this.findNode(playlistId);
     if (r?.node.type !== 'playlist') return;
-    const drop = new Set(positions);
     r.node.trackIds = r.node.trackIds.filter((_, i) => !drop.has(i));
     this.emit('playlist', { id: playlistId });
   }
@@ -359,6 +362,18 @@ export class Library extends EventTarget {
     const t = this.tracks.get(trackId);
     if (t) this.tracks.set(trackId, { ...t, playCount: (t.playCount ?? 0) + 1 });
     this.emit('history', { id: h.id });
+  }
+
+  /** Delete one day's history (the tracks stay in the collection; play counts are kept). */
+  deleteHistory(historyId) {
+    const before = this.histories.length;
+    this.histories = this.histories.filter((x) => x.id !== historyId);
+    if (this.histories.length !== before) this.emit('history', { id: historyId });
+  }
+
+  clearHistories() {
+    this.histories = [];
+    this.emit('history', {});
   }
 
   historyToPlaylist(historyId) {

@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('rb', {
   readTagsMany: (paths) => ipcRenderer.invoke('tags:readMany', paths),
   copyInto: (src, dir) => ipcRenderer.invoke('fs:copyInto', src, dir),
   trash: (paths) => ipcRenderer.invoke('fs:trash', paths),
+  fullscreen: () => ipcRenderer.invoke('win:fullscreen'),
+  setFullscreen: (opts) => ipcRenderer.invoke('win:setFullscreen', opts),
   storage: {
     info: () => ipcRenderer.invoke('storage:info'),
     hasLibrary: (dir) => ipcRenderer.invoke('storage:hasLibrary', dir),

@@ -242,6 +242,7 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 1100, minHeight: 700,
     backgroundColor: '#111315', title: 'Reboxed', autoHideMenuBar: true,
+    fullscreen: !smoke && storage.cfg.fullscreen !== false,
     // Smoke runs need real animation frames (hidden windows get almost none): show it fully transparent.
     ...(smoke ? { opacity: 0, focusable: false, skipTaskbar: true } : {}),
     webPreferences: {
@@ -250,6 +251,16 @@ async function createWindow() {
     },
   });
   registerIpc(win);
+  // Full screen: F11 toggles it; Preferences > General chooses whether Reboxed starts in it.
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11') { e.preventDefault(); win.setFullScreen(!win.isFullScreen()); }
+  });
+  ipcMain.handle('win:fullscreen', () => ({ now: win.isFullScreen(), atStart: storage.cfg.fullscreen !== false }));
+  ipcMain.handle('win:setFullscreen', async (_e, { now, atStart } = {}) => {
+    if (typeof now === 'boolean') win.setFullScreen(now);
+    if (typeof atStart === 'boolean') { storage.cfg.fullscreen = atStart; await storage.save(); }
+    return { now: win.isFullScreen(), atStart: storage.cfg.fullscreen !== false };
+  });
 
   if (smoke) {
     ipcMain.handle('smoke:dir', () => store.dir);

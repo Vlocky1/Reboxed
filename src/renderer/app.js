@@ -1654,6 +1654,37 @@ async function smoke(app) {
       lib.deleteNode(folder.id); lib.deleteNode(pl.id);
     }
 
+    // ---- Histories can be cleaned: entries, one day, or all; full screen setting ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const b = app.browser;
+      const ids = lib.all().slice(0, 3).map((t) => t.id);
+      lib.histories.push({ id: 'history-2026-01-01', date: '2026-01-01', trackIds: [...ids] });
+      lib.emit('history', {});
+      b.select('history-2026-01-01');
+      await wait(100);
+      b.selected = new Set([b.rows[0].key]);
+      await b.removeSelected();
+      const afterRemove = lib.histories.find((x) => x.id === 'history-2026-01-01')?.trackIds.length;
+      const okDialog = async (fn) => { const p = fn(); await wait(150); document.querySelector('.dialog-buttons button.primary')?.click(); await p; };
+      await okDialog(() => b.deleteHistory(lib.histories.find((x) => x.id === 'history-2026-01-01')));
+      const deleted = !lib.histories.some((x) => x.id === 'history-2026-01-01') && b.source === 'collection';
+      lib.histories.push({ id: 'history-2026-01-02', date: '2026-01-02', trackIds: [ids[0]] }, { id: 'history-2026-01-03', date: '2026-01-03', trackIds: [ids[1]] });
+      lib.emit('history', {});
+      await wait(100);
+      const before = lib.histories.length;
+      await okDialog(() => b.clearHistories());
+      await wait(100);
+      const trashBtn = !!document.querySelector('.tree-section button[title="Delete all histories"]');
+      step('histories: remove entries, delete a day, delete all', afterRemove === 2 && deleted && before >= 2 && lib.histories.length === 0 && !trashBtn && lib.all().length >= ids.length,
+        `entries 3 -> ${afterRemove}, day deleted=${deleted}, all ${before} -> ${lib.histories.length}`);
+      const fs = await window.rb.fullscreen();
+      await window.rb.setFullscreen({ atStart: false });
+      const off = await window.rb.fullscreen();
+      await window.rb.setFullscreen({ atStart: true });
+      step('full screen at start (setting)', fs.atStart === true && fs.now === false && off.atStart === false, `default atStart=${fs.atStart}, smoke window full screen=${fs.now}`);
+    }
+
     if (!d1.hotCue(0)) d1.hotCuePress(0); // automix replaced deck 1's track
     const padA = app.deckViews[0].pads[0];
     step('ui hot cue pad', padA.classList.contains('set'), `${padA.className} cues=${d1.track.cues.length} loop=${!!d1.loop}`);

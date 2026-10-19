@@ -12,6 +12,7 @@ const DECK_KEYS = [
 ];
 
 export const SHORTCUT_HELP = [
+  ['Full screen on / off', 'F11', ''],
   ['Play / Pause', 'Z', 'N'], ['Cue (hold to preview)', 'A', 'H'], ['Beat sync', 'Q', 'Y'],
   ['Pitch bend − / +', 'W / E', 'U / I'], ['Loop in / out / exit', 'D / F / G', 'K / L / ;'],
   ['Loop ½ / ×2', 'Shift+D / Shift+G', 'Shift+K / Shift+;'], ['Beat loop ½,1,2,4,8', 'Ctrl+1…5', 'Ctrl+6…0'],

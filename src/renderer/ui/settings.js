@@ -154,7 +154,12 @@ export async function openSettings(library, engine, apply, midi, app) {
         h('label', {}, 'Create cues from phrases'), check('autoCues')),
       h('h4', {}, 'View'),
       h('div.form-grid', {},
-        h('label', {}, 'Waveform color'), sel('waveformColor', [['3band', '3Band'], ['rgb', 'RGB'], ['blue', 'BLUE']])))],
+        h('label', {}, 'Waveform color'), sel('waveformColor', [['3band', '3Band'], ['rgb', 'RGB'], ['blue', 'BLUE']]),
+        h('label', {}, 'Start in full screen'), (() => {
+          const box = h('input', { type: 'checkbox', disabled: true, onchange: (e) => window.rb.setFullscreen({ atStart: e.target.checked }) });
+          window.rb.fullscreen().then((f) => { box.checked = f.atStart; box.disabled = false; });
+          return h('div', {}, box, h('span.dim', {}, '  F11 switches full screen on / off at any time'));
+        })()))],
     ['decks', 'Decks & Mixer', () => h('div.form-grid', {},
       h('label', {}, 'Decks'), sel('deckCount', [[2, '2 decks'], [4, '4 decks']], Number),
       h('label', {}, 'Sync mode'), sel('syncMode', [['beat', 'BEAT SYNC (tempo + phase)'], ['bpm', 'BPM SYNC (tempo only)']]),
