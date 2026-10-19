@@ -1,7 +1,7 @@
-// Track downloader: drives yt-dlp (the engine Stacher uses) to search YouTube, read channel /
-// playlist feeds for new releases and download audio with ffmpeg. Tools are found in the
-// Stacher folder (~/.stacher: yt-dlp, ffmpeg, deno for YouTube's JS challenges), a custom folder
-// or the PATH. Nothing is bundled.
+// Track downloader: drives yt-dlp to search YouTube or SoundCloud, read links (tracks, videos,
+// playlists, artist pages), read channel feeds for new releases and download audio with ffmpeg.
+// Tools (yt-dlp, ffmpeg, deno for YouTube's JS challenges) are found in a folder chosen in the
+// Preferences, the PATH, or ~/.stacher when Stacher is installed. Nothing is bundled.
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -28,14 +28,32 @@ export const METADATA = [
 
 const PROGRESS = 'download:[rb] %(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s';
 
-/** yt-dlp entry -> what the UI shows. */
+/** Platform of a link: 'youtube', 'soundcloud' or null. */
+export function platformOf(url) {
+  let host = '';
+  try { host = new URL(String(url).trim()).hostname.toLowerCase(); } catch { return null; }
+  if (/(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/.test(host)) return 'youtube';
+  if (/(^|\.)(soundcloud\.com|snd\.sc)$/.test(host)) return 'soundcloud';
+  return null;
+}
+
+/** Search prefixes understood by yt-dlp. */
+export const SEARCH = { youtube: 'ytsearch', soundcloud: 'scsearch' };
+
+/** yt-dlp entry -> what the UI shows. SoundCloud ids get an "sc:" prefix (they are numbers). */
 export function toItem(e) {
   if (!e?.id) return null;
   const thumbs = e.thumbnails ?? [];
   const date = e.upload_date ? Date.UTC(+e.upload_date.slice(0, 4), +e.upload_date.slice(4, 6) - 1, +e.upload_date.slice(6, 8)) / 1000 : null;
+  const sc = /soundcloud/i.test(e.ie_key ?? e.extractor_key ?? '') || platformOf(e.webpage_url ?? e.url) === 'soundcloud';
+  let url = e.webpage_url;
+  if (!url && sc) url = e.url;
+  if (!url) url = e.ie_key === 'Youtube' || /^[\w-]{11}$/.test(e.id) ? `https://www.youtube.com/watch?v=${e.id}` : e.url;
+  const big = thumbs.find((t) => t.id === 't500x500') ?? thumbs[thumbs.length - 1];
   return {
-    id: e.id,
-    url: e.webpage_url || (e.ie_key === 'Youtube' || /^[\w-]{11}$/.test(e.id) ? `https://www.youtube.com/watch?v=${e.id}` : e.url),
+    id: sc ? `sc:${e.id}` : e.id,
+    platform: sc ? 'soundcloud' : 'youtube',
+    url,
     title: e.title ?? e.id,
     channel: e.channel ?? e.uploader ?? '',
     channelUrl: e.channel_url ?? e.uploader_url ?? '',
@@ -43,7 +61,10 @@ export function toItem(e) {
     timestamp: e.timestamp ?? e.release_timestamp ?? date,
     views: e.view_count ?? null,
     verified: !!e.channel_is_verified,
-    thumb: thumbs.length ? thumbs[thumbs.length - 1].url : (e.thumbnail ?? ''),
+    // SoundCloud Go+ tracks only give a 30 s preview to everyone else.
+    preview: sc && Math.round(e.duration ?? 0) === 30,
+    playlist: sc && /\/sets\//.test(url ?? ''),
+    thumb: big?.url ?? e.thumbnail ?? '',
   };
 }
 
@@ -51,6 +72,8 @@ export function toItem(e) {
 export function feedUrl(url) {
   const u = String(url).trim();
   if (/youtube\.com\/(@[^/?#]+|channel\/[^/?#]+|c\/[^/?#]+|user\/[^/?#]+)\/?$/i.test(u)) return `${u.replace(/\/$/, '')}/videos`;
+  // A SoundCloud artist page lists its tracks.
+  if (/soundcloud\.com\/[^/?#]+\/?$/i.test(u)) return `${u.replace(/\/$/, '')}/tracks`;
   return u;
 }
 
@@ -83,7 +106,7 @@ export class Downloader {
 
   async base() {
     const t = await this.tools();
-    if (!t.ytdlp) throw new Error('yt-dlp not found (install Stacher, or set its folder in the download settings)');
+    if (!t.ytdlp) throw new Error('yt-dlp not found (install yt-dlp, or choose its folder in Preferences > Downloads)');
     // IPv4: on this kind of network IPv6 attempts time out first (search: 163 s -> 4 s).
     const args = ['--force-ipv4', '--no-warnings', '--no-colors'];
     if (t.deno) args.push('--js-runtimes', `deno:${t.deno}`);
@@ -121,9 +144,9 @@ export class Downloader {
     return JSON.parse(r.out);
   }
 
-  /** YouTube search. */
-  async search(query, count = 20) {
-    const d = await this.json(`ytsearch${count}:${query}`);
+  /** Search on 'youtube' or 'soundcloud'. */
+  async search(query, count = 20, platform = 'youtube') {
+    const d = await this.json(`${SEARCH[platform] ?? SEARCH.youtube}${count}:${query}`);
     return (d.entries ?? []).map(toItem).filter(Boolean);
   }
 
@@ -134,11 +157,19 @@ export class Downloader {
     return { name: (d.channel ?? d.uploader ?? d.title ?? url).replace(/ - (Videos|Home)$/, ''), url: feedUrl(url), items: entries.map(toItem).filter(Boolean) };
   }
 
-  /** A pasted link: one video, or every entry of a playlist. */
+  /** A pasted YouTube / SoundCloud link: one track, or every entry of a playlist or artist page. */
   async resolve(url) {
+    if (!platformOf(url)) throw new Error('Not a YouTube or SoundCloud link');
     const d = await this.json(url.trim(), ['--playlist-end', '200']);
-    if (d._type === 'playlist') return (d.entries ?? []).map(toItem).filter(Boolean);
-    return [toItem(d)].filter(Boolean);
+    if (d._type !== 'playlist') return [toItem(d)].filter(Boolean);
+    const items = (d.entries ?? []).map(toItem).filter(Boolean);
+    // A SoundCloud ".../sets" page lists playlists: open them (the first 10) to list their tracks.
+    if (items.length && items.every((it) => it.playlist)) {
+      const out = [];
+      for (const pl of items.slice(0, 10)) out.push(...await this.resolve(pl.url).catch(() => []));
+      return out;
+    }
+    return items.filter((it) => !it.playlist);
   }
 
   /**

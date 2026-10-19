@@ -120,7 +120,7 @@ class App {
     this.recBtn.classList.add('rec');
     this.recTime = h('span.rec-time');
     this.downloads = new DownloadCenter(this);
-    this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download tracks: ask for a track, search YouTube, links, new releases', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'request'));
+    this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download tracks: search YouTube or SoundCloud, links, new releases', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'search'));
     this.dlBadge = h('span.dl-badge', { hidden: true });
     this.dlBtn.append(this.dlBadge);
     this.samplerView = new SamplerView(this.sampler, this);
@@ -1528,7 +1528,7 @@ async function smoke(app) {
         && lib.all().filter((x) => x.title === 'Lost').length === 1, JSON.stringify(again));
     }
 
-    // ---- download centre (yt-dlp from Stacher); the real network test only with REBOXED_DL_TEST=1 ----
+    // ---- download centre (yt-dlp); the real network test only with REBOXED_DL_TEST=1 ----
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const tools = await app.downloads.tools();
@@ -1601,37 +1601,39 @@ async function smoke(app) {
       step('cdj export', r.tracks > 0 && r.tracks + r.missing.length === tracks.length && r.playlists >= 1 && files.every(Boolean), `${JSON.stringify({ ...r, missing: r.missing.length })} files=${files}`);
     }
 
-    // ---- Ask for a track: one proposal at a time, official sources first, yes / no ----
+    // ---- Download centre: Search with a platform choice, Link with platform detection ----
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const dlc = app.downloads;
-      dlc.open('request');
+      dlc.save({ platform: 'youtube' });
+      dlc.open('search');
       await wait(200);
-      const fake = [
-        { id: 'aaaaaaaaaa1', url: 'https://www.youtube.com/watch?v=aaaaaaaaaa1', title: 'Artist - Song | Lyrics', channel: 'Lyrics Hub', duration: 210, views: 900000 },
-        { id: 'aaaaaaaaaa2', url: 'https://www.youtube.com/watch?v=aaaaaaaaaa2', title: 'Song', channel: 'Artist - Topic', duration: 212, views: 50000 },
-        { id: 'aaaaaaaaaa3', url: 'https://www.youtube.com/watch?v=aaaaaaaaaa3', title: 'Artist - Song (Official Video)', channel: 'Artist', verified: true, duration: 230, views: 4000000 },
-      ];
-      const { rankCandidates } = await import('../shared/track-request.js');
-      dlc.req = { text: '', queue: [], query: 'Artist - Song', list: rankCandidates(fake, 'Artist - Song'), k: 0, loading: false, error: '', accepted: [] };
-      dlc.renderTab(false);
-      await wait(200);
-      const first = document.querySelector('.dlc-proposal .dlc-ptitle')?.textContent;
-      const badge = document.querySelector('.dlc-proposal .dlc-official')?.textContent ?? '';
-      await window.rb.smokeShot('request');
-      document.querySelector('.dlc-proposal .dlc-no').click();
+      const tabs = [...document.querySelectorAll('.dlc-tabs button')].map((x) => x.textContent.replace(/ \(.*/, ''));
+      document.querySelector('.dlc-platform [data-platform="soundcloud"]').click();
+      await wait(150);
+      const scPlaceholder = document.querySelector('.dlc-bar input.text')?.placeholder ?? '';
+      const remembered = dlc.cfg.platform;
+      await window.rb.smokeShot('dl-search');
+      dlc.showTab('link');
       await wait(100);
-      const second = document.querySelector('.dlc-proposal .dlc-ptitle')?.textContent;
-      step('ask for a track: proposals', first === 'Song' && /Topic/.test(badge) && second === 'Artist - Song (Official Video)', `1: ${first} (${badge}) · after No: ${second}`);
+      const input = document.querySelector('.dlc-bar input.text');
+      const badgeFor = (url) => { input.value = url; input.dispatchEvent(new Event('input')); return [document.querySelector('.dlc-badge').textContent, document.querySelector('.dlc-bar .dlc-primary').disabled]; };
+      const yt = badgeFor('https://youtu.be/jNQXAC9IVRw');
+      const other = badgeFor('https://example.com/song.mp3');
+      const sc = badgeFor('https://soundcloud.com/indochineofficiel/3-nuits-par-semaine');
+      await window.rb.smokeShot('dl-link');
+      step('download centre: search platforms + link detection',
+        tabs.join('|') === 'Search|Link|New releases|Queue' && /SoundCloud/.test(scPlaceholder) && remembered === 'soundcloud'
+          && yt[0] === 'YouTube link' && !yt[1] && other[1] && /Not a YouTube/.test(other[0]) && sc[0] === 'SoundCloud link' && !sc[1],
+        `tabs ${tabs.join('|')} · ${scPlaceholder} · yt ${yt} · other ${other} · sc ${sc}`);
       const tools = await dlc.tools();
       if (tools.ytdlp && (await window.rb.smokeDlTest())) {
-        dlc.req.queue = ['jawed - Me at the zoo'];
-        await dlc.nextRequest();
-        const top = dlc.req.list?.[0];
-        document.querySelector('.dlc-proposal .dlc-yes')?.click();
-        for (let k = 0; k < 600 && !(top && dlc.isDone(top.id)); k++) await wait(100);
-        step('ask for a track: real request + yes', top?.id === 'jNQXAC9IVRw' && top.official === 'artist' && dlc.isDone(top.id), `${top?.title} by ${top?.channel} (${top?.official})`);
+        const found = await window.rb.dl.search('indochine trois nuits par semaine', 5, 'soundcloud');
+        const link = await window.rb.dl.resolve('https://soundcloud.com/indochineofficiel/3-nuits-par-semaine');
+        step('download centre: real SoundCloud search + link', found.length > 0 && found.every((x) => x.platform === 'soundcloud' && x.id.startsWith('sc:') && /soundcloud\.com/.test(x.url))
+          && link.length === 1 && link[0].platform === 'soundcloud', `${found.map((x) => `${x.title} (${x.channel}${x.preview ? ', preview' : ''})`).join(' · ')} · link ${link[0]?.title}`);
       }
+      dlc.save({ platform: 'youtube' });
       document.querySelector('.dlc-x')?.click();
     }
 
@@ -1711,6 +1713,32 @@ async function smoke(app) {
       const e = lib.get(t.id);
       step('track information: detailed and editable', sections.length === 4 && fields >= 20 && e.title === 'Kick 140 (edited)' && e.rating === 4 && e.key === '5A' && e.myTags.join() === 'peak,vocal',
         `${sections.join(' | ')} · ${fields} fields · saved: ${e.title}, ${e.rating}★, ${e.key}, [${e.myTags}]`);
+
+      // Search Spotify (offline: canned answer): Genre ticked by default, only ticked fields change.
+      const { spotifyApi } = await import('./ui/spotify-lookup.js');
+      const realLookup = spotifyApi.lookup;
+      spotifyApi.lookup = async () => [{ title: 'Kick 140', mixName: 'Extended Mix', artist: 'Smoke Artist', album: 'Smoke EP', albumArtist: 'Smoke Artist',
+        genre: 'Melodic Techno', genres: ['Melodic Techno', 'Hard Techno'], year: 2024, trackNumber: 2, discNumber: 1, label: '', duration: e.duration, artworkUrl: '', thumbUrl: '', spotifyUrl: '' }];
+      const closed2 = b.editTrack(t.id);
+      await wait(300);
+      document.querySelector('.trackinfo .ti-sp-open').click();
+      await wait(200);
+      const ticked = [...document.querySelectorAll('.ti-sp-row')].filter((r) => r.querySelector('input').checked).map((r) => r.querySelector('.ti-sp-k').textContent);
+      await window.rb.smokeShot('spotify');
+      document.querySelector('.ti-spotify .dlc-primary').click();
+      await wait(100);
+      document.querySelector('.dialog:has(.trackinfo) .dialog-buttons button.primary').click();
+      await closed2;
+      spotifyApi.lookup = realLookup;
+      const s2 = lib.get(t.id);
+      step('track information: Search Spotify fills the ticked fields', ticked.join() === 'Genre' && s2.genre === 'Melodic Techno' && s2.title === 'Kick 140 (edited)' && s2.album !== 'Smoke EP',
+        `ticked [${ticked}] · genre ${s2.genre} · title ${s2.title} · album ${s2.album}`);
+
+      // Date Added shows the time for tracks added now.
+      b.select('collection');
+      await wait(200);
+      const dates = [...document.querySelectorAll('.td.c-dateAdded')].map((x) => x.textContent);
+      step('date added with time', dates.some((x) => /^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(x)), dates.slice(0, 4).join(' | '));
     }
 
     // ---- Playlist tree: drag a playlist into a folder, then back to the top level ----
@@ -1768,10 +1796,11 @@ async function smoke(app) {
       step('histories: remove entries, delete a day, delete all', afterRemove === 2 && deleted && before >= 2 && lib.histories.length === 0 && !trashBtn && lib.all().length >= ids.length,
         `entries 3 -> ${afterRemove}, day deleted=${deleted}, all ${before} -> ${lib.histories.length}`);
       const fs = await window.rb.fullscreen();
-      await window.rb.setFullscreen({ atStart: false });
-      const off = await window.rb.fullscreen();
-      await window.rb.setFullscreen({ atStart: true });
-      step('full screen at start (setting)', fs.atStart === true && fs.now === false && off.atStart === false, `default atStart=${fs.atStart}, smoke window full screen=${fs.now}`);
+      await window.rb.setFullscreen({ startMode: 'fullscreen' });
+      const full = await window.rb.fullscreen();
+      await window.rb.setFullscreen({ startMode: 'maximized' });
+      step('window at start: maximised by default (setting)', fs.startMode === 'maximized' && fs.now === false && full.startMode === 'fullscreen',
+        `default ${fs.startMode}, smoke window full screen=${fs.now}, after change ${full.startMode}`);
     }
 
     if (!d1.hotCue(0)) d1.hotCuePress(0); // automix replaced deck 1's track

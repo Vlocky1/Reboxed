@@ -36,10 +36,11 @@ export const DEFAULT_SETTINGS = {
   controllerAudioAuto: true,   // use a recognised controller's sound card automatically
   controllerTempoInvert: false,
   // Track downloader (yt-dlp, as used by Stacher): folder '' = <Music>/Reboxed Downloads.
-  downloads: { folder: '', format: 'm4a', toolsDir: '', playlist: true, subs: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
+  downloads: { folder: '', format: 'm4a', platform: 'youtube', toolsDir: '', playlist: true, subs: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+/** Local date YYYY-MM-DD (the "Date Added" day; the exact moment is in addedAt, ms). */
+export const today = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const newId = () => crypto.randomUUID();
 const pathKey = (p) => (/^[A-Za-z]:\\/.test(p) ? p.toLowerCase() : p);
 
@@ -89,7 +90,7 @@ export class Library extends EventTarget {
     for (const r of results) {
       if (this.byPath.has(pathKey(r.path))) continue;
       const t = {
-        id: newId(), dateAdded: today(), rating: 0, color: '', myTags: [], cues: [], playCount: 0, analyzed: false,
+        id: newId(), dateAdded: today(), addedAt: Date.now(), rating: 0, color: '', myTags: [], cues: [], playCount: 0, analyzed: false,
         ...r, key: normalizeKeyText(r.key),
       };
       delete t.error;
@@ -177,7 +178,9 @@ export class Library extends EventTarget {
         this.tracks.set(id, { ...old, ...patch });
         report.updated++;
       } else {
-        const t = { id: newId(), dateAdded: today(), rating: 0, color: '', myTags: [], cues: [], playCount: 0, analyzed: false, ...patch };
+        // rekordbox only knows the day a track was added: the time is kept only when it is today.
+        const t = { id: newId(), dateAdded: today(), addedAt: Date.now(), rating: 0, color: '', myTags: [], cues: [], playCount: 0, analyzed: false, ...patch };
+        if (t.dateAdded !== today()) delete t.addedAt;
         this.tracks.set(t.id, t);
         this.byPath.set(pathKey(t.path), t.id);
         report.added++;

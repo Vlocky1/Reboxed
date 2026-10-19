@@ -122,7 +122,32 @@ async function librarySection(app) {
       return n ? `${n} track(s) of the collection are still on this computer (${drive}).` : '✓ No track of the collection is on this computer.';
     })()),
     h('p.dim', {}, 'Move the collection to a folder you choose on your drive: each track is linked to the same music there — same name, another format, or a similar name confirmed by tags and duration — or copied there. You check every doubtful match first. Cues, tags, analysis and playlists are kept, stems move along, and the local files can go to the Recycle Bin.'),
-    h('button.dbtn', { onclick: () => openRelink(app) }, 'Move my collection to a USB drive…'));
+    h('button.dbtn', { onclick: () => openRelink(app) }, 'Move my collection to a USB drive…'),
+    await spotifySection());
+}
+
+/** Spotify app credentials for "Search Spotify" in Track information. */
+async function spotifySection() {
+  const st = await window.rb.spotify.status();
+  const id = h('input.text', { value: st.clientId, placeholder: 'Client ID', spellcheck: false });
+  const secret = h('input.text', { type: 'password', placeholder: st.hasSecret ? '•••••••• (saved — type to replace)' : 'Client Secret', spellcheck: false });
+  const status = h('span.dim', {}, st.clientId && st.hasSecret ? '✓ Set up' : 'Not set up');
+  const save = async () => {
+    status.textContent = 'Checking…';
+    try {
+      const r = await window.rb.spotify.setCredentials(id.value.trim(), secret.value.trim());
+      secret.value = '';
+      status.textContent = r.clientId && r.hasSecret ? '✓ Connected to Spotify' : 'Removed';
+    } catch (err) { status.textContent = `✗ ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`; }
+  };
+  return h('div', {},
+    h('h4', {}, 'Track information from Spotify'),
+    h('p.dim', {}, 'Track information ▸ "Search Spotify" fills genre, album, year… from Spotify. It needs a free Spotify app: on developer.spotify.com/dashboard create an app (any name, redirect URI http://127.0.0.1/ , Web API), then copy its Client ID and Client Secret here. The secret is stored encrypted on this computer.'),
+    h('div.form-grid', {},
+      h('label', {}, 'Client ID'), id,
+      h('label', {}, 'Client Secret'), secret,
+      h('label', {}, ''), h('div', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
+        h('button.dbtn.small', { onclick: async () => { id.value = ''; secret.value = ''; await window.rb.spotify.setCredentials('', ''); status.textContent = 'Removed'; } }, 'Remove'), ' ', status)));
 }
 
 /** Track downloader preferences (moved here from the download window). */
@@ -172,10 +197,11 @@ export async function openSettings(library, engine, apply, midi, app) {
       h('h4', {}, 'View'),
       h('div.form-grid', {},
         h('label', {}, 'Waveform color'), sel('waveformColor', [['3band', '3Band'], ['rgb', 'RGB'], ['blue', 'BLUE']]),
-        h('label', {}, 'Start in full screen'), (() => {
-          const box = h('input', { type: 'checkbox', disabled: true, onchange: (e) => window.rb.setFullscreen({ atStart: e.target.checked }) });
-          window.rb.fullscreen().then((f) => { box.checked = f.atStart; box.disabled = false; });
-          return h('div', {}, box, h('span.dim', {}, '  F11 switches full screen on / off at any time'));
+        h('label', {}, 'Window at start'), (() => {
+          const sel = h('select', { disabled: true, onchange: (e) => window.rb.setFullscreen({ startMode: e.target.value }) },
+            [['maximized', 'Full screen windowed (maximised)'], ['fullscreen', 'Full screen'], ['window', 'Normal window']].map(([v, l]) => h('option', { value: v }, l)));
+          window.rb.fullscreen().then((f) => { sel.value = f.startMode; sel.disabled = false; });
+          return h('div', {}, sel, h('span.dim', {}, '  F11 switches full screen on / off at any time'));
         })()))],
     ['decks', 'Decks & Mixer', () => h('div.form-grid', {},
       h('label', {}, 'Decks'), sel('deckCount', [[2, '2 decks'], [4, '4 decks']], Number),

@@ -10,6 +10,11 @@ import { mediaUrl } from '../analysis/analyzer.js';
 import { editSmartList, relatedPanel } from './lists-ui.js';
 import { openRelink } from './relink.js';
 import { openCdjExport } from './cdj-export.js';
+import { spotifyPanel } from './spotify-lookup.js';
+import { addedTime, dateAddedText } from '../../shared/date-added.js';
+
+/** Value of the Track information date-time field. */
+const dateTimeInput = (t) => (t.dateAdded ? `${t.dateAdded}T${addedTime(t) ?? '00:00'}` : '');
 
 const ROW_H = 24;
 const COLOR_CSS = Object.fromEntries(TRACK_COLORS.map((c) => [c.name, c.css]));
@@ -28,7 +33,7 @@ export const COLUMNS = {
   key: { label: 'Key', width: 50, get: (r, s) => displayKey(r.track.key, s.keyNotation), sort: (r) => CAMELOT.indexOf(r.track.key) },
   duration: { label: 'Time', width: 56, get: (r) => (r.track.duration ? fmtTime(r.track.duration) : ''), sort: (r) => r.track.duration ?? 0, num: true },
   rating: { label: 'Rating', width: 76, get: () => '', sort: (r) => r.track.rating ?? 0 },
-  dateAdded: { label: 'Date Added', width: 90, get: (r) => r.track.dateAdded, sort: (r) => r.track.dateAdded ?? '' },
+  dateAdded: { label: 'Date Added', width: 120, get: (r) => dateAddedText(r.track), sort: (r) => `${r.track.dateAdded ?? ''} ${addedTime(r.track) ?? '00:00'}` },
   comments: { label: 'Comments', width: 180, get: (r) => r.track.comments, sort: (r) => (r.track.comments ?? '').toLowerCase() },
   label: { label: 'Label', width: 120, get: (r) => r.track.label, sort: (r) => (r.track.label ?? '').toLowerCase() },
   year: { label: 'Year', width: 50, get: (r) => r.track.year || '', sort: (r) => r.track.year ?? 0, num: true },
@@ -817,9 +822,14 @@ export class Browser {
     const cues = t.cues ?? [];
     const kb = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n ? `${Math.round(n / 1024)} kB` : '');
     const info = (label, value) => (value || value === 0 ? [h('label', {}, label), h('div.ti-ro', {}, String(value))] : []);
+    const pending = { artwork: null };
+    const sp = spotifyPanel(t, inputs, pending);
 
     const body = h('div.trackinfo', {},
-      h('p.ti-note', {}, 'Every field below can be edited. Changes are saved in your Reboxed library (they appear everywhere in Reboxed and in exports); the audio file itself is not modified.'),
+      h('div.ti-top', {},
+        h('p.ti-note', {}, 'Every field below can be edited. Changes are saved in your Reboxed library (they appear everywhere in Reboxed and in exports); the audio file itself is not modified.'),
+        sp.button),
+      sp.panel,
       h('div.ti-cols', {},
         h('div', {},
           h('h4', {}, 'Track'),
@@ -841,7 +851,7 @@ export class Browser {
             row('BPM', bpm, t.beatgrid ? 'Changing it re-spaces the beatgrid from its first beat' : ''),
             row('Key', key),
             row('DJ play count', text('playCount', { number: true })),
-            row('Date added', (inputs.dateAdded = h('input.text', { type: 'date', value: t.dateAdded ?? '' })))),
+            row('Date added', (inputs.dateAdded = h('input.text', { type: 'datetime-local', value: dateTimeInput(t) })))),
           h('h4', {}, 'File (read only)'),
           h('div.form-grid', {},
             h('label', {}, 'Location'), h('div.ti-ro', {}, h('span.path', {}, t.path), ' ', h('button.dbtn.small', { onclick: () => window.rb.showItem(t.path) }, 'Show in folder')),
@@ -858,7 +868,13 @@ export class Browser {
     const patch = { rating: ratingValue, color: color.value, key: key.value };
     for (const k of ['title', 'artist', 'album', 'albumArtist', 'genre', 'remixer', 'originalArtist', 'composer', 'label', 'mixName', 'grouping', 'comments']) patch[k] = inputs[k].value;
     for (const k of ['year', 'trackNumber', 'discNumber', 'playCount']) patch[k] = Math.max(0, Math.round(Number(inputs[k].value) || 0));
-    patch.dateAdded = inputs.dateAdded.value || t.dateAdded;
+    if (inputs.dateAdded.value && inputs.dateAdded.value !== dateTimeInput(t)) {
+      patch.dateAdded = inputs.dateAdded.value.slice(0, 10);
+      patch.addedAt = inputs.dateAdded.value.length > 10 ? new Date(inputs.dateAdded.value).getTime() : undefined;
+    }
+    if (pending.artwork) {
+      try { patch.artwork = await window.rb.artworkFromUrl(pending.artwork); } catch (err) { toast(`Cover not saved: ${err.message}`); }
+    }
     patch.myTags = tags.value.split(',').map((x) => x.trim()).filter(Boolean);
     const newBpm = Number(bpm.value);
     if (newBpm > 0 && Math.abs(newBpm - (t.bpm ?? 0)) > 0.001) {

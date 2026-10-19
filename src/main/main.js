@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, safeStorage, shell } from 'electron';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { basename, dirname, extname, join, normalize, sep } from 'node:path';
@@ -13,6 +13,7 @@ import { Storage, migrateLegacyAppDir, hasLibrary, copyDatabase, moveStemsRoot }
 import { Downloader } from './downloader.js';
 import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
+import { Spotify } from './spotify.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
@@ -115,6 +116,33 @@ function registerIpc(win) {
   ipcMain.handle('plugins:remove', (_e, id) => plugins.remove(id));
   ipcMain.handle('plugins:createFromCsv', (_e, csv, opts) => plugins.createFromCsv(csv, opts));
   ipcMain.handle('plugins:openFolder', async () => { await mkdir(plugins.userDir, { recursive: true }); return shell.openPath(plugins.userDir); });
+  // Spotify track information lookup. The Client Secret is kept encrypted (OS keychain) in location.json.
+  const spotify = new Spotify({
+    fetch: (url, opts) => net.fetch(url, opts),
+    credentials: () => {
+      const c = storage.cfg.spotify;
+      if (!c?.clientId || !c?.secret) return null;
+      try { return { clientId: c.clientId, secret: safeStorage.decryptString(Buffer.from(c.secret, 'base64')) }; } catch { return null; }
+    },
+  });
+  ipcMain.handle('spotify:status', () => ({ clientId: storage.cfg.spotify?.clientId ?? '', hasSecret: !!storage.cfg.spotify?.secret }));
+  ipcMain.handle('spotify:setCredentials', async (_e, clientId, secret) => {
+    const prev = storage.cfg.spotify ?? {};
+    const enc = secret ? safeStorage.encryptString(secret).toString('base64') : (clientId ? prev.secret : null);
+    storage.cfg.spotify = clientId ? { clientId, secret: enc } : null;
+    await storage.save();
+    spotify.forget();
+    if (clientId && enc) await spotify.auth(); // check the credentials now
+    return { clientId: storage.cfg.spotify?.clientId ?? '', hasSecret: !!storage.cfg.spotify?.secret };
+  });
+  ipcMain.handle('spotify:lookup', (_e, q) => spotify.lookup(q));
+  /** Cover from a URL (Spotify) -> library artwork thumbnail path. */
+  ipcMain.handle('artwork:fromUrl', async (_e, url) => {
+    if (!/^https:\/\/i\.scdn\.co\//.test(url)) throw new Error('unsupported artwork URL');
+    const res = await net.fetch(url);
+    if (!res.ok) throw new Error(`artwork ${res.status}`);
+    return saveArtwork(new Uint8Array(await res.arrayBuffer()));
+  });
   // Export to a USB drive for CDJ / XDJ players.
   ipcMain.handle('cdj:drives', () => listDrives());
   ipcMain.handle('cdj:export', (e, job) => exportToDrive(job, {
@@ -158,7 +186,7 @@ function registerIpc(win) {
   });
   downloader = new Downloader((ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); });
   ipcMain.handle('dl:tools', (_e, dir) => { downloader.customDir = dir ?? ''; return downloader.tools(); });
-  ipcMain.handle('dl:search', (_e, q, n) => downloader.search(q, n));
+  ipcMain.handle('dl:search', (_e, q, n, platform) => downloader.search(q, n, platform));
   ipcMain.handle('dl:feed', (_e, url, n) => downloader.feed(url, n));
   ipcMain.handle('dl:resolve', (_e, url) => downloader.resolve(url));
   ipcMain.handle('dl:download', (_e, item, opts) => downloader.download(item, opts));
@@ -261,7 +289,8 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 1100, minHeight: 700,
     backgroundColor: '#111315', title: 'Reboxed', autoHideMenuBar: true,
-    fullscreen: !smoke && storage.cfg.fullscreen !== false,
+    fullscreen: !smoke && storage.cfg.startMode === 'fullscreen',
+    show: false,
     // Smoke runs need real animation frames (hidden windows get almost none): show it fully transparent.
     ...(smoke ? { opacity: 0, focusable: false, skipTaskbar: true } : {}),
     webPreferences: {
@@ -269,16 +298,22 @@ async function createWindow() {
       autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false,
     },
   });
+  // Start maximised (full screen windowed) by default; Preferences > General: full screen or a normal window.
+  win.once('ready-to-show', () => {
+    if (!smoke && (storage.cfg.startMode ?? 'maximized') === 'maximized') win.maximize();
+    win.show();
+  });
   registerIpc(win);
-  // Full screen: F11 toggles it; Preferences > General chooses whether Reboxed starts in it.
+  // Full screen: F11 toggles it.
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.key === 'F11') { e.preventDefault(); win.setFullScreen(!win.isFullScreen()); }
   });
-  ipcMain.handle('win:fullscreen', () => ({ now: win.isFullScreen(), atStart: storage.cfg.fullscreen !== false }));
-  ipcMain.handle('win:setFullscreen', async (_e, { now, atStart } = {}) => {
+  const startMode = () => storage.cfg.startMode ?? 'maximized';
+  ipcMain.handle('win:fullscreen', () => ({ now: win.isFullScreen(), startMode: startMode() }));
+  ipcMain.handle('win:setFullscreen', async (_e, { now, startMode: mode } = {}) => {
     if (typeof now === 'boolean') win.setFullScreen(now);
-    if (typeof atStart === 'boolean') { storage.cfg.fullscreen = atStart; await storage.save(); }
-    return { now: win.isFullScreen(), atStart: storage.cfg.fullscreen !== false };
+    if (['maximized', 'fullscreen', 'window'].includes(mode)) { storage.cfg.startMode = mode; await storage.save(); }
+    return { now: win.isFullScreen(), startMode: startMode() };
   });
 
   if (smoke) {
