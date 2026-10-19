@@ -10,7 +10,7 @@ import { mediaUrl } from '../analysis/analyzer.js';
 import { editSmartList, relatedPanel } from './lists-ui.js';
 import { openRelink } from './relink.js';
 import { openCdjExport } from './cdj-export.js';
-import { spotifyPanel } from './spotify-lookup.js';
+import { lookupPanel } from './track-lookup.js';
 import { addedTime, dateAddedText } from '../../shared/date-added.js';
 
 /** Value of the Track information date-time field. */
@@ -823,7 +823,7 @@ export class Browser {
     const kb = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n ? `${Math.round(n / 1024)} kB` : '');
     const info = (label, value) => (value || value === 0 ? [h('label', {}, label), h('div.ti-ro', {}, String(value))] : []);
     const pending = { artwork: null };
-    const sp = spotifyPanel(t, inputs, pending);
+    const sp = lookupPanel(t, inputs, pending);
 
     const body = h('div.trackinfo', {},
       h('div.ti-top', {},

@@ -1,6 +1,7 @@
-// Track information ▸ "Search Spotify": find the track on Spotify, show what was found next to each
-// field, and copy only the ticked values into the form (Genre is ticked by default). Nothing is
-// saved until the Track information dialog is saved.
+// Track information ▸ "Search online": find the track on Deezer (no account needed) and Spotify
+// (when set up in Preferences), show what was found next to each field, and copy only the ticked
+// values into the form (Genre is ticked by default). Nothing is saved until the Track information
+// dialog is saved.
 import { h, fmtTime } from './dom.js';
 
 const FIELDS = [
@@ -9,10 +10,11 @@ const FIELDS = [
   ['artwork', 'Artwork'],
 ];
 const DEFAULT_ON = new Set(['genre']);
-/** Spotify search (replaced by the smoke test, which runs offline). */
-export const spotifyApi = { lookup: (q) => window.rb.spotify.lookup(q) };
+const SOURCE = { spotify: 'Spotify', deezer: 'Deezer' };
+/** Online search (replaced by the smoke test, which runs offline). */
+export const lookupApi = { lookup: (q) => window.rb.metadata.lookup(q) };
 
-/** Spotify results, the closest duration first (within 3 s), keeping Spotify's order otherwise. */
+/** Results with the closest duration first (within 3 s), keeping the services' order otherwise. */
 export function orderByDuration(list, duration) {
   if (!duration) return list;
   const near = (c) => (c.duration && Math.abs(c.duration - duration) <= 3 ? 0 : 1);
@@ -24,7 +26,7 @@ export function orderByDuration(list, duration) {
  * @param {Record<string, HTMLInputElement>} inputs Track information fields
  * @param {{artwork: string|null}} pending receives the chosen artwork URL (applied on save)
  */
-export function spotifyPanel(t, inputs, pending) {
+export function lookupPanel(t, inputs, pending) {
   const panel = h('div.ti-spotify', { hidden: true });
   const query = h('input.text', { value: [t.artist, t.title].filter(Boolean).join(' - '), spellcheck: false });
   const status = h('span.dim');
@@ -38,6 +40,7 @@ export function spotifyPanel(t, inputs, pending) {
 
   const showCandidate = () => {
     const c = results[Number(pick.value) || 0];
+    const src = SOURCE[c.source] ?? c.source;
     checks = new Map();
     const rows = FIELDS.map(([k, label]) => {
       let found = k === 'artwork' ? c.artworkUrl : c[k];
@@ -48,38 +51,46 @@ export function spotifyPanel(t, inputs, pending) {
       let cell;
       if (k === 'artwork') cell = found ? h('img.ti-sp-cover', { src: c.thumbUrl || found, alt: '' }) : h('span.dim', {}, '—');
       else if (k === 'genre' && c.genres.length > 1) {
-        // All the artist's genres: choose which one goes in the Genre field.
-        const sel = h('select', { onchange: () => { box.checked = true; } }, c.genres.map((g) => h('option', { value: g }, g)));
+        // Every genre found: choose which one goes in the Genre field.
+        const sel = h('select', { onchange: () => { box.disabled = false; box.checked = true; } },
+          c.genres.map((g) => h('option', { value: g, selected: g === c.genre }, g)));
         value = () => sel.value;
         cell = sel;
-      } else cell = found ? h('span', { title: String(found) }, String(found)) : h('span.dim', {}, k === 'genre' ? 'no genre on Spotify' : '—');
+      } else cell = found ? h('span', { title: String(found) }, String(found)) : h('span.dim', {}, k === 'genre' ? 'no genre found' : '—');
+      if (k === 'genre' && c.completedFrom === 'deezer' && found) cell = h('span', {}, cell, h('small.dim', {}, ' (Deezer)'));
       checks.set(k, { box, value });
       return h('label.ti-sp-row', { class: same ? 'same' : undefined },
         box, h('span.ti-sp-k', {}, label),
         h('span.ti-sp-cur', { title: current(k) }, current(k) || h('span.dim', {}, '(empty)')),
         h('span.ti-sp-arrow', {}, same ? '=' : '→'), h('span.ti-sp-new', {}, cell));
     });
-    table.replaceChildren(...[h('div.ti-sp-head', {}, h('span'), h('span', {}, 'Field'), h('span', {}, 'Now'), h('span'), h('span', {}, 'Spotify')), ...rows,
-      c.spotifyUrl ? h('div.ti-sp-foot', {}, h('a', { href: '#', onclick: (e) => { e.preventDefault(); window.rb.openExternal(c.spotifyUrl); } }, 'Open on Spotify'),
-        c.duration ? h('span.dim', {}, ` · ${fmtTime(c.duration)}${t.duration ? ` (this file: ${fmtTime(t.duration)})` : ''}`) : null) : null].filter(Boolean));
+    table.replaceChildren(...[h('div.ti-sp-head', {}, h('span'), h('span', {}, 'Field'), h('span', {}, 'Now'), h('span'), h('span', {}, `Found on ${src}`)), ...rows,
+      h('div.ti-sp-foot', {},
+        c.url ? h('a', { href: '#', onclick: (e) => { e.preventDefault(); window.rb.openExternal(c.url); } }, `Open on ${src}`) : null,
+        c.duration ? h('span.dim', {}, `${c.url ? ' · ' : ''}Length ${fmtTime(c.duration)}${t.duration ? ` (this file: ${fmtTime(t.duration)})` : ''}`) : null)].filter(Boolean));
     applyBtn.hidden = false;
   };
 
   const search = async () => {
     panel.hidden = false;
-    status.textContent = 'Searching Spotify…';
+    status.textContent = 'Searching online…';
     table.replaceChildren(); pick.hidden = true; applyBtn.hidden = true;
+    let r;
     try {
       const q = query.value.trim();
       const same = q === [t.artist, t.title].filter(Boolean).join(' - ');
-      results = orderByDuration(await spotifyApi.lookup(same ? { title: inputs.title.value || t.title, artist: inputs.artist.value || t.artist } : { query: q }), t.duration);
+      r = await lookupApi.lookup(same ? { title: inputs.title.value || t.title, artist: inputs.artist.value || t.artist } : { query: q });
     } catch (err) {
       status.textContent = err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
       return;
     }
-    if (!results.length) { status.textContent = 'Nothing found. Change the search words and try again.'; return; }
-    status.textContent = results.length > 1 ? `${results.length} results — choose the right one:` : '1 result:';
-    pick.replaceChildren(...results.map((c, i) => h('option', { value: i }, `${c.artist} — ${c.title}${c.mixName ? ` (${c.mixName})` : ''} · ${c.album}${c.year ? `, ${c.year}` : ''}${c.duration ? ` · ${fmtTime(c.duration)}` : ''}`)));
+    results = orderByDuration(r.candidates, t.duration);
+    const where = r.sources.join(' + ');
+    const problems = r.errors.length ? ` (${r.errors.join('; ')})` : '';
+    if (!results.length) { status.textContent = `Nothing found on ${where}${problems}. Change the search words and try again.`; return; }
+    status.textContent = `${results.length} result(s) on ${where}${problems}${results.length > 1 ? ' — choose the right one:' : ':'}`;
+    pick.replaceChildren(...results.map((c, i) => h('option', { value: i },
+      `[${SOURCE[c.source] ?? c.source}] ${c.artist} — ${c.title}${c.mixName ? ` (${c.mixName})` : ''} · ${c.album}${c.year ? `, ${c.year}` : ''}${c.genre ? ` · ${c.genre}` : ''}${c.duration ? ` · ${fmtTime(c.duration)}` : ''}`)));
     pick.hidden = results.length < 2;
     showCandidate();
   };
@@ -101,7 +112,7 @@ export function spotifyPanel(t, inputs, pending) {
     if (n) showCandidate();
   };
 
-  const open = h('button.dbtn.small.ti-sp-open', { type: 'button', onclick: search }, 'Search Spotify');
+  const open = h('button.dbtn.small.ti-sp-open', { type: 'button', onclick: search, title: 'Deezer, and Spotify when it is set up (Preferences > Library)' }, 'Search online');
   panel.append(
     h('div.dlc-bar', {}, query, h('button.dbtn', { type: 'button', onclick: search }, 'Search'), h('button.dbtn.small', { type: 'button', onclick: () => { panel.hidden = true; } }, 'Close')),
     h('div.ti-sp-status', {}, status, ' ', pick), table, applyBtn);
