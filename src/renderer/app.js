@@ -1714,25 +1714,36 @@ async function smoke(app) {
       step('track information: detailed and editable', sections.length === 4 && fields >= 20 && e.title === 'Kick 140 (edited)' && e.rating === 4 && e.key === '5A' && e.myTags.join() === 'peak,vocal',
         `${sections.join(' | ')} · ${fields} fields · saved: ${e.title}, ${e.rating}★, ${e.key}, [${e.myTags}]`);
 
-      // Search Spotify (offline: canned answer): Genre ticked by default, only ticked fields change.
-      const { spotifyApi } = await import('./ui/spotify-lookup.js');
-      const realLookup = spotifyApi.lookup;
-      spotifyApi.lookup = async () => [{ title: 'Kick 140', mixName: 'Extended Mix', artist: 'Smoke Artist', album: 'Smoke EP', albumArtist: 'Smoke Artist',
-        genre: 'Melodic Techno', genres: ['Melodic Techno', 'Hard Techno'], year: 2024, trackNumber: 2, discNumber: 1, label: '', duration: e.duration, artworkUrl: '', thumbUrl: '', spotifyUrl: '' }];
+      // Search online (offline: canned answer like the merged Spotify + Deezer one): Genre ticked by
+      // default, only ticked fields change.
+      const { lookupApi } = await import('./ui/track-lookup.js');
+      const realLookup = lookupApi.lookup;
+      lookupApi.lookup = async () => ({ sources: ['Spotify', 'Deezer'], errors: [], candidates: [
+        { source: 'spotify', completedFrom: 'deezer', title: 'Kick 140', mixName: 'Extended Mix', artist: 'Smoke Artist', album: 'Smoke EP', albumArtist: 'Smoke Artist',
+          genre: 'Melodic Techno', genres: ['Melodic Techno', 'Hard Techno'], year: 2024, trackNumber: 2, discNumber: 1, label: '', duration: e.duration, artworkUrl: '', thumbUrl: '', url: '' },
+        { source: 'deezer', title: 'Kick 140', mixName: '', artist: 'Smoke Artist', album: 'Smoke EP', albumArtist: 'Smoke Artist',
+          genre: 'Dance', genres: ['Dance'], year: 2024, trackNumber: 2, discNumber: 1, label: 'Smoke Records', duration: 300, artworkUrl: '', thumbUrl: '', url: '' }] });
       const closed2 = b.editTrack(t.id);
       await wait(300);
       document.querySelector('.trackinfo .ti-sp-open').click();
       await wait(200);
       const ticked = [...document.querySelectorAll('.ti-sp-row')].filter((r) => r.querySelector('input').checked).map((r) => r.querySelector('.ti-sp-k').textContent);
-      await window.rb.smokeShot('spotify');
+      const options = [...document.querySelectorAll('.ti-sp-status select option')].map((o) => o.textContent.slice(0, 9));
+      await window.rb.smokeShot('lookup');
       document.querySelector('.ti-spotify .dlc-primary').click();
       await wait(100);
       document.querySelector('.dialog:has(.trackinfo) .dialog-buttons button.primary').click();
       await closed2;
-      spotifyApi.lookup = realLookup;
+      lookupApi.lookup = realLookup;
       const s2 = lib.get(t.id);
-      step('track information: Search Spotify fills the ticked fields', ticked.join() === 'Genre' && s2.genre === 'Melodic Techno' && s2.title === 'Kick 140 (edited)' && s2.album !== 'Smoke EP',
-        `ticked [${ticked}] · genre ${s2.genre} · title ${s2.title} · album ${s2.album}`);
+      step('track information: Search online fills the ticked fields', ticked.join() === 'Genre' && s2.genre === 'Melodic Techno' && s2.title === 'Kick 140 (edited)' && s2.album !== 'Smoke EP'
+        && options.join() === '[Spotify],[Deezer] ',
+        `ticked [${ticked}] · genre ${s2.genre} · title ${s2.title} · album ${s2.album} · options ${options}`);
+      if (await window.rb.smokeDlTest()) {
+        const r = await window.rb.metadata.lookup({ title: 'Trois nuits par semaine', artist: 'Indochine' });
+        const dz = r.candidates.find((c) => c.source === 'deezer');
+        step('track information: real Deezer lookup has genres', r.sources.includes('Deezer') && !!dz?.genre && dz.year > 0, `${dz?.artist} — ${dz?.title} · ${dz?.album} ${dz?.year} · ${dz?.genres} · ${dz?.label} · errors ${r.errors}`);
+      }
 
       // Date Added shows the time for tracks added now.
       b.select('collection');

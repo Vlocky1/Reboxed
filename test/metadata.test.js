@@ -75,3 +75,31 @@ test('date added shows the time when it is known', () => {
   assert.equal(addedTime({ dateAdded: '2026-10-01', addedAt: at }), null, 'edited day: the old time no longer applies');
   assert.equal(localDay(new Date(2026, 0, 5)), '2026-01-05');
 });
+
+test('Deezer fields and Spotify results completed with Deezer genres', async () => {
+  const { deezerFields, Deezer } = await import('../src/main/deezer.js');
+  const { mergeCandidates, MetadataLookup } = await import('../src/main/metadata.js');
+  const dz = deezerFields({
+    id: 1, title: 'Strobe (Club Edit)', title_short: 'Strobe', title_version: '(Club Edit)', isrc: 'GBXX1', link: 'https://www.deezer.com/track/1',
+    track_position: 2, disk_number: 1, duration: 379, release_date: '2010-02-08', contributors: [{ name: 'Deadmau5' }],
+    album: { id: 9, title: 'Strobe', cover_xl: 'https://cdn-images.dzcdn.net/x/1000.jpg', cover_medium: 'https://cdn-images.dzcdn.net/x/250.jpg' },
+  }, { label: 'Virgin', genres: { data: [{ name: 'Dance' }, { name: 'Electro' }] }, artist: { name: 'Deadmau5' } });
+  assert.deepEqual([dz.source, dz.title, dz.mixName, dz.genre, dz.genres, dz.label, dz.year, dz.trackNumber, dz.isrc],
+    ['deezer', 'Strobe', 'Club Edit', 'Dance', ['Dance', 'Electro'], 'Virgin', 2010, 2, 'GBXX1']);
+  const sp = { source: 'spotify', title: 'Strobe', artist: 'deadmau5', genre: '', genres: [], label: '', isrc: 'GBXX1' };
+  const other = { source: 'spotify', title: 'Ghosts n Stuff', artist: 'deadmau5', genre: '', genres: [], label: '', isrc: '' };
+  const merged = mergeCandidates([sp, other], [dz]);
+  assert.deepEqual([merged[0].genre, merged[0].label, merged[0].completedFrom], ['Dance', 'Virgin', 'deezer']);
+  assert.equal(merged[1].genre, '', 'no Deezer match: unchanged');
+  assert.equal(merged.length, 3);
+  // Without ISRC the same artist + title (accents, case) is enough.
+  assert.equal(mergeCandidates([{ ...sp, isrc: '', artist: 'Déadmau5', title: 'STROBE' }], [dz])[0].genre, 'Dance');
+  // Spotify not set up: Deezer only; a failing service is reported, not fatal.
+  const json = (body) => ({ ok: true, json: async () => body });
+  const deezer = new Deezer({ fetch: async (url) => (url.includes('/search') ? json({ data: [{ id: 1 }] }) : url.includes('/track/') ? json({ id: 1, title: 'A', album: { id: 2 }, artist: { name: 'B' } }) : json({ genres: { data: [{ name: 'Pop' }] } })) });
+  const meta = new MetadataLookup({ spotify: { lookup: async () => { throw new Error('boom'); } }, deezer, spotifyReady: () => false });
+  const r = await meta.lookup({ title: 'A', artist: 'B' });
+  assert.deepEqual([r.sources, r.candidates.map((c) => c.genre), r.errors], [['Deezer'], ['Pop'], []]);
+  const both = await new MetadataLookup({ spotify: { lookup: async () => { throw new Error('boom'); } }, deezer, spotifyReady: () => true }).lookup({ title: 'A' });
+  assert.deepEqual([both.candidates.length, both.errors], [1, ['Spotify: boom']]);
+});

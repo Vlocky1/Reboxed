@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('rb', {
     setCredentials: (clientId, secret) => ipcRenderer.invoke('spotify:setCredentials', clientId, secret),
     lookup: (q) => ipcRenderer.invoke('spotify:lookup', q),
   },
+  metadata: { lookup: (q) => ipcRenderer.invoke('metadata:lookup', q) },
   artworkFromUrl: (url) => ipcRenderer.invoke('artwork:fromUrl', url),
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),

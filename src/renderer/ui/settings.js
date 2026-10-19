@@ -141,8 +141,8 @@ async function spotifySection() {
     } catch (err) { status.textContent = `✗ ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`; }
   };
   return h('div', {},
-    h('h4', {}, 'Track information from Spotify'),
-    h('p.dim', {}, 'Track information ▸ "Search Spotify" fills genre, album, year… from Spotify. It needs a free Spotify app: on developer.spotify.com/dashboard create an app (any name; redirect URI: http://127.0.0.1:8888/callback — Reboxed never uses it, Spotify only requires one; tick Web API), then copy its Client ID and Client Secret here. The secret is stored encrypted on this computer.'),
+    h('h4', {}, 'Track information online (Deezer, Spotify)'),
+    h('p.dim', {}, 'Track information ▸ "Search online" fills genre, album, year, label, cover… It always searches Deezer (no account needed, it brings the genres). Spotify is optional: it needs a free Spotify app: on developer.spotify.com/dashboard create an app (any name; redirect URI: http://127.0.0.1:8888/callback — Reboxed never uses it, Spotify only requires one; tick Web API), then copy its Client ID and Client Secret here. The secret is stored encrypted on this computer.'),
     h('div.form-grid', {},
       h('label', {}, 'Client ID'), id,
       h('label', {}, 'Client Secret'), secret,

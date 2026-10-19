@@ -14,6 +14,8 @@ import { Downloader } from './downloader.js';
 import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
 import { Spotify } from './spotify.js';
+import { Deezer } from './deezer.js';
+import { MetadataLookup } from './metadata.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
@@ -136,9 +138,12 @@ function registerIpc(win) {
     return { clientId: storage.cfg.spotify?.clientId ?? '', hasSecret: !!storage.cfg.spotify?.secret };
   });
   ipcMain.handle('spotify:lookup', (_e, q) => spotify.lookup(q));
-  /** Cover from a URL (Spotify) -> library artwork thumbnail path. */
+  // Deezer (no account) + Spotify (when set up), merged: Deezer brings the genres Spotify lacks.
+  const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: (url, opts) => net.fetch(url, opts) }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret) });
+  ipcMain.handle('metadata:lookup', (_e, q) => metadata.lookup(q));
+  /** Cover from a URL (Spotify, Deezer) -> library artwork thumbnail path. */
   ipcMain.handle('artwork:fromUrl', async (_e, url) => {
-    if (!/^https:\/\/i\.scdn\.co\//.test(url)) throw new Error('unsupported artwork URL');
+    if (!/^https:\/\/(i\.scdn\.co|cdn-images\.dzcdn\.net|e-cdns-images\.dzcdn\.net)\//.test(url)) throw new Error('unsupported artwork URL');
     const res = await net.fetch(url);
     if (!res.ok) throw new Error(`artwork ${res.status}`);
     return saveArtwork(new Uint8Array(await res.arrayBuffer()));

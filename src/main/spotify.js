@@ -20,8 +20,9 @@ export function toFields(tr, genres = []) {
   const album = tr.album ?? {};
   const images = album.images ?? [];
   return {
+    source: 'spotify',
     spotifyId: tr.id,
-    spotifyUrl: tr.external_urls?.spotify ?? '',
+    url: tr.external_urls?.spotify ?? '',
     title,
     mixName,
     artist: (tr.artists ?? []).map((a) => a.name).join(', '),
