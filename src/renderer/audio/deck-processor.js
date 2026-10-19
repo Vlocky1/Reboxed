@@ -36,8 +36,14 @@ class DeckProcessor extends AudioWorkletProcessor {
     this.stemGains = [1, 1, 1, 1];
     this.stemTarget = [1, 1, 1, 1];
     this.blend = 0;        // 0 = original mix, 1 = sum of stems
-    // Groove Circuit on the drum stem: gain (drum swap / release), roll, trans gate, brake.
-    this.drum = { gain: 1, target: 1, roll: null, trans: null, brake: null };
+    // Groove Circuit on the drum stem: gain (drum swap), roll, trans gate, release FX.
+    this.drum = { gain: 1, target: 1, roll: null, trans: null, rel: null };
+    // FX PART SELECT: stems sent to output 1 (through the channel's Beat FX), the rest on output 0.
+    this.fxMask = [false, false, false, false];
+    this.fxAny = false;
+    this.lastPart = 0;     // part value of the last sample() call (int16 scale x blend / 32768)
+    this.curW = 1;         // grain window weight of the current sample() call
+    this.relAcc = [0, 0];  // drum part summed over grains, for the per-frame release FX
     // Vinyl scratch: while the jog is touched the play head follows the jog speed.
     this.scratching = false;
     this.scratchRate = 0;
@@ -45,14 +51,19 @@ class DeckProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (e) => this.onMessage(e.data);
   }
 
-  get drumActive() { const d = this.drum; return d.target < 1 || d.gain < 1 || d.roll || d.trans || d.brake; }
+  get drumActive() { const d = this.drum; return d.target < 1 || d.gain < 1 || d.roll || d.trans || d.rel; }
 
-  /** Drum stem sample at stem frame sx (with roll / trans / brake / gain applied). */
+  /** Release FX that read the drum stem at their own position (the others filter it per frame). */
+  get relPositional() { const t = this.drum.rel?.type; return t === 'BRAKE' || t === 'BACKSPIN' || t === 'ROLL'; }
+
+  /** Drum stem sample at stem frame sx (with roll / trans / positional release FX / gain applied). */
   drumSample(ch, sx) {
     const d = this.drum;
+    const rel = d.rel;
     let pos = sx;
     if (d.roll && sx >= d.roll.start) pos = d.roll.start + ((sx - d.roll.start) % d.roll.len);
-    if (d.brake) pos = d.brake.pos;
+    if (rel && (rel.type === 'BRAKE' || rel.type === 'BACKSPIN')) pos = rel.pos;
+    if (rel && rel.type === 'ROLL' && sx >= rel.start) pos = rel.start + ((sx - rel.start) % rel.slice);
     const i = Math.floor(pos);
     const len = this.stems[0].length / 2;
     if (i < 0 || i + 1 >= len) return 0;
@@ -60,13 +71,31 @@ class DeckProcessor extends AudioWorkletProcessor {
     const a = this.stems[0][2 * i + ch]; const b = this.stems[0][2 * (i + 1) + ch];
     let g = d.gain * this.stemGains[0];
     if (d.trans) g *= d.trans.open ? 1 : 0;
-    if (d.brake) g *= d.brake.speed;
+    if (rel && this.relPositional) g *= rel.gain;
     return g * (a + (b - a) * f);
+  }
+
+  /** ECHO / FILTER release FX on the drum part, once per output frame (int16 scale in and out). */
+  releasePost(ch, v) {
+    const rel = this.drum.rel;
+    if (rel.type === 'FILTER') {
+      rel.lp[ch] += rel.coef * (v - rel.lp[ch]);
+      rel.lp2[ch] += rel.coef * (rel.lp[ch] - rel.lp2[ch]);
+      return rel.lp2[ch] * rel.gain;
+    }
+    // ECHO: the dry drums fade out fast, beat-synced echoes keep ringing.
+    const buf = rel.buf[ch];
+    const r = (rel.w - rel.delay + buf.length) % buf.length;
+    const echo = buf[r];
+    const dry = v * rel.dry;
+    buf[rel.w] = dry + echo * 0.55;
+    return dry + echo;
   }
 
   /** Mix or stems at source position x (source frames), channel ch. */
   sample(ch, x) {
     const mix = this.read(Math.min(ch, this.channels.length - 1), x); // mono files: reuse channel 0
+    this.lastPart = 0;
     if (!this.stems || this.blend <= 0) return mix;
     const sx = (x * this.stemRate) / this.srcRate;
     const i = Math.floor(sx);
@@ -76,15 +105,22 @@ class DeckProcessor extends AudioWorkletProcessor {
     // Progressive separation: where stems aren't computed yet, keep playing the original mix.
     if (this.stemReady && !this.stemReady[Math.floor(i / STEM_BLOCK)]) return mix;
     let s = 0;
+    let p = 0;
+    const mask = this.fxMask;
     const drumFx = this.drumActive;
     for (let k = drumFx ? 1 : 0; k < 4; k++) {
       const g = this.stemGains[k];
       if (g < 1e-4) continue;
       const d = this.stems[k];
       const a = d[2 * i + ch]; const b = d[2 * (i + 1) + ch];
-      s += g * (a + (b - a) * f);
+      if (mask[k]) p += g * (a + (b - a) * f); else s += g * (a + (b - a) * f);
     }
-    if (drumFx) s += this.drumSample(ch, sx);
+    if (drumFx) {
+      const v = this.drumSample(ch, sx);
+      if (this.drum.rel && !this.relPositional) this.relAcc[ch] += v * this.curW;
+      else if (mask[0]) p += v; else s += v;
+    }
+    this.lastPart = (p / 32768) * this.blend;
     return mix * (1 - this.blend) + (s / 32768) * this.blend;
   }
 
@@ -101,8 +137,25 @@ class DeckProcessor extends AudioWorkletProcessor {
     const d = this.drum;
     if (d.gain !== d.target) d.gain = Math.abs(d.target - d.gain) < 1 / 256 ? d.target : d.gain + Math.sign(d.target - d.gain) / 256;
     if (d.trans) { d.trans.n++; d.trans.open = d.trans.n % d.trans.len < d.trans.len / 2; }
-    if (d.brake) { d.brake.speed = Math.max(0, d.brake.speed - d.brake.step); d.brake.pos += d.brake.speed * (this.stemRate / sampleRate); }
-    const bt = anyMuted || this.drumActive ? 1 : 0;
+    const rel = d.rel;
+    if (rel) {
+      rel.t++;
+      const k = rel.t / rel.len; // beats since the release FX started
+      switch (rel.type) {
+        case 'BRAKE': rel.speed = Math.max(0, 1 - k); rel.gain = rel.speed; rel.pos += rel.speed * (this.stemRate / sampleRate); break;
+        case 'BACKSPIN': rel.speed = -3 * Math.max(0, 1 - k / 1.5); rel.gain = Math.max(0, 1 - k / 1.5); rel.pos = Math.max(0, rel.pos + rel.speed * (this.stemRate / sampleRate)); break;
+        case 'ROLL': rel.gain = Math.max(0, 1 - k / 2) ** 1.5; break;
+        case 'FILTER': {
+          const fc = Math.max(40, 16000 * 2 ** (-k * 8));
+          rel.coef = 1 - Math.exp((-2 * Math.PI * fc) / sampleRate);
+          rel.gain = k < 1 ? 1 : Math.max(0, 2 - k);
+          break;
+        }
+        case 'ECHO': rel.dry = Math.max(0, rel.dry - 1 / (0.03 * sampleRate)); rel.w = (rel.w + 1) % rel.buf[0].length; break;
+        default: break;
+      }
+    }
+    const bt = anyMuted || this.drumActive || this.fxAny ? 1 : 0;
     if (this.blend !== bt) this.blend = Math.abs(bt - this.blend) < 1 / 1024 ? bt : this.blend + Math.sign(bt - this.blend) / 1024;
   }
 
@@ -156,11 +209,24 @@ class DeckProcessor extends AudioWorkletProcessor {
         if (m.gain !== undefined) d.target = m.gain;
         if (m.roll !== undefined) d.roll = m.roll && { start: m.roll.start * this.stemRate, len: Math.max(64, m.roll.len * this.stemRate) };
         if (m.trans !== undefined) d.trans = m.trans && { len: Math.max(64, Math.round(m.trans.len * sampleRate)), n: 0, open: true };
-        if (m.brake !== undefined) {
-          d.brake = m.brake && { pos: (this.pos * this.stemRate) / this.srcRate, speed: 1, step: 1 / Math.max(64, m.brake.len * sampleRate) };
+        // release: {type: BRAKE|BACKSPIN|ROLL|FILTER|ECHO, beat: s of output time, beatTrack: s of track time} | null
+        if (m.release !== undefined) {
+          const x = m.release;
+          const at = (this.pos * this.stemRate) / this.srcRate;
+          d.rel = x && {
+            type: x.type, t: 0, len: Math.max(64, x.beat * sampleRate), pos: at, speed: 1, gain: 1,
+            start: at, slice: Math.max(64, (x.beatTrack / 8) * this.stemRate),
+            lp: [0, 0], lp2: [0, 0], coef: 1, dry: 1,
+            buf: x.type === 'ECHO' ? [new Float32Array(sampleRate * 3), new Float32Array(sampleRate * 3)] : null,
+            w: 0, delay: Math.min(sampleRate * 3 - 1, Math.round(0.75 * x.beat * sampleRate)),
+          };
         }
         break;
       }
+      case 'fxParts':
+        this.fxMask = m.mask.slice();
+        this.fxAny = this.fxMask.some(Boolean);
+        break;
       case 'scratch':
         this.scratching = m.on;
         if (m.on) { this.scratchRate = this.playing ? this.rate : 0; this.scratchTarget = 0; this.resetGrains(); }
@@ -225,7 +291,9 @@ class DeckProcessor extends AudioWorkletProcessor {
 
   process(_inputs, outputs) {
     const out = outputs[0];
+    const part = outputs[1];
     const frames = out[0].length;
+    if (part) for (const c of part) c.fill(0);
     if (!this.channels || (!this.playing && !this.scratching)) {
       for (const c of out) c.fill(0);
       this.sinceReport += frames;
@@ -251,22 +319,34 @@ class DeckProcessor extends AudioWorkletProcessor {
       this.rampStems();
       let l = 0;
       let r = 0;
+      let pl = 0;
+      let pr = 0;
       if (stretch) {
         for (const g of this.grains) {
           const w = this.window[g.n];
+          this.curW = w;
           const x = g.start + g.n * grainSpeed;
           const a = this.sample(0, x);
-          l += a * w;
-          r += (nch > 1 || this.stems ? this.sample(1, x) : a) * w;
+          l += a * w; pl += this.lastPart * w;
+          if (nch > 1 || this.stems) { r += this.sample(1, x) * w; pr += this.lastPart * w; } else { r += a * w; pr += this.lastPart * w; }
           g.n++;
           if (g.n >= GRAIN) { g.n = 0; g.start = this.pos; }
         }
+        this.curW = 1;
       } else {
-        l = this.sample(0, this.pos);
-        r = nch > 1 || this.stems ? this.sample(1, this.pos) : l;
+        l = this.sample(0, this.pos); pl = this.lastPart;
+        if (nch > 1 || this.stems) { r = this.sample(1, this.pos); pr = this.lastPart; } else { r = l; pr = pl; }
       }
+      if (this.drum.rel && !this.relPositional && this.stems) {
+        const k = this.blend / 32768;
+        const dl = this.releasePost(0, this.relAcc[0]) * k;
+        const dr = this.releasePost(1, this.relAcc[1]) * k;
+        if (this.fxMask[0]) { pl += dl; pr += dr; } else { l += dl; r += dr; }
+      }
+      this.relAcc[0] = 0; this.relAcc[1] = 0;
       out[0][i] = l * this.gain;
       if (out[1]) out[1][i] = r * this.gain;
+      if (part) { part[0][i] = pl * this.gain; if (part[1]) part[1][i] = pr * this.gain; }
 
       this.pos += speed;
       if (this.slipActive && this.playing) this.slipPos += this.rate * this.bend * ratio;
@@ -279,6 +359,7 @@ class DeckProcessor extends AudioWorkletProcessor {
         this.playing = false;
         this.port.postMessage({ type: 'ended', seq: this.seq });
         for (let j = i + 1; j < frames; j++) { out[0][j] = 0; if (out[1]) out[1][j] = 0; }
+        if (part) for (const c of part) c.fill(0, i + 1);
         break;
       }
     }

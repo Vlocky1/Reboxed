@@ -7,7 +7,10 @@ import { icon } from './icons.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 
 const STEM_BUTTONS = [['VOCAL', 3], ['INST', 2], ['BASS', 1], ['DRUMS', 0]];
-export const PAD_MODES =['HOT CUE', 'BEAT LOOP', 'BEAT JUMP', 'SLICER', 'SAMPLER', 'KEY SHIFT', 'KEYBOARD'];
+export const PAD_MODES = ['HOT CUE', 'BEAT LOOP', 'BEAT JUMP', 'SLICER', 'SAMPLER', 'KEY SHIFT', 'KEYBOARD', 'STEMS', 'GROOVE'];
+// STEMS pads: 1-4 ACTIVE PART (mute), 5-8 FX PART SELECT; index into [drums, bass, other, vocals].
+const STEM_PADS = [['VOC', 3], ['INST', 2], ['BASS', 1], ['DRUM', 0]];
+const STEM_PAD_COLORS = { 3: '#ff4fa3', 2: '#3ddc84', 1: '#3d8dff', 0: '#ffa91f' };
 const PAD_LOOPS = [1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32];
 const PAD_JUMPS = [-32, -16, -4, -1, 1, 4, 16, 32];
 const PAD_KEYS = [-4, -3, -2, -1, 1, 2, 3, 4];
@@ -286,13 +289,42 @@ export class DeckView {
         if (!d.playing) d.play();
         break;
       }
+      case 'STEMS': {
+        const [, stem] = STEM_PADS[i % 4];
+        if (!this.app.ensureStems(d)) break;
+        if (i < 4) d.setStemOn(stem, d.stemGains[stem] === 0);
+        else d.setFxPart(stem, !d.fxParts[stem]);
+        break;
+      }
+      case 'GROOVE': this.groovePad(i, e, true); break;
       default: break;
     }
     this.renderPads();
   }
 
-  padUp() {
+  padUp(i) {
     if (this.padMode === 'SLICER' && this.heldSlice) { this.heldSlice = false; this.deck.slicerUp(); this.renderPads(); }
+    if (this.padMode === 'GROOVE' && this.heldGroove === i) { this.heldGroove = null; this.groovePad(i, null, false); this.renderPads(); }
+  }
+
+  /** GROOVE pads: 1-4 DRUM SWAP, 5 bank A/B, 6 DRUM CAPTURE (Shift = length), 7 DRUM ROLL 1/4 (hold), 8 RELEASE FX (hold, Shift = type). */
+  groovePad(i, e, down) {
+    const d = this.deck;
+    const g = this.app.groove?.[d.index];
+    if (!g) return;
+    if (!down) {
+      if (i === 6) d.drumRoll(null);
+      if (i === 7) d.drumRelease(false);
+      return;
+    }
+    if (i < 4) { this.app.ensureStems(d); g.toggle(i); return; }
+    if (i === 4) { g.setBank(1 - g.bank); return; }
+    if (i === 5) { if (e?.shiftKey) g.cycleCaptureLength(); else if (this.app.ensureStems(d)) this.app.drumCapture(d.index); return; }
+    if (i === 6) { if (this.app.ensureStems(d)) { d.drumRoll(1 / 4); this.heldGroove = i; } return; }
+    if (i === 7) {
+      if (e?.shiftKey) { d.cycleReleaseFx(); return; }
+      if (this.app.ensureStems(d)) { d.drumRelease(true); this.heldGroove = i; }
+    }
   }
 
   renderPads() {
@@ -331,6 +363,25 @@ export class DeckView {
         }
         case 'KEY SHIFT': letter = `${PAD_KEYS[i] > 0 ? '+' : ''}${PAD_KEYS[i]}`; sub = 'semi'; color = '#ff3fa0'; set = true; active = d.keyShift === PAD_KEYS[i]; break;
         case 'KEYBOARD': letter = `${PAD_KEYBOARD[i] > 0 ? '+' : ''}${PAD_KEYBOARD[i]}`; sub = 'key'; color = '#ffe23a'; set = true; active = d.keyShift === PAD_KEYBOARD[i]; break;
+        case 'STEMS': {
+          const [label, stem] = STEM_PADS[i % 4];
+          letter = label; sub = i < 4 ? 'part' : 'fx part'; color = STEM_PAD_COLORS[stem]; set = true;
+          active = i < 4 ? d.stemsReady && d.stemGains[stem] > 0 : !!d.fxParts?.[stem];
+          break;
+        }
+        case 'GROOVE': {
+          const g = this.app.groove?.[d.index];
+          if (!g) break;
+          set = true;
+          if (i < 4) {
+            const s = g.slot(i);
+            letter = `${'AB'[g.bank]}${i + 1}`; sub = s?.name ?? ''; color = s?.captured ? '#25e6d6' : '#ffa91f'; active = g.isPlaying(i);
+          } else if (i === 4) { letter = 'A/B'; sub = `bank ${'AB'[g.bank]}`; color = '#3d7dff'; }
+          else if (i === 5) { letter = 'CAP'; sub = `${g.captureBars} bar`; color = '#25e6d6'; active = g.slots[g.bank].some((x) => x?.captured); }
+          else if (i === 6) { letter = 'ROLL'; sub = '1/4'; color = '#ff9a1f'; active = this.heldGroove === 6; }
+          else { letter = 'REL'; sub = d.releaseFx; color = '#ff4040'; active = this.heldGroove === 7; }
+          break;
+        }
         default: break;
       }
       pad.querySelector('.pad-letter').textContent = letter;
@@ -339,7 +390,9 @@ export class DeckView {
       pad.classList.toggle('looppad', loopPad);
       pad.classList.toggle('active', active);
       pad.style.setProperty('--pad', color);
-      pad.title = mode === 'HOT CUE' ? 'Hot cue (Shift+click delete, right-click for options)' : mode;
+      pad.title = mode === 'HOT CUE' ? 'Hot cue (Shift+click delete, right-click for options)'
+        : mode === 'GROOVE' ? ['DRUM SWAP 1', 'DRUM SWAP 2', 'DRUM SWAP 3', 'DRUM SWAP 4', 'Bank A/B', 'DRUM CAPTURE (Shift+click: 1/2/4 bars)', 'DRUM ROLL 1/4 (hold)', 'DRUM RELEASE FX (hold, Shift+click: type)'][i]
+          : mode === 'STEMS' ? `${i < 4 ? 'ACTIVE PART' : 'FX PART SELECT'} ${STEM_PADS[i % 4][0]}` : mode;
     });
   }
 

@@ -18,6 +18,9 @@ export function mergeRange(ranges, [a, b]) {
 
 const STATE_COMMANDS = new Set(['play', 'pause', 'seek', 'load', 'unload', 'loop', 'reverse', 'slip', 'scratch']);
 
+/** DRUM RELEASE FX types, in the order SHIFT + RELEASE FX cycles through them. */
+export const RELEASE_FX = ['BRAKE', 'BACKSPIN', 'ROLL', 'FILTER', 'ECHO'];
+
 export const TEMPO_RANGES = [6, 10, 16, 100]; // 100 = WIDE
 export const BEAT_LOOP_SIZES = [1 / 64, 1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512];
 export const BEAT_JUMP_SIZES = [1, 2, 4, 8, 16, 32, 64, 128];
@@ -56,6 +59,8 @@ export class Deck extends EventTarget {
     this.reverse = false;
     this.sync = false;
     this.beatJumpSize = 4;
+    this.releaseFx = 'BRAKE';  // DRUM RELEASE FX type
+    this.fxParts = [false, false, false, false]; // FX PART SELECT [drums, bass, other, vocals]
     this.vinyl = true;       // jog top touch = scratch (VINYL mode), else pitch bend
     this.beatLoopSize = 4;
     this.lastReport = { pos: 0, t: 0, playing: false, slipPos: 0, slipActive: false };
@@ -163,6 +168,7 @@ export class Deck extends EventTarget {
     this.stemQuality = null;
     this.stemGains = [1, 1, 1, 1];
     this.vocals = [];
+    if (this.fxParts.some(Boolean)) this.applyFxParts();
     this.lastReport = { pos: 0, t: this.engine.ctx.currentTime, playing: false, slipPos: 0, slipActive: false };
     if (this.sync) this.applySync(true);
     const firstMemory = (track.cues ?? []).filter((c) => c.kind === 'memory').sort((a, b) => a.start - b.start)[0];
@@ -176,6 +182,7 @@ export class Deck extends EventTarget {
     this.post({ type: 'unload' });
     this.track = null; this.analysis = null; this.duration = 0; this.loop = null; this.playing = false;
     this.stemsReady = false; this.stemsComplete = false; this.stemRanges = []; this.stemEnv = null; this.vocals = [];
+    if (this.fxParts.some(Boolean)) this.applyFxParts();
     this.emit('load');
   }
 
@@ -356,6 +363,7 @@ export class Deck extends EventTarget {
     this.post({ type: 'stems', stems: pcm, rate }, pcm.map((a) => a.buffer));
     this.stemsReady = true;
     this.stemsComplete = true;
+    if (this.fxParts.some(Boolean)) this.applyFxParts();
     this.stemQuality = quality ?? this.stemQuality;
     this.stemRanges = [[0, pcm[0].length / 2]];
     this.stemFrames = pcm[0].length / 2;
@@ -393,6 +401,7 @@ export class Deck extends EventTarget {
     }
     const wasReady = this.stemsReady;
     this.stemsReady = true;
+    if (!wasReady && this.fxParts.some(Boolean)) this.applyFxParts();
     if (!wasReady) this.emit('stems');
   }
 
@@ -442,9 +451,36 @@ export class Deck extends EventTarget {
     this.post({ type: 'drum', trans: beats ? { len: (beats * (this.period || 0.5)) / (this.rate || 1) } : null });
   }
 
-  /** DRUM RELEASE FX: the drum part brakes to a stop over one beat; off = drums back. */
-  drumRelease(on) {
-    this.post({ type: 'drum', brake: on ? { len: (this.period || 0.5) / (this.rate || 1) } : null });
+  /**
+   * DRUM RELEASE FX (held): the drum part leaves with an effect; off = drums back.
+   * type: one of RELEASE_FX (BRAKE, BACKSPIN, ROLL, FILTER, ECHO).
+   */
+  drumRelease(on, type = this.releaseFx) {
+    const beatTrack = this.period || 0.5;
+    this.post({ type: 'drum', release: on ? { type, beat: beatTrack / (this.rate || 1), beatTrack } : null });
+  }
+
+  /** Next DRUM RELEASE FX type (SHIFT + DRUM RELEASE FX / RELEASE FX SELECT). */
+  cycleReleaseFx() {
+    this.releaseFx = RELEASE_FX[(RELEASE_FX.indexOf(this.releaseFx) + 1) % RELEASE_FX.length];
+    this.emit('groove');
+    return this.releaseFx;
+  }
+
+  /**
+   * FX PART SELECT: which parts [drums, bass, other, vocals] go through the channel's Beat FX.
+   * None selected = the whole channel (normal Beat FX).
+   */
+  setFxPart(index, on) {
+    this.fxParts = this.fxParts.map((v, i) => (i === index ? on : v));
+    this.applyFxParts();
+  }
+
+  applyFxParts() {
+    const active = this.stemsReady && this.fxParts.some(Boolean);
+    this.post({ type: 'fxParts', mask: active ? this.fxParts : [false, false, false, false] });
+    this.engine.channels[this.index]?.setPartMode(active);
+    this.emit('stems');
   }
 
   /** Solo (ISO): only this stem plays; again = all back on. */

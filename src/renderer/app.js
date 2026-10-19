@@ -50,6 +50,8 @@ class App {
     this.automix = new Automix(this);
     // Groove Circuit DRUM SWAP per deck (loops enter the channel before trim/EQ) and PAD FX units.
     this.groove = this.engine.decks.map((d, i) => new DrumSwap(d, this.engine.channels[i].trim));
+    this.installGroovePersistence();
+    this.groove.forEach((g, i) => g.addEventListener('change', () => { if (this.deckViews?.[i]?.padMode === 'GROOVE') this.deckViews[i].renderPads(); }));
     this.padFx = this.engine.decks.map((d, i) => {
       const unit = new BeatFxUnit(this.engine.ctx, this.engine.fx.inserts, this.engine.fx.bpmOf);
       unit.setTarget(`ch${i + 1}`);
@@ -640,6 +642,44 @@ class App {
     this.stemStatus.querySelector('.ss-text').textContent =
       `${j.quality.toUpperCase()} ${running ? `${pct}%` : 'queued'} · ${this.library.get(id)?.title ?? ''}${eta && eta > 1 ? ` · ${Math.ceil(eta)} s` : ''}${jobs.length > 1 ? ` · +${jobs.length - 1}` : ''}`;
     this.stemStatus.style.setProperty('--p', `${pct}%`);
+  }
+
+  /**
+   * Groove Circuit / parts work on stems. When a deck has none yet, start separating them (FAST,
+   * from the play head, like rekordbox's real-time separation): usable after a couple of seconds.
+   * @returns {boolean} stems ready now
+   */
+  ensureStems(d) {
+    if (d?.stemsReady) return true;
+    if (d?.track && !this.stemJobs?.has(d.track.id)) {
+      this.separateStems(d.track.id, { deck: d });
+      toast(`Deck ${d.index + 1}: separating stems…`, 2500);
+    }
+    return false;
+  }
+
+  /** DRUM CAPTURE loops survive restarts: WAV files in userData/groove, indexed in the settings. */
+  installGroovePersistence() {
+    this.groove.forEach((g, i) => g.addEventListener('capture', async (e) => {
+      const { bank, slot } = e.detail;
+      const s = g.slots[bank][slot];
+      try {
+        const { userData } = await window.rb.paths();
+        const file = `${userData}/groove/deck${i + 1}-${'AB'[bank]}${slot + 1}.wav`;
+        await window.rb.writeFile(file, encodeWav([s.buffer.getChannelData(0), s.buffer.getChannelData(1)], s.buffer.sampleRate));
+        const saved = { ...(this.library.settings.grooveCaptures ?? {}) };
+        saved[`${i}:${bank}:${slot}`] = { file, bpm: s.bpm, bars: s.bars, name: s.name };
+        this.library.setSetting('grooveCaptures', saved);
+      } catch (err) { console.warn('drum capture not saved', err); }
+    }));
+    for (const [k, m] of Object.entries(this.library.settings.grooveCaptures ?? {})) {
+      const [i, bank, slot] = k.split(':').map(Number);
+      fetch(mediaUrl(m.file))
+        .then((r) => (r.ok ? r.arrayBuffer() : null))
+        .then((buf) => buf && this.engine.ctx.decodeAudioData(buf))
+        .then((buffer) => { if (buffer) this.groove[i]?.store(bank, slot, { buffer, bpm: m.bpm, bars: m.bars, name: m.name }); })
+        .catch(() => { /* file moved or deleted: the built-in loop stays */ });
+    }
   }
 
   /** DRUM CAPTURE: store bars of the deck's drum stem into a DRUM SWAP slot. */
@@ -1247,6 +1287,12 @@ async function smoke(app) {
       step('grv6 mixer', app.engine.channels[1].state.fader < 0.01 && app.engine.channels[0].state.eq.low <= -39 && app.engine.crossfader < -0.99,
         `fader2=${app.engine.channels[1].state.fader.toFixed(3)} low1=${app.engine.channels[0].state.eq.low.toFixed(1)} xf=${app.engine.crossfader.toFixed(2)}`);
       hires(0xb1, 0x13, 16383); hires(0xb0, 0x0f, 8192); hires(0xb6, 0x1f, 8192);
+      // EQ centre detent = flat (0 dB), like the on-screen knob.
+      const eqMid = app.engine.channels[0].state.eq.low;
+      hires(0xb0, 0x0f, 16383);
+      const eqTop = app.engine.channels[0].state.eq.low;
+      hires(0xb0, 0x0f, 8192);
+      step('grv6 EQ centre = 0 dB', Math.abs(eqMid) < 0.1 && Math.abs(eqTop - 6) < 0.1, `centre ${eqMid.toFixed(2)} dB, right ${eqTop.toFixed(2)} dB`);
       // Pads: hot cue B (deck 1, pad 2), beat loop pad 5 (= 4 beats).
       d1.play();
       d1.deleteHotCue(1);
@@ -1285,14 +1331,73 @@ async function smoke(app) {
         hires(0xb2, 0x08, 0);   // PART ISOLATOR VOCAL knob fully left
         step('grv6 part isolator', d3.stemGains[3] === 0, JSON.stringify(d3.stemGains));
         hires(0xb2, 0x08, 16383);
+        const g3 = app.groove[2];
+        // Built-in loops: bank A slot 2 (Techno) plays at once, at the deck's tempo.
+        press(0x92, 0x01);      // DRUM SWAP 2
+        await wait(150);
+        const builtin = g3.isPlaying(1) && g3.slot(1).builtin === 1;
+        const loopRate = [...g3.playing.values()][0]?.src.playbackRate.value;
+        press(0x92, 0x01);
+        step('grv6 drum swap built-in loop', builtin && Math.abs(loopRate - 1) < 0.01, `${g3.slot(1).name} rate=${loopRate}`);
         press(0x92, 0x08);      // DRUM CAPTURE
-        for (let k = 0; k < 30 && !app.groove[2].slot(0); k++) await wait(100);
+        for (let k = 0; k < 30 && !g3.slot(0).captured; k++) await wait(100);
         press(0x92, 0x00);      // DRUM SWAP 1
         await wait(200);
-        step('grv6 drum capture + swap', !!app.groove[2].slot(0) && app.groove[2].isPlaying(0), '');
+        step('grv6 drum capture + swap', !!g3.slot(0).captured && g3.isPlaying(0), g3.slot(0).name);
         press(0x92, 0x00);
         tx([0x92, 0x04, 0x7f]); await wait(200); tx([0x82, 0x04, 0]); // DRUM ROLL 1/8 hold
         step('grv6 drum roll', true, '');
+        // DRUM RELEASE FX: SHIFT cycles the type; held BRAKE takes the kick out of the mix.
+        app.engine.setCrossfader(-1);
+        // Peak over a window (an instant reading depends on where the kick falls).
+        const peakOver = async (ms) => { let m = 0; for (let t = 0; t < ms; t += 20) { m = Math.max(m, app.engine.levels().channels[2]); await wait(20); } return m; };
+        const meanOver = async (ms) => { let a = 0; let n = 0; for (let t = 0; t < ms; t += 20) { a += app.engine.levels().channels[2]; n++; await wait(20); } return a / n; };
+        await wait(300);
+        const before = await peakOver(600);
+        tx([0x92, 0x24, 0x7f]); await wait(700);
+        const released = await peakOver(600);
+        tx([0x82, 0x24, 0]);
+        press(0x92, 0x26);      // SHIFT + DRUM RELEASE FX
+        step('grv6 drum release fx', released < before * 0.9 && d3.releaseFx === 'BACKSPIN', `brake: ${before.toFixed(3)} -> ${released.toFixed(3)}, next type ${d3.releaseFx}`);
+        for (let k = 0; k < 4; k++) press(0x92, 0x26); // back to BRAKE
+        // FX PART SELECT (STEMS pad mode, bottom row): drums only through the Beat FX. With the FX off
+        // the channel must sound the same (parts + rest = whole).
+        press(0x92, 0x1e);      // STEMS pad mode
+        await wait(200);
+        const whole = await meanOver(1500);
+        press(0x9b, 0x17);      // FX PART SELECT DRUMS (deck 3)
+        await wait(200);
+        const split = await meanOver(1500);
+        const partLed = sent.some(([st, d1v, v]) => st === 0x9b && d1v === 0x17 && v === 0x7f);
+        step('grv6 fx part select', d3.fxParts[0] && app.engine.channels[2].partMode && partLed && app.deckViews[2].padMode === 'STEMS'
+          && split > whole * 0.8 && split < whole * 1.25, `mean level whole ${whole.toFixed(3)} / drums via FX ${split.toFixed(3)}, led=${partLed}`);
+        // What the Beat FX receives (its input bus): the whole channel, or only the selected part.
+        const fxTap = app.engine.ctx.createAnalyser(); fxTap.fftSize = 2048;
+        app.engine.channels[2].insert.in.connect(fxTap);
+        const tapBuf = new Float32Array(2048);
+        const fxIn = async (ms) => {
+          let a = 0; let n = 0;
+          for (let t = 0; t < ms; t += 20) { fxTap.getFloatTimeDomainData(tapBuf); let e = 0; for (const v of tapBuf) e += v * v; a += Math.sqrt(e / tapBuf.length); n++; await wait(20); }
+          return a / n;
+        };
+        const inDrums = await fxIn(1200);       // DRUMS selected (from above)
+        press(0x9b, 0x17); press(0x9b, 0x14);   // DRUMS off, VOCAL on
+        await wait(200);
+        const inVocal = await fxIn(1200);
+        press(0x9b, 0x14);                      // none: the whole channel goes to the FX again
+        await wait(200);
+        const inWhole = await fxIn(1200);
+        app.engine.channels[2].insert.in.disconnect(fxTap);
+        step('grv6 fx part select: FX gets only the part', inVocal < inDrums * 0.5 && inDrums < inWhole * 0.8 && !d3.fxParts.some(Boolean) && !app.engine.channels[2].partMode,
+          `FX input rms: drums ${inDrums.toFixed(4)}, vocal ${inVocal.toFixed(4)}, whole ${inWhole.toFixed(4)}`);
+        // On-screen GROOVE pads.
+        app.deckViews[2].padMode = 'GROOVE'; app.deckViews[2].modeSel.value = 'GROOVE'; app.deckViews[2].renderPads();
+        const pads = app.deckViews[2].pads.map((x) => x.textContent);
+        await wait(200);
+        await window.rb.smokeShot('groove');
+        step('ui groove pads', pads[0].startsWith('A1') && /^REL/.test(pads[7]) && /BRAKE/.test(pads[7]), JSON.stringify(pads));
+        app.deckViews[2].padMode = 'HOT CUE'; app.deckViews[2].modeSel.value = 'HOT CUE'; app.deckViews[2].renderPads();
+        app.engine.setCrossfader(0);
         d3.pause();
       } else {
         report.steps.push({ name: 'grv6 groove circuit (skipped: no stems)', ok: true, info: '' });

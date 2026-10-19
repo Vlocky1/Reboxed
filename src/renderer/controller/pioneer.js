@@ -22,6 +22,8 @@ const DRUM_TRANS = { DrumTrans1_8: 1 / 8, DrumTrans1_4: 1 / 4, DrumTrans1_2: 1 /
 // [stem index] for PART ISOLATOR knobs (3-part layout: VOCAL / INST (+ bass) / DRUMS).
 const PART_KNOBS = { PartIsolatorVocal: [3], PartIsolatorInst: [2, 1], PartIsolatorDrums: [0] };
 const ACTIVE_PART = { ActivePartVocal: 3, ActivePartInst: 2, ActivePartBass: 1, ActivePartDrums: 0 };
+// Pad channels per deck (FX PART SELECT rows have no deck column in the mapping).
+const PAD_STATUS = [0x97, 0x99, 0x9b, 0x9d];
 const MODES = { HotCue: 'HOT CUE', Keyboard: 'KEYBOARD', Stems: 'STEMS', PadFx1: 'PAD FX', BeatJump: 'BEAT JUMP', BeatLoop: 'BEAT LOOP', Sampler: 'SAMPLER', KeyShift: 'KEY SHIFT' };
 // PAD FX bank (16 slots, momentary): [effect, beats, depth].
 export const PAD_FX = [
@@ -42,7 +44,7 @@ export class PioneerController {
     this.device = profile.device;
     this.core = new ControllerCore(profile, (ev) => this.handle(ev), send);
     this.decks = [0, 1, 2, 3].map(() => ({
-      shift: false, mode: 'HOT CUE', page: 0, partIso: false, taps: [], loadAt: 0, tempoCaught: false, fxPart: [false, false, false, false],
+      shift: false, mode: 'HOT CUE', page: 0, partIso: false, taps: [], loadAt: 0, tempoCaught: false,
     }));
     this.fxTaps = [];
     this.lastLed = 0;
@@ -94,16 +96,20 @@ export class PioneerController {
     if (PART_KNOBS[name] && d) { const lvl = Math.min(1, ev.value01 * 2); PART_KNOBS[name].forEach((k) => d.setStemLevel(k, lvl)); return; }
     if (ACTIVE_PART[name] !== undefined && d) { if (press && this.requireStems(d)) d.setStemOn(ACTIVE_PART[name], d.stemGains[ACTIVE_PART[name]] === 0); return; }
     if (/^FXPartSelect(Vocal|Inst|Bass|Drums)On$/.test(name)) {
+      // Beat FX on chosen parts only. Stem index: Vocal 3, Inst 2, Bass 1, Drums 0.
       if (!press) return;
-      const part = ['Vocal', 'Inst', 'Bass', 'Drums'].indexOf(/Select(\w+?)On/.exec(name)[1]);
-      const deckIdx = ev.raw ? [0x97, 0x99, 0x9b, 0x9d].indexOf(ev.raw[0]) : -1;
-      if (deckIdx >= 0) this.decks[deckIdx].fxPart[part] = !this.decks[deckIdx].fxPart[part];
-      if (!this.warnedFxPart) { this.warnedFxPart = true; toast('FX PART SELECT: Beat FX currently applies to the whole channel'); }
+      const stem = { Vocal: 3, Inst: 2, Bass: 1, Drums: 0 }[/Select(\w+?)On/.exec(name)[1]];
+      const deckIdx = ev.raw ? PAD_STATUS.indexOf(ev.raw[0]) : -1;
+      const dk = this.deck(deckIdx);
+      if (!dk) return;
+      this.requireStems(dk);
+      dk.setFxPart(stem, !dk.fxParts[stem]);
       return;
     }
     if (MODES[name] && d) { if (press) this.setMode(i, MODES[name]); return; }
     const swap = /^DrumSwap([1-4])$/.exec(name);
-    if (swap && d) { if (press && this.requireStems(d)) app.groove[i].toggle(Number(swap[1]) - 1); return; }
+    // Built-in loops play right away; the track's own drums are replaced as soon as stems exist.
+    if (swap && d) { if (press) { this.requireStems(d); app.groove[i].toggle(Number(swap[1]) - 1); } return; }
 
     switch (name) {
       // ---- browser
@@ -156,6 +162,8 @@ export class PioneerController {
       case 'Slip': if (press) d.toggleSlip(); break;
       case 'Vinyl': if (press) { d.vinyl = !d.vinyl; toast(`Deck ${i + 1}: ${d.vinyl ? 'VINYL (scratch)' : 'CDJ (pitch bend)'} jog mode`); } break;
       case 'Deck': case 'DeckState': if (press && d && i >= 2 && app.deckCount < 4) { app.library.setSetting('deckCount', 4); app.applyLayout(); } break;
+      // DECK 3 / DECK 4 layer selected on the hardware: show 4 decks.
+      case 'DualDeckState13': case 'DualDeckState24': if (press && app.deckCount < 4) { app.library.setSetting('deckCount', 4); app.applyLayout(); } break;
 
       // ---- Groove Circuit
       case 'DrumSwapGain': app.groove[i].setLevel(ev.value01 * 1.5); break;
@@ -165,16 +173,17 @@ export class PioneerController {
       case 'DrumSwapMulti': if (press) app.groove[i].setMulti(true); break;
       case 'DrumSwapCapture': if (press && this.requireStems(d)) app.drumCapture(i); break;
       case 'DrumSwapCaptureLength': if (press) toast(`Drum capture: ${app.groove[i].cycleCaptureLength()} bar(s)`); break;
-      case 'DrumReleaseFx': if (this.requireStems(d)) d.drumRelease(press); s.release = press; break;
-      case 'DrumReleaseFxSelect': if (press) toast('Drum Release FX: brake'); break;
+      case 'DrumReleaseFx': if (!press || this.requireStems(d)) d.drumRelease(press); s.release = press; break;
+      case 'DrumReleaseFxSelect': case 'DrumRelease+Shift': if (press) toast(`Deck ${i + 1} Drum Release FX: ${d.cycleReleaseFx()}`, 1500); break;
 
       // ---- mixer
       case 'CrossFader': this.ctl('crossfader')?.apply(ev.value01); break;
       case 'ChannelFader': this.ctl(`ch${i + 1}.fader`)?.apply(ev.value01); break;
       case 'Gain': this.ctl(`ch${i + 1}.trim`)?.apply(ev.value01); break;
-      case 'EQHigh': this.ctl(`ch${i + 1}.hi`)?.apply(this.eq(ev.value01)); break;
-      case 'EQMid': this.ctl(`ch${i + 1}.mid`)?.apply(this.eq(ev.value01)); break;
-      case 'EQLow': this.ctl(`ch${i + 1}.low`)?.apply(this.eq(ev.value01)); break;
+      // EQ knobs share the on-screen curve: centre detent = 0 dB, left = kill, right = +6 dB.
+      case 'EQHigh': this.ctl(`ch${i + 1}.hi`)?.apply(ev.value01); break;
+      case 'EQMid': this.ctl(`ch${i + 1}.mid`)?.apply(ev.value01); break;
+      case 'EQLow': this.ctl(`ch${i + 1}.low`)?.apply(ev.value01); break;
       case 'HeadphoneCue': if (press) this.ctl(`ch${i + 1}.cue`)?.apply(); break;
       case 'PartIsolator': if (press) s.partIso = !s.partIso; break;
       case 'MasterCue': if (press) { this.masterCue = !this.masterCue; this.engine.setPhonesMix(this.masterCue ? 1 : 0); } break;
@@ -196,26 +205,17 @@ export class PioneerController {
     }
   }
 
-  /** EQ knob 0..1 -> our EQ knob range (-40..+6 dB with 0 dB at the hardware centre). */
-  eq(v01) {
-    const db = v01 <= 0.5 ? -40 + (v01 / 0.5) * 40 : ((v01 - 0.5) / 0.5) * 6;
-    return (db + 40) / 46;
-  }
-
-  requireStems(d) {
-    if (d?.stemsReady) return true;
-    if (!this.warnedStems || performance.now() - this.warnedStems > 3000) {
-      this.warnedStems = performance.now();
-      toast(`Deck ${(d?.index ?? 0) + 1}: Groove Circuit / parts need stems — press STEMS on the deck first`);
-    }
-    return false;
-  }
+  /**
+   * Groove Circuit / parts work on stems. When a deck has none yet, start separating them (FAST,
+   * from the play head, like rekordbox's real-time separation): usable after a couple of seconds.
+   */
+  requireStems(d) { return this.app.ensureStems(d); }
 
   setMode(i, mode) {
     this.decks[i].mode = mode;
     this.decks[i].page = 0;
     const view = this.app.deckViews[i];
-    const map = { 'HOT CUE': 'HOT CUE', KEYBOARD: 'KEYBOARD', 'BEAT JUMP': 'BEAT JUMP', 'BEAT LOOP': 'BEAT LOOP', SAMPLER: 'SAMPLER', 'KEY SHIFT': 'KEY SHIFT' };
+    const map = { 'HOT CUE': 'HOT CUE', KEYBOARD: 'KEYBOARD', 'BEAT JUMP': 'BEAT JUMP', 'BEAT LOOP': 'BEAT LOOP', SAMPLER: 'SAMPLER', 'KEY SHIFT': 'KEY SHIFT', STEMS: 'STEMS' };
     if (map[mode]) { view.padMode = map[mode]; view.modeSel.value = map[mode]; view.renderPads(); }
   }
 
@@ -230,8 +230,10 @@ export class PioneerController {
       case 'Sampler': if (press) { if (shift) this.app.sampler.stop(slot); else this.app.sampler.trigger(slot); } break;
       case 'KeyShift': if (press) { const v = KEY_TABLE[s.page * 8 + slot]; d.setKeyShift(d.keyShift === v ? 0 : v); } break;
       case 'Keyboard': if (press) {
+        // SHIFT + pad: choose which hot cue the keyboard plays from (A by default).
+        if (shift) { s.kbCue = slot; toast(`Deck ${i + 1} keyboard plays hot cue ${String.fromCharCode(65 + slot)}`, 1500); break; }
         d.setKeyShift(KEY_TABLE[s.page * 8 + slot]);
-        const a = d.hotCue(0);
+        const a = d.hotCue(s.kbCue ?? 0) ?? d.hotCue(0);
         d.jumpTo(a ? a.start : d.cuePoint);
         if (!d.playing) d.play();
       } break;
@@ -370,6 +372,8 @@ export class PioneerController {
       for (let k = 0; k < 4; k++) o(`DrumSwap${k + 1}`, i, !!g?.isPlaying(k));
       o('DrumSwapBankA', i, g?.bank === 0); o('DrumSwapBankB', i, g?.bank === 1);
       o('DrumSwapSingle', i, g && !g.multi); o('DrumSwapMulti', i, !!g?.multi);
+      o('DrumSwapCapture', i, !!g?.slots[g.bank].some((x) => x?.captured));
+      o('DrumSwapCaptureLength', i, (g?.captureBars ?? 1) > 1);
       for (const n of Object.keys(DRUM_ROLL)) o(n, i, s.roll === n);
       for (const n of Object.keys(DRUM_TRANS)) o(n, i, s.trans === n);
       this.padLeds(i, force);
@@ -400,5 +404,7 @@ export class PioneerController {
     o('ActivePartInst', d.stemsReady && d.stemGains[2] > 0);
     o('ActivePartBass', d.stemsReady && d.stemGains[1] > 0);
     o('ActivePartDrums', d.stemsReady && d.stemGains[0] > 0);
+    // FX PART SELECT LEDs (raw: these rows carry no deck), Vocal / Inst / Bass / Drums.
+    [3, 2, 1, 0].forEach((stem, k) => this.core.sendRaw(PAD_STATUS[i], 0x14 + k, !!d.fxParts?.[stem], force));
   }
 }

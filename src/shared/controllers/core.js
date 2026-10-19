@@ -99,6 +99,15 @@ export class ControllerCore {
     return true;
   }
 
+  /** LED by raw address (functions whose mapping rows carry no deck, e.g. FX PART SELECT). */
+  sendRaw(status, data1, value, force = false) {
+    const v = value === true ? 0x7f : value === false ? 0 : Math.max(0, Math.min(127, Math.round(value)));
+    const k = `${status}:${data1}`;
+    if (!force && this.ledCache.get(k) === v) return;
+    this.ledCache.set(k, v);
+    this.send([status, data1, v]);
+  }
+
   hasOutput(name, deck) { return this.outputs.has(`${name}|${deck ?? null}`); }
 
   /** Forget LED state so the next update resends everything (e.g. after reconnect). */

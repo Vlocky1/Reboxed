@@ -38,11 +38,12 @@ export function crossfaderGains(x, curve = 'smooth') {
 }
 
 class ChannelStrip {
+  /** @param {AudioNode} input deck node: output 0 = channel, output 1 = parts for FX PART SELECT */
   constructor(ctx, input) {
     this.ctx = ctx;
     this.trim = ctx.createGain();
     this.autoGain = ctx.createGain();
-    input.connect(this.trim);
+    input.connect(this.trim, 0);
     this.trim.connect(this.autoGain);
 
     const low = lr4(ctx, 'lowpass', XOVER_LOW);
@@ -63,9 +64,13 @@ class ChannelStrip {
 
     this.fader = ctx.createGain();
     this.hpf.connect(this.fader);
-    // FX insert point (post fader).
+    // FX insert point (post fader). insert.in is what the Beat FX processes: the whole channel, or
+    // with FX PART SELECT only the selected parts (twin chain) while the rest bypasses the FX.
     this.insert = { in: ctx.createGain(), dry: ctx.createGain(), out: ctx.createGain() };
-    this.fader.connect(this.insert.in);
+    this.mainToFx = ctx.createGain();
+    this.restBypass = ctx.createGain(); this.restBypass.gain.value = 0;
+    this.fader.connect(this.mainToFx); this.mainToFx.connect(this.insert.in);
+    this.fader.connect(this.restBypass); this.restBypass.connect(this.insert.out);
     this.insert.in.connect(this.insert.dry);
     this.insert.dry.connect(this.insert.out);
 
@@ -77,14 +82,56 @@ class ChannelStrip {
     this.insert.out.connect(this.meter);
 
     this.state = { trim: 0, eq: { low: 0, mid: 0, high: 0 }, filter: 0, fader: 1, assign: 'thru', cue: false };
+    this.twin = this.buildTwin(input);
+    this.partMode = false;
     this.setFader(0.8);
   }
 
-  setTrim(db) { this.state.trim = db; this.trim.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.01); }
+  /** Same trim / EQ / colour filter / fader for the FX PART SELECT signal (deck output 1). */
+  buildTwin(input) {
+    const ctx = this.ctx;
+    const t = { trim: ctx.createGain(), autoGain: ctx.createGain(), gLow: ctx.createGain(), gMid: ctx.createGain(), gHigh: ctx.createGain() };
+    input.connect(t.trim, 1);
+    t.trim.connect(t.autoGain);
+    const low = lr4(ctx, 'lowpass', XOVER_LOW);
+    const midHp = lr4(ctx, 'highpass', XOVER_LOW);
+    const midLp = lr4(ctx, 'lowpass', XOVER_HIGH);
+    const high = lr4(ctx, 'highpass', XOVER_HIGH);
+    const sum = ctx.createGain();
+    t.autoGain.connect(low.in); low.out.connect(t.gLow);
+    t.autoGain.connect(midHp.in); midHp.out.connect(midLp.in); midLp.out.connect(t.gMid);
+    t.autoGain.connect(high.in); high.out.connect(t.gHigh);
+    [t.gLow, t.gMid, t.gHigh].forEach((g) => g.connect(sum));
+    t.lpf = ctx.createBiquadFilter(); t.lpf.type = 'lowpass'; t.lpf.frequency.value = 22000; t.lpf.Q.value = 1;
+    t.hpf = ctx.createBiquadFilter(); t.hpf.type = 'highpass'; t.hpf.frequency.value = 10; t.hpf.Q.value = 1;
+    sum.connect(t.lpf); t.lpf.connect(t.hpf);
+    t.fader = ctx.createGain();
+    t.hpf.connect(t.fader);
+    t.hpf.connect(this.cueSend);
+    t.fader.connect(this.insert.in);
+    return t;
+  }
+
+  /** FX PART SELECT on: the Beat FX gets only the parts, the rest of the channel bypasses it. */
+  setPartMode(on) {
+    this.partMode = on;
+    const now = this.ctx.currentTime;
+    this.mainToFx.gain.setTargetAtTime(on ? 0 : 1, now, 0.005);
+    this.restBypass.gain.setTargetAtTime(on ? 1 : 0, now, 0.005);
+  }
+
+  setAutoGainDb(db) {
+    for (const c of [this, this.twin]) c.autoGain.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.05);
+  }
+
+  setTrim(db) {
+    this.state.trim = db;
+    for (const c of [this, this.twin]) c.trim.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.01);
+  }
   setEq(band, db) {
     this.state.eq[band] = db;
-    const g = { low: this.gLow, mid: this.gMid, high: this.gHigh }[band];
-    g.gain.setTargetAtTime(dbToGain(db), this.ctx.currentTime, 0.01);
+    const key = { low: 'gLow', mid: 'gMid', high: 'gHigh' }[band];
+    for (const c of [this, this.twin]) c[key].gain.setTargetAtTime(dbToGain(db), this.ctx.currentTime, 0.01);
   }
   /** COLOR knob (-1..1, 0 = off). What it does depends on the selected Color FX. */
   setFilter(v) {
@@ -95,12 +142,15 @@ class ChannelStrip {
     const amt = Math.abs(v) > dead ? (Math.abs(v) - dead) / (1 - dead) : 0;
     // FILTER is also the tone shaping used by the other colour effects' wet paths.
     const filterOn = type === 'FILTER';
-    if (filterOn && v < -dead) this.lpf.frequency.setTargetAtTime(20000 * 2 ** (-amt * 10), t, 0.01);
-    else this.lpf.frequency.setTargetAtTime(22000, t, 0.01);
-    if (filterOn && v > dead) this.hpf.frequency.setTargetAtTime(20 * 2 ** (amt * 9.5), t, 0.01);
-    else this.hpf.frequency.setTargetAtTime(10, t, 0.01);
     const q = filterOn && amt > 0 ? 1 + amt * 4 : 0.7;
-    this.lpf.Q.value = q; this.hpf.Q.value = q;
+    for (const c of [this, this.twin]) {
+      if (!c) continue;
+      if (filterOn && v < -dead) c.lpf.frequency.setTargetAtTime(20000 * 2 ** (-amt * 10), t, 0.01);
+      else c.lpf.frequency.setTargetAtTime(22000, t, 0.01);
+      if (filterOn && v > dead) c.hpf.frequency.setTargetAtTime(20 * 2 ** (amt * 9.5), t, 0.01);
+      else c.hpf.frequency.setTargetAtTime(10, t, 0.01);
+      c.lpf.Q.value = q; c.hpf.Q.value = q;
+    }
     if (filterOn) { this.cfx?.set(0, 0); return; }
     this.ensureCfx(type).set(amt, Math.sign(v));
   }
@@ -178,7 +228,10 @@ class ChannelStrip {
     };
     return this.cfx;
   }
-  setFader(v, curve) { this.state.fader = v; this.fader.gain.setTargetAtTime(faderGain(v, curve), this.ctx.currentTime, 0.005); }
+  setFader(v, curve) {
+    this.state.fader = v;
+    for (const c of [this, this.twin]) c?.fader.gain.setTargetAtTime(faderGain(v, curve), this.ctx.currentTime, 0.005);
+  }
   setCue(on) { this.state.cue = on; this.cueSend.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.005); }
 }
 
@@ -235,7 +288,7 @@ export class AudioEngine extends EventTarget {
     this.phonesEl.srcObject = this.phonesDest.stream;
 
     for (let i = 0; i < deckCount; i++) {
-      const node = new AudioWorkletNode(ctx, 'deck-processor', { numberOfInputs: 0, outputChannelCount: [2] });
+      const node = new AudioWorkletNode(ctx, 'deck-processor', { numberOfInputs: 0, numberOfOutputs: 2, outputChannelCount: [2, 2] });
       const strip = new ChannelStrip(ctx, node);
       strip.xfade.connect(this.masterIn);
       strip.cueSend.connect(this.cueBus);
@@ -314,7 +367,7 @@ export class AudioEngine extends EventTarget {
     const ch = this.channels[i];
     const db = this.autoGainOn && Number.isFinite(loudness) ? Math.max(-12, Math.min(12, AUTO_GAIN_TARGET_DB - loudness)) : 0;
     ch.autoGainDb = db;
-    ch.autoGain.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.05);
+    ch.setAutoGainDb(db);
   }
 
   levels() {

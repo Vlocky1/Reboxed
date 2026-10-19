@@ -1,7 +1,9 @@
 // Groove Circuit DRUM SWAP / DRUM CAPTURE for one deck.
 // Two banks (A/B) x 4 slots of drum loops. A playing slot replaces the track's drum part
 // (drum stem muted), loops in time with the deck's bars and follows its tempo.
-// DRUM CAPTURE stores 1/2/4 bars of the current track's drum stem into the next free slot.
+// The banks start with the built-in loops (drumkit.js, rendered at the deck's tempo).
+// DRUM CAPTURE stores 1/2/4 bars of the current track's drum stem, replacing a built-in loop first.
+import { DRUM_PATTERNS, renderPattern } from '../../shared/drumkit.js';
 
 export const CAPTURE_LENGTHS = [1, 2, 4]; // bars
 
@@ -19,7 +21,13 @@ export class DrumSwap extends EventTarget {
     this.bank = 0;                // 0 = A, 1 = B
     this.multi = false;           // single mode: one slot at a time
     this.captureBars = 1;
-    this.slots = [0, 1].map(() => Array.from({ length: 4 }, () => null)); // {buffer, bpm, bars, name}
+    // Slot: built-in {builtin: index, name, bars} or captured {buffer, bpm, bars, name, captured: true}.
+    this.slots = [0, 1].map((b) => Array.from({ length: 4 }, (_, k) => {
+      const p = DRUM_PATTERNS[b * 4 + k];
+      return { builtin: b * 4 + k, name: p.name, bars: p.bars };
+    }));
+    this.captureCursor = [0, 0];
+    this.rendered = new Map(); // `${pattern}:${bpm}` -> AudioBuffer
     this.playing = new Map();     // `${bank}:${slot}` -> {src, gain}
     this.level = 1;
   }
@@ -34,13 +42,27 @@ export class DrumSwap extends EventTarget {
   setMulti(on) { this.multi = on; if (!on) this.keepOnly(null); this.emit(); }
   cycleCaptureLength() { this.captureBars = CAPTURE_LENGTHS[(CAPTURE_LENGTHS.indexOf(this.captureBars) + 1) % CAPTURE_LENGTHS.length]; this.emit(); return this.captureBars; }
 
-  /** Toggle a slot. Empty slot: nothing (capture first). */
+  /** Toggle a slot. */
   toggle(slot) {
     if (this.isPlaying(slot)) { this.stop(slot); return; }
     const s = this.slot(slot);
     if (!s) return;
     if (!this.multi) this.keepOnly(null);
-    this.start(slot, s);
+    this.start(slot, s.builtin !== undefined ? this.builtinLoop(s) : s);
+  }
+
+  /** A built-in pattern rendered at the deck's current tempo (cached per 0.1 BPM). */
+  builtinLoop(s) {
+    const bpm = Math.round((this.deck.currentBpm || this.deck.originalBpm || 120) * 10) / 10;
+    const key = `${s.builtin}:${bpm}`;
+    if (!this.rendered.has(key)) {
+      const r = renderPattern(DRUM_PATTERNS[s.builtin], bpm, this.ctx.sampleRate);
+      const buffer = new AudioBuffer({ numberOfChannels: 2, length: r.left.length, sampleRate: r.rate });
+      buffer.copyToChannel(r.left, 0); buffer.copyToChannel(r.right, 1);
+      if (this.rendered.size > 16) this.rendered.clear();
+      this.rendered.set(key, buffer);
+    }
+    return { buffer: this.rendered.get(key), bpm, bars: s.bars, name: s.name };
   }
 
   start(slot, s) {
@@ -119,11 +141,34 @@ export class DrumSwap extends EventTarget {
       for (let i = 0; i < b - a; i++) data[i] = drumsPcm[2 * (a + i) + ch] / 32768;
       buffer.copyToChannel(data, ch);
     }
-    const slots = this.slots[this.bank];
-    let slot = slots.findIndex((s) => !s);
-    if (slot < 0) slot = 0;
-    slots[slot] = { buffer, bpm: d.originalBpm, bars: this.captureBars, name: `${d.track?.title ?? 'Drums'} ${this.captureBars}bar` };
-    this.emit();
+    const slot = this.nextCaptureSlot();
+    this.store(this.bank, slot, { buffer, bpm: d.originalBpm, bars: this.captureBars, name: `${d.track?.title ?? 'Drums'} ${this.captureBars}bar` });
+    this.dispatchEvent(new CustomEvent('capture', { detail: { bank: this.bank, slot } }));
     return slot;
+  }
+
+  /** Built-in loops are replaced first, then the oldest capture. */
+  nextCaptureSlot() {
+    const slots = this.slots[this.bank];
+    const free = slots.findIndex((s) => !s?.captured);
+    if (free >= 0) return free;
+    const k = this.captureCursor[this.bank];
+    this.captureCursor[this.bank] = (k + 1) % 4;
+    return k;
+  }
+
+  /** Put a captured loop in a slot (also used to restore saved captures). */
+  store(bank, slot, s) {
+    if (this.playing.has(this.key(slot, bank))) this.stop(slot, bank);
+    this.slots[bank][slot] = { ...s, captured: true };
+    this.emit();
+  }
+
+  /** Back to the built-in loop of a slot. */
+  reset(bank, slot) {
+    if (this.playing.has(this.key(slot, bank))) this.stop(slot, bank);
+    const p = DRUM_PATTERNS[bank * 4 + slot];
+    this.slots[bank][slot] = { builtin: bank * 4 + slot, name: p.name, bars: p.bars };
+    this.emit();
   }
 }
