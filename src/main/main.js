@@ -105,6 +105,7 @@ function registerIpc(win) {
     return { moved, info: storage.info() };
   });
   ipcMain.handle('stems:relocate', (_e, id, oldPath, newPath) => stems.relocate(id, oldPath, newPath));
+  ipcMain.handle('stems:convertToMp3', (_e, tracks, kbps) => stems.convertToMp3(tracks, kbps));
   ipcMain.handle('fs:listAudio', (_e, dir) => listAudio(dir));
   // Hardware plugins (docs/PLUGINS.md): built-in ones in src/plugins, the user's in <app folder>/plugins.
   plugins = new PluginStore(join(srcRoot, 'plugins'), join(appDir, 'plugins'));

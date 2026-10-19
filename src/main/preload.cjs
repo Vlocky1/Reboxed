@@ -78,8 +78,9 @@ contextBridge.exposeInMainWorld('rb', {
     remove: (id, trackPath) => ipcRenderer.invoke('stems:delete', id, trackPath),
     relocate: (id, oldPath, newPath) => ipcRenderer.invoke('stems:relocate', id, oldPath, newPath),
     removeAll: () => ipcRenderer.invoke('stems:deleteAll'),
+    convertToMp3: (tracks, kbps) => ipcRenderer.invoke('stems:convertToMp3', tracks, kbps),
     on: (channel, cb) => {
-      const allowed = ['stems:progress', 'stems:download', 'stems:fallback', 'stems:block', 'stems:job'];
+      const allowed = ['stems:progress', 'stems:download', 'stems:fallback', 'stems:block', 'stems:job', 'stems:convert'];
       if (!allowed.includes(channel)) throw new Error(`unknown channel ${channel}`);
       const listener = (_e, ...args) => cb(...args);
       ipcRenderer.on(channel, listener);

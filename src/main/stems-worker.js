@@ -2,14 +2,30 @@
 // process (a native crash in a GPU provider only kills this process). Results stream back block
 // by block (from the play head), then the full stems are written to the cache.
 import { createRequire } from 'node:module';
-import { mkdir, writeFile, rename, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   separateSpleeter, separateDemucs, stemToPcm16, stemEnvelope, vocalRegions, STEM_NAMES, STEM_RATE, ENV_PPS, SPLEETER_STEMS,
 } from './stems-core.js';
 import { wavHeader } from '../shared/wav.js';
+import { MP3_DELAY, encodeMp3 } from '../shared/mp3.js';
+import { Worker } from 'node:worker_threads';
 
 const require = createRequire(import.meta.url);
+
+/** Encode one stem to an MP3 file in a worker thread (here if the thread cannot start). */
+async function encodeStem(pcm, kbps, path) {
+  try {
+    await new Promise((resolve, reject) => {
+      const w = new Worker(new URL('./mp3-worker.js', import.meta.url), { workerData: { pcm: pcm.buffer, rate: STEM_RATE, kbps, path } });
+      w.once('message', resolve);
+      w.once('error', reject);
+      w.once('exit', (code) => { if (code) reject(new Error(`MP3 encoder exited (${code})`)); });
+    });
+  } catch {
+    await writeFile(path, encodeMp3(pcm, STEM_RATE, kbps));
+  }
+}
 const ort = require('onnxruntime-node');
 const sessions = new Map();
 
@@ -26,8 +42,31 @@ async function session(path, ep) {
   return sessions.get(key);
 }
 
+/** WAV stems folder -> MP3 (meta updated, WAV files removed once the MP3 files are written). */
+async function convert(m) {
+  const meta = JSON.parse(await readFile(join(m.dir, m.metaFile), 'utf8'));
+  let freed = 0;
+  const wavs = meta.stems.map((name) => join(m.dir, `${name}.wav`));
+  await Promise.all(wavs.map(async (wav, s) => {
+    const buf = await readFile(wav);
+    freed += buf.byteLength;
+    const pcm = new Int16Array(buf.buffer.slice(buf.byteOffset + 44, buf.byteOffset + buf.byteLength - ((buf.byteLength - 44) % 2)));
+    await encodeStem(pcm, m.kbps, join(m.dir, `${meta.stems[s]}.mp3`));
+  }));
+  await writeFile(join(m.dir, m.metaFile), JSON.stringify({ ...meta, format: 'mp3', kbps: m.kbps, mp3Delay: MP3_DELAY }));
+  for (const wav of wavs) await rm(wav, { force: true });
+  for (const name of meta.stems) freed -= (await stat(join(m.dir, `${name}.mp3`))).size;
+  return freed;
+}
+
 process.parentPort.on('message', async (e) => {
   const m = e.data;
+  if (m.type === 'convert') {
+    try { process.parentPort.postMessage({ id: m.id, quality: m.quality, type: 'done', freed: await convert(m) }); } catch (err) {
+      process.parentPort.postMessage({ id: m.id, quality: m.quality, type: 'error', error: String(err?.message ?? err) });
+    }
+    return;
+  }
   if (m.type !== 'separate') return;
   const { id, quality, left, right } = m;
   const n = left.length;
@@ -60,15 +99,22 @@ process.parentPort.on('message', async (e) => {
     const tmp = `${m.outDir}.part`;
     await rm(tmp, { recursive: true, force: true });
     await mkdir(tmp, { recursive: true });
-    // Standard 16-bit WAV files (usable in any DAW / DJ software), 44-byte header then the PCM.
-    for (let s = 0; s < STEM_NAMES.length; s++) {
-      await writeFile(join(tmp, `${STEM_NAMES[s]}.wav`), Buffer.concat([Buffer.from(wavHeader(pcm[s].byteLength, STEM_RATE, 2)), Buffer.from(pcm[s].buffer)]));
+    // MP3 (default, ~5x smaller; the 4 stems are encoded in parallel) or standard 16-bit WAV files.
+    // Both are usable in any DAW / DJ software.
+    const format = m.format === 'wav' ? 'wav' : 'mp3';
+    if (format === 'wav') {
+      for (let s = 0; s < STEM_NAMES.length; s++) {
+        await writeFile(join(tmp, `${STEM_NAMES[s]}.wav`), Buffer.concat([Buffer.from(wavHeader(pcm[s].byteLength, STEM_RATE, 2)), Buffer.from(pcm[s].buffer)]));
+      }
+    } else {
+      await Promise.all(STEM_NAMES.map((name, s) => encodeStem(pcm[s], m.kbps ?? 256, join(tmp, `${name}.mp3`))));
     }
     const vocalsIdx = STEM_NAMES.indexOf('vocals');
     const vocalsF = [new Float32Array(n), new Float32Array(n)];
     for (let i = 0; i < n; i++) { vocalsF[0][i] = pcm[vocalsIdx][2 * i] / 32768; vocalsF[1][i] = pcm[vocalsIdx][2 * i + 1] / 32768; }
     const meta = {
-      rate: STEM_RATE, frames: n, stems: STEM_NAMES, quality, ep: m.ep, format: 'wav', track: m.trackPath ?? null,
+      rate: STEM_RATE, frames: n, stems: STEM_NAMES, quality, ep: m.ep, format, track: m.trackPath ?? null,
+      ...(format === 'mp3' ? { kbps: m.kbps ?? 256, mp3Delay: MP3_DELAY } : {}),
       vocals: vocalRegions(vocalsF),
       env: { pps: ENV_PPS, data: env.map((a) => Buffer.from(a).toString('base64')) },
     };

@@ -1,5 +1,5 @@
-// Stem separation service: model downloads, job queue, progressive results. Stems are kept as WAV
-// files, {drums,bass,other,vocals}.wav + reboxed-stems.json, one folder per track named after it:
+// Stem separation service: model downloads, job queue, progressive results. Stems are kept as MP3
+// (or WAV) files, {drums,bass,other,vocals}.mp3 + reboxed-stems.json, one folder per track named after it:
 //   <database>/stems/<track>/ (default), <custom folder>/<track>/, or <track folder>/stems/<track>/.
 // The best quality replaces the previous one. Fallback when that place is not writable, and the
 // cache of older versions: <app folder>/stems/<trackId>/<quality>/ (.pcm stays readable).
@@ -182,7 +182,7 @@ export class StemService {
       }
     }
     const { dir, ...meta } = m;
-    if (meta.format === 'wav') await writeFile(join(target, STEMS_META), JSON.stringify({ ...meta, track: newPath }));
+    if (meta.format !== 'pcm') await writeFile(join(target, STEMS_META), JSON.stringify({ ...meta, track: newPath }));
     return target;
   }
 
@@ -203,9 +203,9 @@ export class StemService {
    * Queue a separation. left/right: 44.1 kHz Float32Arrays. Blocks are streamed to the renderer
    * as 'stems:block' while the job runs. `urgent` jobs (a deck asked for stems) go first.
    */
-  separate(id, left, right, { quality = 'fast', ep = 'cpu', startSample = 0, urgent = false, trackPath = null } = {}) {
+  separate(id, left, right, { quality = 'fast', ep = 'cpu', startSample = 0, urgent = false, trackPath = null, format = 'mp3', kbps = 256 } = {}) {
     return new Promise((resolve, reject) => {
-      const job = { id, left, right, quality, ep, startSample, trackPath, resolve, reject };
+      const job = { id, left, right, quality, ep, startSample, trackPath, format, kbps, resolve, reject };
       if (urgent) this.queue.unshift(job); else this.queue.push(job);
       this.pump();
     });
@@ -232,9 +232,40 @@ export class StemService {
     return this.child;
   }
 
+  /**
+   * Re-encode the WAV stems of these tracks as MP3 (frees ~80 % of the space).
+   * @param {{id: string, path: string}[]} tracks
+   */
+  async convertToMp3(tracks, kbps = 256) {
+    const dirs = new Map();
+    for (const t of tracks) {
+      const m = await this.meta(t.id, t.path);
+      if (m?.format === 'wav') dirs.set(m.dir.toLowerCase(), m.dir);
+    }
+    const report = { converted: 0, failed: 0, freed: 0, total: dirs.size };
+    for (const dir of dirs.values()) {
+      try {
+        const r = await new Promise((resolve, reject) => {
+          const job = { id: `convert:${dir}`, quality: 'convert', ep: 'cpu', convert: { dir, kbps }, resolve, reject };
+          this.queue.push(job);
+          this.pump();
+        });
+        report.converted++; report.freed += r.freed;
+      } catch { report.failed++; }
+      this.send('stems:convert', report.converted + report.failed, report.total);
+    }
+    return report;
+  }
+
   async pump() {
     if (this.busy || !this.queue.length) return;
     const job = this.queue.shift();
+    if (job.convert) {
+      this.busy = true;
+      this.current = job;
+      this.ensureChild().postMessage({ type: 'convert', id: job.id, quality: job.quality, ...job.convert, metaFile: STEMS_META });
+      return;
+    }
     if (!(await this.hasModel(job.quality))) {
       job.reject(new Error(`${MODELS[job.quality].label} model not downloaded (Preferences > Stems)`));
       this.pump();
@@ -247,6 +278,7 @@ export class StemService {
     this.ensureChild().postMessage({
       type: 'separate', id: job.id, quality: job.quality, left: job.left, right: job.right, ep: job.ep, startSample: job.startSample,
       modelDir: fastDir, model: this.overrides.hq ?? join(this.modelDir, MODELS.hq.files[0].name), outDir: job.outDir, trackPath: job.trackPath,
+      format: job.format, kbps: job.kbps,
     });
     this.send('stems:job', job.id, job.quality, 'start');
   }
@@ -260,9 +292,9 @@ export class StemService {
     }
     this.current = null;
     this.busy = false;
-    if (m.type === 'done') job.resolve({ ...m.meta, dir: job.outDir });
+    if (m.type === 'done') job.resolve(job.convert ? m : { ...m.meta, dir: job.outDir });
     else job.reject(new Error(m.error));
-    this.send('stems:job', job.id, job.quality, m.type);
+    if (!job.convert) this.send('stems:job', job.id, job.quality, m.type);
     this.pump();
   }
 }

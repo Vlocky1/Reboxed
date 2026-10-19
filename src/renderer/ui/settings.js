@@ -46,6 +46,22 @@ async function stemsSection(library, apply) {
       ['muted', 'Colour by stem, dim muted stems'], ['always', 'Always colour by stem'], ['off', 'Classic waveform']]),
     h('label', {}, 'Processing'), sel('stemsProvider', [
       ['cpu', 'CPU (recommended)'], ['dml', 'DirectML GPU (experimental, falls back to CPU)']]),
+    h('label', {}, 'Stem files'), sel('stemsFormat', [
+      ['mp3', 'MP3 256 kbps (about 9 MB per stem for 5 min)'], ['mp3-320', 'MP3 320 kbps (about 12 MB)'], ['wav', 'WAV (lossless, about 53 MB)']]),
+    h('label', {}, ''), (() => {
+      const info = h('span.dim');
+      const btn = h('button.dbtn.small', {}, 'Convert my WAV stems to MP3');
+      btn.onclick = async () => {
+        btn.disabled = true; info.textContent = ' Looking for WAV stems…';
+        const off = window.rb.stems.on('stems:convert', (done, total) => { info.textContent = ` ${done} / ${total}…`; });
+        try {
+          const kbps = s.stemsFormat === 'mp3-320' ? 320 : 256;
+          const r = await window.rb.stems.convertToMp3(library.all().map((t) => ({ id: t.id, path: t.path })), kbps);
+          info.textContent = r.total ? ` ${r.converted} track(s) converted, ${(r.freed / 1e9).toFixed(2)} GB freed${r.failed ? `, ${r.failed} failed` : ''}.` : ' No WAV stems found.';
+        } catch (err) { info.textContent = ` Failed: ${err.message}`; } finally { off(); btn.disabled = false; }
+      };
+      return h('div', {}, btn, info);
+    })(),
     h('label', {}, 'Where stems are kept'), h('span.dim', {}, 'See the Library tab.'),
     h('label', {}, 'Cache'), clear);
 }
