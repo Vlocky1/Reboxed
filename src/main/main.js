@@ -146,7 +146,7 @@ function registerIpc(win) {
   ipcMain.handle('spotify:lookup', (_e, q) => spotify.lookup(q));
   // Deezer (no account) + Spotify (when set up), merged: Deezer brings the genres Spotify lacks.
   const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: timedFetch }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret) });
-  ipcMain.handle('metadata:lookup', (_e, q, source) => metadata.lookup(q, source));
+  ipcMain.handle('metadata:lookup', (_e, q, source, opts) => metadata.lookup(q, source, opts));
   /** Cover from a URL (Spotify, Deezer) -> library artwork thumbnail path. */
   ipcMain.handle('artwork:fromUrl', async (_e, url) => {
     if (!/^https:\/\/(i\.scdn\.co|cdn-images\.dzcdn\.net|e-cdns-images\.dzcdn\.net)\//.test(url)) throw new Error('unsupported artwork URL');

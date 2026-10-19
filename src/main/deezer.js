@@ -52,10 +52,12 @@ export class Deezer {
   }
 
   /**
-   * Candidates for a track, best first (details of the first 6).
+   * Candidates for a track, best first (details of the first `max`).
    * @param {{title: string, artist?: string, query?: string}} q
+   * @param {{max?: number, duration?: number}} [opts] batch tagging asks fewer details (Deezer allows
+   *   50 requests / 5 s); with a duration, the results closest to it get their details first
    */
-  async lookup({ title, artist, query }) {
+  async lookup({ title, artist, query }, { max = 6, duration = 0 } = {}) {
     const clean = (s) => String(s ?? '').replace(/["]/g, ' ').replace(/\s+/g, ' ').trim();
     const tries = query ? [clean(query)] : [`${clean(artist?.split(/,|&| feat\.? | ft\.? /i)[0])} ${clean(splitMix(title).title)}`.trim(), clean(splitMix(title).title)];
     let items = [];
@@ -65,7 +67,8 @@ export class Deezer {
       if (items.length) break;
     }
     const out = [];
-    for (const it of items.slice(0, 6)) {
+    if (duration) items = items.map((it, i) => [it, i]).sort((a, b) => (Math.abs((a[0].duration ?? 0) - duration) > 3) - (Math.abs((b[0].duration ?? 0) - duration) > 3) || a[1] - b[1]).map(([it]) => it);
+    for (const it of items.slice(0, max)) {
       const tr = await this.get(`/track/${it.id}`).catch(() => it);
       out.push(deezerFields(tr, tr.album?.id ? await this.album(tr.album.id) : {}));
     }
