@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('rb', {
   readTagsMany: (paths) => ipcRenderer.invoke('tags:readMany', paths),
   copyInto: (src, dir) => ipcRenderer.invoke('fs:copyInto', src, dir),
   trash: (paths) => ipcRenderer.invoke('fs:trash', paths),
+  spotify: {
+    status: () => ipcRenderer.invoke('spotify:status'),
+    setCredentials: (clientId, secret) => ipcRenderer.invoke('spotify:setCredentials', clientId, secret),
+    lookup: (q) => ipcRenderer.invoke('spotify:lookup', q),
+  },
+  artworkFromUrl: (url) => ipcRenderer.invoke('artwork:fromUrl', url),
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),
     read: (id, file) => ipcRenderer.invoke('plugins:read', id, file),
@@ -59,7 +65,7 @@ contextBridge.exposeInMainWorld('rb', {
   rbMapping: (deviceName) => ipcRenderer.invoke('controller:rbMapping', deviceName),
   dl: {
     tools: (dir) => ipcRenderer.invoke('dl:tools', dir),
-    search: (q, n) => ipcRenderer.invoke('dl:search', q, n),
+    search: (q, n, platform) => ipcRenderer.invoke('dl:search', q, n, platform),
     feed: (url, n) => ipcRenderer.invoke('dl:feed', url, n),
     resolve: (url) => ipcRenderer.invoke('dl:resolve', url),
     download: (item, opts) => ipcRenderer.invoke('dl:download', item, opts),

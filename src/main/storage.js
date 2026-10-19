@@ -38,7 +38,7 @@ export class Storage {
     this.appDir = appDir;
     this.file = join(appDir, 'location.json');
     // fullscreen: open the window in full screen (read before the window exists, so kept here).
-    this.cfg = { database: null, stemsMode: 'database', stemsDir: null, fullscreen: true };
+    this.cfg = { database: null, stemsMode: 'database', stemsDir: null, startMode: 'maximized' };
   }
 
   async load() {
