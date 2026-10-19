@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { parseRekordboxMapping } from '../src/shared/controllers/rbcsv.js';
 import { ControllerCore } from '../src/shared/controllers/core.js';
 
-const grv6 = JSON.parse(readFileSync(new URL('../src/shared/controllers/ddj-grv6.json', import.meta.url), 'utf8'));
+const grv6 = JSON.parse(readFileSync(new URL('../src/plugins/pioneer-ddj-grv6/mapping.json', import.meta.url), 'utf8'));
 
 test('parses rekordbox mapping rows, deck channels and options', () => {
   const csv = [

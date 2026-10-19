@@ -1,0 +1,14 @@
+{
+  "id": "pioneer-ddj-flx6",
+  "name": "Pioneer DDJ-FLX6",
+  "version": "1.0.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "DDJ-FLX6: mapping from its rekordbox MIDI mapping. Untested on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
+  "match": [
+    "DDJ-FLX6"
+  ],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 4
+}

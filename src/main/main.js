@@ -11,6 +11,8 @@ import { scanPaths, readTags, findFiles, listAudio, AUDIO_EXTENSIONS } from './s
 import { StemService } from './stems.js';
 import { Storage, migrateLegacyAppDir, hasLibrary, copyDatabase, moveStemsRoot } from './storage.js';
 import { Downloader } from './downloader.js';
+import { exportToDrive, listDrives } from './cdj-export.js';
+import { PluginStore } from './plugins.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
@@ -61,6 +63,7 @@ let store;
 let stems;
 let downloader;
 let storage;
+let plugins;
 
 /** Embedded cover -> 96 px JPEG thumbnail in userData/artwork (deduplicated by content hash). */
 async function saveArtwork(data) {
@@ -102,7 +105,23 @@ function registerIpc(win) {
     return { moved, info: storage.info() };
   });
   ipcMain.handle('stems:relocate', (_e, id, oldPath, newPath) => stems.relocate(id, oldPath, newPath));
+  ipcMain.handle('stems:convertToMp3', (_e, tracks, kbps) => stems.convertToMp3(tracks, kbps));
   ipcMain.handle('fs:listAudio', (_e, dir) => listAudio(dir));
+  // Hardware plugins (docs/PLUGINS.md): built-in ones in src/plugins, the user's in <app folder>/plugins.
+  plugins = new PluginStore(join(srcRoot, 'plugins'), join(appDir, 'plugins'));
+  ipcMain.handle('plugins:list', () => plugins.list());
+  ipcMain.handle('plugins:read', (_e, id, file) => plugins.read(id, file));
+  ipcMain.handle('plugins:install', (_e, dir) => plugins.install(dir));
+  ipcMain.handle('plugins:remove', (_e, id) => plugins.remove(id));
+  ipcMain.handle('plugins:createFromCsv', (_e, csv, opts) => plugins.createFromCsv(csv, opts));
+  ipcMain.handle('plugins:openFolder', async () => { await mkdir(plugins.userDir, { recursive: true }); return shell.openPath(plugins.userDir); });
+  // Export to a USB drive for CDJ / XDJ players.
+  ipcMain.handle('cdj:drives', () => listDrives());
+  ipcMain.handle('cdj:export', (e, job) => exportToDrive(job, {
+    getAnalysis: (id) => store.getAnalysis(id),
+    resizeJpeg: (buf, size) => { const img = nativeImage.createFromBuffer(buf); return img.isEmpty() ? null : img.resize({ width: size, height: size, quality: 'good' }).toJPEG(85); },
+    progress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('cdj:progress', p); },
+  }));
   // Migration to a USB drive: tags of candidate files (no artwork), 8 at a time.
   ipcMain.handle('tags:readMany', async (_e, paths) => {
     const out = {};
@@ -179,8 +198,8 @@ function registerIpc(win) {
     return r.canceled ? [] : r.filePaths;
   });
   ipcMain.handle('dialog:openFiles', async (_e, kind) => {
-    const filters = kind === 'xml'
-      ? [{ name: 'rekordbox XML', extensions: ['xml'] }]
+    const filters = kind === 'xml' ? [{ name: 'rekordbox XML', extensions: ['xml'] }]
+      : kind === 'csv' ? [{ name: 'rekordbox controller mapping', extensions: ['csv'] }]
       : [{ name: 'Audio', extensions: [...AUDIO_EXTENSIONS].map((x) => x.slice(1)) }];
     const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters });
     return r.canceled ? [] : r.filePaths;

@@ -1,0 +1,14 @@
+{
+  "id": "pioneer-ddj-grv6",
+  "name": "Pioneer DDJ-GRV6",
+  "version": "1.1.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "4-deck controller with Groove Circuit (DRUM SWAP, CAPTURE, ROLL, RELEASE FX), PART ISOLATOR and FX PART SELECT. Uses its 4-channel sound card: master on outputs 1/2, headphones on 3/4.",
+  "match": ["DDJ-GRV6"],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 4,
+  "audio": { "device": "GRV6", "layout": "quad" },
+  "fxPartPadStatus": [151, 153, 155, 157]
+}

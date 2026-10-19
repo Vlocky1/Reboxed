@@ -7,14 +7,12 @@ import { h, toast } from './dom.js';
 import { planMigration, filesToConfirm } from '../../shared/migrate.js';
 import { insidePath } from '../../shared/portable-paths.js';
 
-const DEFAULT_DIR = 'J:\\Tracks';
 const COPY_SUBDIR = 'From computer';
 const BADGE = { sure: ['sure', 'Same music'], likely: ['likely', 'Very likely'], check: ['check', 'To check'], none: ['none', 'Not on the drive'], missing: ['missing', 'File missing'] };
 
 /** @returns {Promise<object|null>} report, or null when cancelled */
 export async function openRelink(app, dir = null) {
   const lib = app.library;
-  if (!dir) dir = (await window.rb.exists(DEFAULT_DIR)) ? DEFAULT_DIR : null;
 
   return new Promise((resolve) => {
     const title = h('h2', {}, 'Move my collection to a USB drive');
@@ -29,7 +27,7 @@ export async function openRelink(app, dir = null) {
 
     function start() {
       body.replaceChildren(
-        h('p', {}, 'Choose the folder of your USB drive that holds your music (for example ', h('code', {}, DEFAULT_DIR), ').'),
+        h('p', {}, 'Choose the folder of your USB drive that holds your music (for example ', h('code', {}, 'E:\\Music'), '). Nothing is picked for you.'),
         h('p.dim', {}, 'Reboxed finds, for every track still on this computer, the same music on the drive — same file name, another format, or a similar name confirmed by the tags and the duration — and lets you check before anything changes.'));
       setButtons([{ label: 'Cancel', onclick: () => close(null) }, { label: 'Choose folder…', primary: true, onclick: choose }]);
     }

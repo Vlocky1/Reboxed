@@ -2,6 +2,7 @@
 // master tempo, key shift, slip, reverse and beat sync. Audio runs in deck-processor.js.
 
 import { toBeatgrid } from '../../shared/beatgrid.js';
+import { finePeaks } from '../../shared/dsp/waveform.js';
 
 /** Insert [a, b) into a sorted list of disjoint ranges, merging neighbours. */
 export function mergeRange(ranges, [a, b]) {
@@ -153,6 +154,7 @@ export class Deck extends EventTarget {
   setLoaded(track, buffer, analysis) {
     const channels = [];
     for (let c = 0; c < Math.min(2, buffer.numberOfChannels); c++) channels.push(buffer.getChannelData(c).slice());
+    this.fine = finePeaks(channels, buffer.sampleRate); // zoomed-in waveform (real wave shape)
     this.post({ type: 'load', channels, sampleRate: buffer.sampleRate }, channels.map((c) => c.buffer));
     this.track = track;
     this.analysis = analysis;
@@ -181,7 +183,7 @@ export class Deck extends EventTarget {
   unload() {
     this.post({ type: 'unload' });
     this.track = null; this.analysis = null; this.duration = 0; this.loop = null; this.playing = false;
-    this.stemsReady = false; this.stemsComplete = false; this.stemRanges = []; this.stemEnv = null; this.vocals = [];
+    this.stemsReady = false; this.stemsComplete = false; this.stemRanges = []; this.stemEnv = null; this.vocals = []; this.fine = null;
     if (this.fxParts.some(Boolean)) this.applyFxParts();
     this.emit('load');
   }

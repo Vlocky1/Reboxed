@@ -8,6 +8,7 @@ import { drawDetail } from './ui/waveform.js';
 import { installKeyboard } from './ui/keyboard.js';
 import { openSettings } from './ui/settings.js';
 import { MidiController } from './ui/midi.js';
+import { PluginRegistry } from './controller/plugins.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
 import { Automix } from './automix.js';
@@ -25,11 +26,29 @@ import { openRelink } from './ui/relink.js';
 
 /** One cached stem as interleaved 16-bit stereo: WAV beside the track (skip the 44-byte header) or legacy raw PCM. */
 async function readStem(meta, name) {
-  const wav = meta.format === 'wav';
-  const res = await fetch(mediaUrl(`${meta.dir}/${name}.${wav ? 'wav' : 'pcm'}`));
+  const ext = { wav: 'wav', mp3: 'mp3' }[meta.format] ?? 'pcm';
+  const res = await fetch(mediaUrl(`${meta.dir}/${name}.${ext}`));
   if (!res.ok) throw new Error(`stem ${name}: ${res.status}`);
   const buf = await res.arrayBuffer();
-  return wav ? new Int16Array(buf, 44, (buf.byteLength - 44) >> 1) : new Int16Array(buf);
+  if (ext === 'wav') return new Int16Array(buf, 44, (buf.byteLength - 44) >> 1);
+  if (ext === 'pcm') return new Int16Array(buf);
+  // MP3: decoded at the stems' rate, encoder delay removed, same length as the separation.
+  const b = await new OfflineAudioContext(2, 1, meta.rate).decodeAudioData(buf);
+  const skip = meta.mp3Delay ?? 0;
+  const l = b.getChannelData(0); const r = b.numberOfChannels > 1 ? b.getChannelData(1) : l;
+  const n = meta.frames ?? b.length - skip;
+  const out = new Int16Array(n * 2);
+  for (let i = 0, j = skip; i < n && j < b.length; i++, j++) {
+    out[2 * i] = Math.max(-32768, Math.min(32767, Math.round(l[j] * 32768)));
+    out[2 * i + 1] = Math.max(-32768, Math.min(32767, Math.round(r[j] * 32768)));
+  }
+  return out;
+}
+
+/** Stem file format from the settings: {format: 'mp3', kbps} or {format: 'wav'}. */
+function stemsFormat(s) {
+  const f = s.stemsFormat ?? 'mp3';
+  return f === 'wav' ? { format: 'wav' } : { format: 'mp3', kbps: f === 'mp3-320' ? 320 : 256 };
 }
 
 const DECK_COLORS = ['#ffffff', '#ffffff', '#ffffff', '#ffffff']; // play head: white like rekordbox
@@ -152,8 +171,9 @@ class App {
     installKeyboard(this);
     this.installFileDrop();
     this.installStems();
+    this.plugins = new PluginRegistry(this.library);
     this.midi = new MidiController(this);
-    this.midi.init();
+    this.plugins.refresh().then(() => this.midi.init());
     this.library.addEventListener('change', (e) => this.onLibraryChange(e.detail));
     requestAnimationFrame((t) => this.frame(t));
     // New releases from followed channels, quietly, a few seconds after start.
@@ -586,7 +606,7 @@ class App {
       const deck = from?.track?.id === trackId ? from : holders.find((d) => d.playing) ?? holders[0];
       const startSample = deck ? Math.floor(deck.position() * 44100) : 0;
       const meta = await window.rb.stems.separate(trackId, r44.getChannelData(0), r44.getChannelData(1),
-        { quality: q, ep: this.library.settings.stemsProvider, startSample, urgent, trackPath: t.path });
+        { quality: q, ep: this.library.settings.stemsProvider, startSample, urgent, trackPath: t.path, ...stemsFormat(this.library.settings) });
       const stored = (await window.rb.getAnalysis(trackId)) ?? {};
       await window.rb.putAnalysis(trackId, { ...stored, vocals: meta.vocals });
       this.library.update(trackId, { stems: q === 'hq' || t.stems === 'hq' ? 'hq' : 'fast' });
@@ -694,22 +714,25 @@ class App {
     return slot;
   }
 
-  /** A controller was (dis)connected: set up its audio interface (DDJ-GRV6: 4-channel). */
+  /** A controller was (dis)connected: select its sound card if its plugin declares one ("audio"). */
   async onControllerChange(driver) {
-    if (!driver || !/GRV6/i.test(driver.device)) return;
+    const audio = driver?.plugin?.audio;
+    if (!audio?.device) return;
     const s = this.library.settings;
     if (s.controllerAudioAuto === false) return;
+    const name = driver.plugin.name ?? driver.device;
     const devices = await this.engine.outputDevices().catch(() => []);
-    const dev = devices.find((x) => /GRV6/i.test(x.label));
-    if (!dev) { toast('DDJ-GRV6: its sound card was not found — choose the output in Preferences > Audio output', 6000); return; }
+    const dev = devices.find((x) => x.label.toLowerCase().includes(audio.device.toLowerCase()));
+    if (!dev) { toast(`${name}: its sound card was not found — choose the output in Preferences > Audio output`, 6000); return; }
+    const layout = audio.layout === 'quad' ? 'quad' : 'stereo';
     try {
       await this.engine.setMasterDevice(dev.deviceId);
-      this.engine.setOutputLayout('quad');
+      this.engine.setOutputLayout(layout);
       this.library.setSetting('masterDevice', dev.deviceId);
-      this.library.setSetting('outputLayout', 'quad');
-      toast('DDJ-GRV6 audio: master on outputs 1/2, headphones on 3/4', 5000);
+      this.library.setSetting('outputLayout', layout);
+      toast(layout === 'quad' ? `${name} audio: master on outputs 1/2, headphones on 3/4` : `${name} audio: master output`, 5000);
     } catch (err) {
-      toast(`DDJ-GRV6 audio: ${err.message}`, 6000);
+      toast(`${name} audio: ${err.message}`, 6000);
     }
   }
 
@@ -859,7 +882,7 @@ class App {
     });
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.zoom = Math.max(2, Math.min(32, this.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
+      this.zoom = Math.max(1, Math.min(32, this.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
     }, { passive: false });
   }
 
@@ -1194,6 +1217,40 @@ async function smoke(app) {
         .map((row) => { const box = row.classList.contains('canvas-box') ? row : row.querySelector('.canvas-box'); const c = box.querySelector('canvas').getBoundingClientRect(); const b = box.getBoundingClientRect(); return [c.left - b.left, c.right - b.right, b.width]; });
       step('play head centred', boxes.every(([l, r, w]) => Math.abs(l) < 1 && Math.abs(r) < 1 && w > 50), JSON.stringify(boxes.map((x) => x.map((v) => Math.round(v)))));
     }
+    // Zoomed in, the detail waveform is the real wave: its top edge changes from column to column
+    // (band points alone would give flat steps ~10 px wide at this zoom).
+    {
+      const zoomBefore = app.zoom;
+      const edges = async (zoom) => {
+        app.zoom = zoom;
+        await new Promise((r) => setTimeout(r, 300));
+        const c = app.waveCanvases[2]; const W = c.width; const H = c.height;
+        const img = c.getContext('2d').getImageData(0, 0, W, H).data;
+        const tops = [];
+        for (let x = Math.floor(W * 0.02); x < W * 0.98; x++) {
+          if (Math.abs(x - W / 2) < 4 * devicePixelRatio) continue; // play head
+          let y = Math.round(14 * devicePixelRatio);
+          for (; y < H / 2; y++) { const i = (y * W + x) * 4; if (img[i] + img[i + 1] + img[i + 2] > 200) break; }
+          tops.push(y);
+        }
+        // Only where there is sound (the test tracks are silent between their hits).
+        const loud = H / 2 - 3 * devicePixelRatio;
+        let changes = 0; let pairs = 0;
+        for (let i = 1; i < tops.length; i++) {
+          if (tops[i] > loud || tops[i - 1] > loud) continue;
+          pairs++;
+          if (tops[i] !== tops[i - 1]) changes++;
+        }
+        edges.info = `${W}x${H} pairs ${pairs} topmin ${Math.min(...tops)} pos ${d3.position().toFixed(2)}`;
+        return pairs > 20 ? changes / pairs : 0;
+      };
+      d3.seek(8);
+      const zoomed = await edges(1);
+      await window.rb.smokeShot('wave-zoom');
+      const wide = await edges(32);
+      app.zoom = zoomBefore;
+      step('zoomed waveform is a real wave', d3.fine?.max.length > 0 && zoomed > 0.3, `top edge changes on ${(zoomed * 100).toFixed(0)}% of columns at 1 s, ${(wide * 100).toFixed(0)}% at 32 s; ${edges.info}`);
+    }
     // Stems (only when models are provided: REBOXED_SPLEETER_DIR / REBOXED_STEM_MODEL for this test).
     const stemModels = (await window.rb.stems.status()).models;
     if (stemModels.fast || stemModels.hq) {
@@ -1249,10 +1306,21 @@ async function smoke(app) {
         step('stems upgrade to HQ', hq?.quality === 'hq' && d3.stemQuality === 'hq' && d3.stemsComplete && lib.get(id128)?.stems === 'hq',
           `${(performance.now() - t1).toFixed(0)} ms, deck quality=${d3.stemQuality}, column=${lib.get(id128)?.stems}`);
       }
-      // Stems are kept as WAV files beside the track: <folder>/stems/<track>/.
+      // Stems are kept as MP3 files in the library stems folder: <library>/stems/<track>/.
       const kept = await window.rb.stems.meta(id128, lib.get(id128).path);
-      const wavOk = await window.rb.exists(`${kept?.dir}/vocals.wav`);
-      step('stems kept in the library stems folder', kept?.format === 'wav' && /stems.Kick 128$/.test(kept.dir) && wavOk, `${kept?.dir} quality=${kept?.quality} wav=${wavOk}`);
+      const mp3Ok = await window.rb.exists(`${kept?.dir}/vocals.mp3`);
+      step('stems kept in the library stems folder (MP3)', kept?.format === 'mp3' && /stems.Kick 128$/.test(kept.dir) && mp3Ok, `${kept?.dir} quality=${kept?.quality} mp3=${mp3Ok}`);
+      // MP3 stems line up with the track: first kick at the same sample (encoder delay removed).
+      {
+        const drums = await readStem(kept, 'drums');
+        const orig = await app.analyzer.decode(lib.get(id128).path);
+        const onset = (get, n) => { let max = 0; for (let i = 0; i < n; i++) max = Math.max(max, Math.abs(get(i))); for (let i = 0; i < n; i++) if (Math.abs(get(i)) > max * 0.5) return i; return -1; };
+        const n = Math.min(44100 * 2, drums.length / 2);
+        const a = onset((i) => drums[2 * i] / 32768, n);
+        const ch = orig.getChannelData(0);
+        const b = onset((i) => ch[Math.round(i * orig.sampleRate / 44100)], n);
+        step('MP3 stems aligned with the track', drums.length / 2 === kept.frames && Math.abs(a - b) < 64, `frames ${drums.length / 2}/${kept.frames}, drums onset ${a}, track onset ${b}`);
+      }
       lib.setSetting('stemsQuality', 'auto');
     } else {
       report.steps.push({ name: 'stems (skipped: no model)', ok: true, info: '' });
@@ -1260,9 +1328,13 @@ async function smoke(app) {
 
     // ---- DDJ-GRV6 (virtual port: exact messages from its rekordbox mapping) ----
     {
-      const profile = await (await fetch(new URL('../shared/controllers/ddj-grv6.json', import.meta.url))).json();
+      await app.plugins.refresh();
+      const grvPlugin = app.plugins.forPort('DDJ-GRV6');
+      step('plugins: built-in controllers listed', ['pioneer-ddj-grv6', 'pioneer-ddj-flx4', 'pioneer-ddj-flx2', 'pioneer-ddj-flx6', 'pioneer-ddj-flx10'].every((id) => app.plugins.all.some((p) => p.id === id && !app.plugins.problem(p))) && grvPlugin?.id === 'pioneer-ddj-grv6' && app.plugins.forPort('DDJ-FLX4 MIDI 1')?.id === 'pioneer-ddj-flx4',
+        app.plugins.all.map((p) => p.id).join(', '));
+      const profile = await app.plugins.mapping(grvPlugin);
       const sent = [];
-      const grv = app.midi.attachDriver('virtual-grv6', profile, (b) => sent.push(b), 'DDJ-GRV6 (virtual)');
+      const grv = app.midi.attachDriver('virtual-grv6', profile, (b) => sent.push(b), 'DDJ-GRV6 (virtual)', grvPlugin);
       const tx = (...msgs) => msgs.forEach((m) => grv.receive(m));
       const press = (st, d1v) => tx([st, d1v, 0x7f], [st & 0x0f | 0x80, d1v, 0]);
       const hires = (st, cc, v14) => tx([st, cc, v14 >> 7], [st, cc + 0x20, v14 & 0x7f]);
@@ -1506,10 +1578,27 @@ async function smoke(app) {
       await wait(400);
       const libPath = document.querySelector('.settings-pane code.path')?.textContent;
       const info = await window.rb.storage.info();
+      document.querySelector('.settings-tabs button[data-tab="plugins"]').click();
+      await wait(500);
+      const cards = [...document.querySelectorAll('.plugin-card b')].map((b) => b.textContent);
+      const live = [...document.querySelectorAll('.plugin-tag.live')].length;
+      await window.rb.smokeShot('plugins');
       document.querySelector('.dialog:has(.settings) .dialog-buttons button').click();
       await closed;
-      step('preferences tabs', tabs.length === 8 && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
+      step('preferences tabs', tabs.length === 9 && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
         `${tabs.join(' | ')} — active ${active}, library ${libPath}, stems ${info.stemsRoot}`);
+      step('plugins manager', cards.length >= 5 && cards.includes('Pioneer DDJ-GRV6') && live === [...app.midi.controllers.values()].filter((d) => d.plugin?.id).length, `${cards.join(', ')} — connected ${live}`);
+    }
+
+    // ---- Export to a USB drive for CDJ / XDJ (a folder stands for the drive) ----
+    {
+      const root = `${dir}\\cdj-usb`;
+      const t128 = lib.all().find((t) => t.title === 'Kick 128');
+      lib.update(t128.id, { cues: [...(t128.cues ?? []).filter((c) => c.kind !== 'hot'), { kind: 'hot', slot: 0, start: 1, color: '#ff8c00', name: 'Drop' }, { kind: 'memory', start: 2 }] });
+      const tracks = lib.all().map((t) => ({ ...t, features: undefined }));
+      const r = await window.rb.cdj.export({ root, tracks, playlists: [{ type: 'folder', name: 'Sets', children: [{ type: 'playlist', name: 'Smoke set', trackIds: tracks.map((t) => t.id) }] }], settings: (await import('../shared/cdj/mysettings.js')).defaultSettings() });
+      const files = await Promise.all(['PIONEER\\rekordbox\\export.pdb', 'PIONEER\\MYSETTING.DAT', 'PIONEER\\DEVSETTING.DAT'].map((f) => window.rb.exists(`${root}\\${f}`)));
+      step('cdj export', r.tracks > 0 && r.tracks + r.missing.length === tracks.length && r.playlists >= 1 && files.every(Boolean), `${JSON.stringify({ ...r, missing: r.missing.length })} files=${files}`);
     }
 
     // ---- Ask for a track: one proposal at a time, official sources first, yes / no ----
@@ -1546,7 +1635,7 @@ async function smoke(app) {
       document.querySelector('.dlc-x')?.click();
     }
 
-    // ---- Link the collection to a USB-like music folder (J:\Tracks), stems move along ----
+    // ---- Link the collection to a USB-like music folder, stems move along ----
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const usb = `${dir}\\usb\\Tracks`;

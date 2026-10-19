@@ -9,6 +9,7 @@ import { icon } from './icons.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 import { editSmartList, relatedPanel } from './lists-ui.js';
 import { openRelink } from './relink.js';
+import { openCdjExport } from './cdj-export.js';
 
 const ROW_H = 24;
 const COLOR_CSS = Object.fromEntries(TRACK_COLORS.map((c) => [c.name, c.css]));
@@ -275,6 +276,7 @@ export class Browser {
     contextMenu(r.left, r.bottom + 2, [
       { label: 'Import from rekordbox (playlists, cues, tags)…', action: () => this.app.importXml() },
       { label: 'Download tracks (YouTube, new releases)…', action: () => this.app.downloads.open() },
+      { label: 'Export to USB for CDJ / XDJ…', action: () => openCdjExport(this.app) },
       { label: 'Export collection as rekordbox xml…', action: () => this.app.exportXml() },
       '-',
       { label: 'Analyze all unanalyzed tracks', action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },

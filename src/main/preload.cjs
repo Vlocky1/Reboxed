@@ -26,6 +26,19 @@ contextBridge.exposeInMainWorld('rb', {
   readTagsMany: (paths) => ipcRenderer.invoke('tags:readMany', paths),
   copyInto: (src, dir) => ipcRenderer.invoke('fs:copyInto', src, dir),
   trash: (paths) => ipcRenderer.invoke('fs:trash', paths),
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+    read: (id, file) => ipcRenderer.invoke('plugins:read', id, file),
+    install: (dir) => ipcRenderer.invoke('plugins:install', dir),
+    remove: (id) => ipcRenderer.invoke('plugins:remove', id),
+    createFromCsv: (csv, opts) => ipcRenderer.invoke('plugins:createFromCsv', csv, opts),
+    openFolder: () => ipcRenderer.invoke('plugins:openFolder'),
+  },
+  cdj: {
+    drives: () => ipcRenderer.invoke('cdj:drives'),
+    export: (job) => ipcRenderer.invoke('cdj:export', job),
+    onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cdj:progress', l); return () => ipcRenderer.off('cdj:progress', l); },
+  },
   fullscreen: () => ipcRenderer.invoke('win:fullscreen'),
   setFullscreen: (opts) => ipcRenderer.invoke('win:setFullscreen', opts),
   storage: {
@@ -65,8 +78,9 @@ contextBridge.exposeInMainWorld('rb', {
     remove: (id, trackPath) => ipcRenderer.invoke('stems:delete', id, trackPath),
     relocate: (id, oldPath, newPath) => ipcRenderer.invoke('stems:relocate', id, oldPath, newPath),
     removeAll: () => ipcRenderer.invoke('stems:deleteAll'),
+    convertToMp3: (tracks, kbps) => ipcRenderer.invoke('stems:convertToMp3', tracks, kbps),
     on: (channel, cb) => {
-      const allowed = ['stems:progress', 'stems:download', 'stems:fallback', 'stems:block', 'stems:job'];
+      const allowed = ['stems:progress', 'stems:download', 'stems:fallback', 'stems:block', 'stems:job', 'stems:convert'];
       if (!allowed.includes(channel)) throw new Error(`unknown channel ${channel}`);
       const listener = (_e, ...args) => cb(...args);
       ipcRenderer.on(channel, listener);
