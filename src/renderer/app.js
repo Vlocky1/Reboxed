@@ -1850,6 +1850,31 @@ async function smoke(app) {
         }
       }
 
+      // Name cleaner: a download named like a video is cleaned when it joins the collection, and
+      // "Clean names" fixes tracks already there.
+      {
+        const src = lib.all().find((x) => x.title === 'Kick 100');
+        const wav = await (await fetch(mediaUrl(src.path))).arrayBuffer();
+        const dirty = `${dir}\\downloads\\Indochine - Trois nuits par semaine (Clip officiel) [Paroles].wav`;
+        await window.rb.writeFile(dirty, new Uint8Array(wav));
+        await app.downloads.finished({ id: 'smoke-clean', title: 'Indochine - Trois nuits par semaine (Clip officiel) [Paroles]' }, dirty);
+        const added = lib.get(lib.idForPath(dirty));
+        const other = lib.all().find((x) => x.title === 'Kick 140 (edited)');
+        lib.update(other.id, { title: 'Kick 140 (Official Visualizer) | Lyrics', artist: 'Smoke DJ - Topic' });
+        const { openCleanNames } = await import('./ui/clean-names.js');
+        const closedClean = openCleanNames(app, [other.id, added.id]);
+        await wait(150);
+        const proposals = document.querySelectorAll('.at-clean').length;
+        await window.rb.smokeShot('clean-names');
+        document.querySelector('.autotag-dialog .dialog-buttons .primary').click();
+        await closedClean;
+        const fixed = lib.get(other.id);
+        step('name cleaner: downloads cleaned on arrival, Clean names on the collection',
+          added?.title === 'Trois nuits par semaine' && added?.artist === 'Indochine' && proposals === 1 && fixed.title === 'Kick 140' && fixed.artist === 'Smoke DJ',
+          `download → ${added?.artist} / ${added?.title} · ${proposals} proposal(s) · collection → ${fixed.artist} / ${fixed.title}`);
+        lib.update(other.id, { title: 'Kick 140 (edited)', artist: '' });
+      }
+
       // Date Added shows the time for tracks added now.
       b.select('collection');
       await wait(200);

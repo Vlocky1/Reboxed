@@ -688,3 +688,5 @@ body.gbar-icons .gbtn .ico { font-size: 14px; }
 .at-cover { width: 28px; height: 28px; object-fit: cover; border-radius: 2px; }
 .at-miss { color: var(--dim); font-size: 11px; font-style: italic; }
 .at-same { color: var(--faint); font-size: 11px; }
+
+.at-clean { display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: start; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg-2); font-size: 11px; cursor: pointer; }
