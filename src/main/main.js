@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, shell } from 'electron';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dirname, extname, join, normalize, sep } from 'node:path';
-import { access, mkdir, open, readdir, readFile, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, join, normalize, sep } from 'node:path';
+import { access, copyFile, mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { mkdtempSync } from 'node:fs';
 import { wavHeader } from '../shared/wav.js';
 import { tmpdir } from 'node:os';
@@ -103,6 +103,31 @@ function registerIpc(win) {
   });
   ipcMain.handle('stems:relocate', (_e, id, oldPath, newPath) => stems.relocate(id, oldPath, newPath));
   ipcMain.handle('fs:listAudio', (_e, dir) => listAudio(dir));
+  // Migration to a USB drive: tags of candidate files (no artwork), 8 at a time.
+  ipcMain.handle('tags:readMany', async (_e, paths) => {
+    const out = {};
+    for (let i = 0; i < paths.length; i += 8) {
+      const part = await Promise.all(paths.slice(i, i + 8).map((p) => readTags(p)));
+      part.forEach((t, k) => { out[paths[i + k]] = { title: t.title, artist: t.artist, duration: t.duration ?? 0 }; });
+    }
+    return out;
+  });
+  /** Copy a file into a folder without overwriting (same size already there = reused). Returns the new path. */
+  ipcMain.handle('fs:copyInto', async (_e, src, dir) => {
+    await mkdir(dir, { recursive: true });
+    const size = (await stat(src)).size;
+    const ext = extname(src); const name = basename(src, ext);
+    for (let k = 1; k < 100; k++) {
+      const dest = join(dir, k === 1 ? `${name}${ext}` : `${name} (${k})${ext}`);
+      let existing = null;
+      try { existing = await stat(dest); } catch { /* free */ }
+      if (existing) { if (existing.size === size) return dest; continue; }
+      await copyFile(src, dest);
+      if ((await stat(dest)).size !== size) throw new Error(`copy of ${src} is incomplete`);
+      return dest;
+    }
+    throw new Error(`no free name for ${src} in ${dir}`);
+  });
   // Local copies replaced by the ones on the USB drive go to the Recycle Bin (recoverable).
   ipcMain.handle('fs:trash', async (_e, paths) => {
     let n = 0;

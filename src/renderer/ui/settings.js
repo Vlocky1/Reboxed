@@ -98,8 +98,14 @@ async function librarySection(app) {
       h('label', {}, ''), h('span.dim', {}, 'Collection, playlists, cues, analysis, artwork. Can be on a USB drive: if its letter changes on another computer, the paths follow.'),
       h('label', {}, 'Stems folder'), h('div', {}, stemsMode, h('div', { style: { marginTop: '4px' } }, stemsPath))),
     h('h4', {}, 'Music on a USB drive'),
-    h('p.dim', {}, 'Point the tracks of your collection to their copies in a folder (for example J:\\Tracks), move their stems along, add the tracks that are only there, and optionally send the local copies to the Recycle Bin.'),
-    h('button.dbtn', { onclick: () => openRelink(app) }, 'Link my tracks to a music folder…'));
+    h('p', {}, (() => {
+      // Tracks on the computer's own drive (the one holding the app folder).
+      const drive = info.appDir.slice(0, 2).toUpperCase();
+      const n = app.library.all().filter((t) => t.path.slice(0, 2).toUpperCase() === drive).length;
+      return n ? `${n} track(s) of the collection are still on this computer (${drive}).` : '✓ No track of the collection is on this computer.';
+    })()),
+    h('p.dim', {}, 'Move the collection to a folder of your drive (for example J:\\Tracks): each track is linked to the same music there — same name, another format, or a similar name confirmed by tags and duration — or copied there. You check every doubtful match first. Cues, tags, analysis and playlists are kept, stems move along, and the local files can go to the Recycle Bin.'),
+    h('button.dbtn', { onclick: () => openRelink(app) }, 'Move my collection to a USB drive…'));
 }
 
 /** Track downloader preferences (moved here from the download window). */

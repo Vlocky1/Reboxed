@@ -1559,21 +1559,29 @@ async function smoke(app) {
       const k128 = await copy('Kick 128', 'Kick 128.wav');
       await copy('Kick 100', 'Kick 100.wav');
       await copy('Kick 100', 'Only On The Key.wav');
+      // A homonym under another name and folder (track number, mix name): found and confirmed by duration.
+      const structure = await copy('Structure', 'Hip\\01 - Structure (Original Mix).wav');
+      const kick140 = lib.all().find((x) => /^Kick 140/.test(x.title)); // not on the drive: copied there
       const before = await window.rb.stems.meta(k128.id, k128.path);
       const done = openRelink(app, usb);
-      for (let k = 0; k < 50 && !document.querySelector('.rbi-stats'); k++) await wait(100);
+      for (let k = 0; k < 100 && !document.querySelector('.mig-row'); k++) await wait(100);
+      const rows = document.querySelectorAll('.mig-row').length;
       await window.rb.smokeShot('relink');
       document.querySelector('.rbi-dialog .dialog-buttons button.primary')?.click();
-      for (let k = 0; k < 100 && !document.querySelector('.rbi-report'); k++) await wait(100);
+      for (let k = 0; k < 150 && !document.querySelector('.rbi-report'); k++) await wait(100);
       document.querySelector('.rbi-dialog .dialog-buttons button.primary')?.click();
       const rep = await done;
       const moved = lib.get(k128.id);
       const after = await window.rb.stems.meta(k128.id, moved.path);
       const info = await window.rb.storage.info();
       const added = lib.all().some((x) => x.path.endsWith('Only On The Key.wav'));
-      step('link tracks to a USB folder', rep?.linked >= 2 && moved.path.toLowerCase() === `${usb}\\Kick 128.wav`.toLowerCase()
-        && (!before || after?.dir.toLowerCase() === `${usb}\\stems\\Kick 128`.toLowerCase()) && info.stemsRoot === `${usb}\\stems` && added,
-        `report=${JSON.stringify(rep)} stems ${before?.dir} -> ${after?.dir}, root ${info.stemsRoot}, new track added=${added}`);
+      const homonym = lib.get(structure.id).path.toLowerCase() === `${usb}\\Hip\\01 - Structure (Original Mix).wav`.toLowerCase();
+      const copied = lib.get(kick140.id).path.toLowerCase().startsWith(`${usb}\\From computer\\`.toLowerCase());
+      const missing = lib.all().filter((x) => x.missing).length;
+      step('move the collection to a USB folder', rep?.linked >= 3 && rows > 0 && moved.path.toLowerCase() === `${usb}\\Kick 128.wav`.toLowerCase()
+        && (!before || after?.dir.toLowerCase() === `${usb}\\stems\\Kick 128`.toLowerCase()) && info.stemsRoot === `${usb}\\stems` && added
+        && homonym && copied && rep.remaining <= missing,
+        `report=${JSON.stringify(rep)} homonym=${homonym} copied=${copied} (missing files ${missing}), stems ${before?.dir} -> ${after?.dir}`);
     }
 
     // ---- Browser: resizable columns (fit to content) and the detailed track information ----

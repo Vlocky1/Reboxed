@@ -8,6 +8,7 @@ import { suggest } from '../../shared/dsp/features.js';
 import { icon } from './icons.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 import { editSmartList, relatedPanel } from './lists-ui.js';
+import { openRelink } from './relink.js';
 
 const ROW_H = 24;
 const COLOR_CSS = Object.fromEntries(TRACK_COLORS.map((c) => [c.name, c.css]));
@@ -269,6 +270,7 @@ export class Browser {
       '-',
       { label: 'Analyze all unanalyzed tracks', action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },
       { label: 'Find missing files', action: () => this.app.findMissing() },
+      { label: 'Move my collection to a USB drive…', action: () => openRelink(this.app) },
     ]);
   }
 
