@@ -8,6 +8,7 @@ import { drawDetail } from './ui/waveform.js';
 import { installKeyboard } from './ui/keyboard.js';
 import { openSettings } from './ui/settings.js';
 import { MidiController } from './ui/midi.js';
+import { PluginRegistry } from './controller/plugins.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
 import { Automix } from './automix.js';
@@ -152,8 +153,9 @@ class App {
     installKeyboard(this);
     this.installFileDrop();
     this.installStems();
+    this.plugins = new PluginRegistry(this.library);
     this.midi = new MidiController(this);
-    this.midi.init();
+    this.plugins.refresh().then(() => this.midi.init());
     this.library.addEventListener('change', (e) => this.onLibraryChange(e.detail));
     requestAnimationFrame((t) => this.frame(t));
     // New releases from followed channels, quietly, a few seconds after start.
@@ -694,22 +696,25 @@ class App {
     return slot;
   }
 
-  /** A controller was (dis)connected: set up its audio interface (DDJ-GRV6: 4-channel). */
+  /** A controller was (dis)connected: select its sound card if its plugin declares one ("audio"). */
   async onControllerChange(driver) {
-    if (!driver || !/GRV6/i.test(driver.device)) return;
+    const audio = driver?.plugin?.audio;
+    if (!audio?.device) return;
     const s = this.library.settings;
     if (s.controllerAudioAuto === false) return;
+    const name = driver.plugin.name ?? driver.device;
     const devices = await this.engine.outputDevices().catch(() => []);
-    const dev = devices.find((x) => /GRV6/i.test(x.label));
-    if (!dev) { toast('DDJ-GRV6: its sound card was not found — choose the output in Preferences > Audio output', 6000); return; }
+    const dev = devices.find((x) => x.label.toLowerCase().includes(audio.device.toLowerCase()));
+    if (!dev) { toast(`${name}: its sound card was not found — choose the output in Preferences > Audio output`, 6000); return; }
+    const layout = audio.layout === 'quad' ? 'quad' : 'stereo';
     try {
       await this.engine.setMasterDevice(dev.deviceId);
-      this.engine.setOutputLayout('quad');
+      this.engine.setOutputLayout(layout);
       this.library.setSetting('masterDevice', dev.deviceId);
-      this.library.setSetting('outputLayout', 'quad');
-      toast('DDJ-GRV6 audio: master on outputs 1/2, headphones on 3/4', 5000);
+      this.library.setSetting('outputLayout', layout);
+      toast(layout === 'quad' ? `${name} audio: master on outputs 1/2, headphones on 3/4` : `${name} audio: master output`, 5000);
     } catch (err) {
-      toast(`DDJ-GRV6 audio: ${err.message}`, 6000);
+      toast(`${name} audio: ${err.message}`, 6000);
     }
   }
 
@@ -1260,9 +1265,13 @@ async function smoke(app) {
 
     // ---- DDJ-GRV6 (virtual port: exact messages from its rekordbox mapping) ----
     {
-      const profile = await (await fetch(new URL('../shared/controllers/ddj-grv6.json', import.meta.url))).json();
+      await app.plugins.refresh();
+      const grvPlugin = app.plugins.forPort('DDJ-GRV6');
+      step('plugins: built-in controllers listed', ['pioneer-ddj-grv6', 'pioneer-ddj-flx4', 'pioneer-ddj-flx2', 'pioneer-ddj-flx6', 'pioneer-ddj-flx10'].every((id) => app.plugins.all.some((p) => p.id === id && !app.plugins.problem(p))) && grvPlugin?.id === 'pioneer-ddj-grv6' && app.plugins.forPort('DDJ-FLX4 MIDI 1')?.id === 'pioneer-ddj-flx4',
+        app.plugins.all.map((p) => p.id).join(', '));
+      const profile = await app.plugins.mapping(grvPlugin);
       const sent = [];
-      const grv = app.midi.attachDriver('virtual-grv6', profile, (b) => sent.push(b), 'DDJ-GRV6 (virtual)');
+      const grv = app.midi.attachDriver('virtual-grv6', profile, (b) => sent.push(b), 'DDJ-GRV6 (virtual)', grvPlugin);
       const tx = (...msgs) => msgs.forEach((m) => grv.receive(m));
       const press = (st, d1v) => tx([st, d1v, 0x7f], [st & 0x0f | 0x80, d1v, 0]);
       const hires = (st, cc, v14) => tx([st, cc, v14 >> 7], [st, cc + 0x20, v14 & 0x7f]);
@@ -1546,7 +1555,7 @@ async function smoke(app) {
       document.querySelector('.dlc-x')?.click();
     }
 
-    // ---- Link the collection to a USB-like music folder (J:\Tracks), stems move along ----
+    // ---- Link the collection to a USB-like music folder, stems move along ----
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const usb = `${dir}\\usb\\Tracks`;

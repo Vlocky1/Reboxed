@@ -93,34 +93,44 @@ export class MidiController {
 
   inputs() { return this.access ? [...this.access.inputs.values()].map((i) => i.name) : []; }
 
-  /** Mapping profile for a device: built-in DDJ-GRV6, else the user's rekordbox install. */
+  /** Plugin and mapping for a device: an enabled plugin, else the mapping of the user's rekordbox install. */
   async profileFor(name) {
-    if (/DDJ-GRV6/i.test(name)) {
-      const res = await fetch(new URL('../../shared/controllers/ddj-grv6.json', import.meta.url));
-      return res.json();
+    const plugin = this.app.plugins?.forPort(name);
+    if (plugin) {
+      try { return { plugin, profile: await this.app.plugins.mapping(plugin) }; } catch (err) {
+        toast(`Plugin ${plugin.name}: ${err.message}`, 6000);
+      }
     }
     const found = await window.rb.rbMapping(name).catch(() => null);
-    return found ? parseRekordboxMapping(found.text) : null;
+    return found ? { plugin: null, profile: parseRekordboxMapping(found.text) } : null;
   }
 
   async attach(input) {
     if (this.controllers.has(input.id) || this.pending?.has(input.id)) return;
     (this.pending ??= new Set()).add(input.id);
     try {
-      const profile = await this.profileFor(input.name);
+      const { plugin, profile } = (await this.profileFor(input.name)) ?? {};
       if (!profile?.entries?.length) return;
       const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
       const output = [...this.access.outputs.values()].find((o) => norm(o.name) === norm(input.name))
         ?? [...this.access.outputs.values()].find((o) => norm(o.name).startsWith(norm(profile.device)));
-      this.attachDriver(input.id, profile, (bytes) => { try { output?.send(bytes); } catch { /* port closed */ } }, input.name);
+      this.attachDriver(input.id, profile, (bytes) => { try { output?.send(bytes); } catch { /* port closed */ } }, input.name, plugin ?? {});
     } finally {
       this.pending.delete(input.id);
     }
   }
 
+  /** Detach and re-attach every port (after plugins were enabled, installed or removed). */
+  async reattach() {
+    if (!this.access) return;
+    this.controllers.clear();
+    this.app.onControllerChange?.();
+    for (const input of this.access.inputs.values()) if (input.state === 'connected') await this.attach(input);
+  }
+
   /** Also used by the smoke test with a virtual port. */
-  attachDriver(id, profile, send, name = profile.device) {
-    const driver = new PioneerController(this.app, profile, send);
+  attachDriver(id, profile, send, name = profile.device, plugin = {}) {
+    const driver = new PioneerController(this.app, profile, send, plugin);
     this.controllers.set(id, driver);
     driver.updateLeds(true);
     toast(`${name}: controller mapping loaded (${profile.entries.length} functions)`, 4000);
@@ -185,7 +195,7 @@ export class MidiController {
       drivers.length
         ? h('div', {}, h('p', {}, `Controller mapping active: ${drivers.map((d) => d.device).join(', ')}`),
           h('label', {}, invert, ' Invert tempo slider direction'), monitor)
-        : h('p.dim', {}, 'Supported automatically: DDJ-GRV6 (built in) and any controller with a rekordbox mapping in your rekordbox install.'),
+        : h('p.dim', {}, 'Supported automatically: controllers with a plugin (Preferences > Plugins) and any controller whose mapping is in your rekordbox install.'),
       h('h4', {}, 'MIDI learn (extra mappings)'),
       h('div.frow', {}, targetSel, learnBtn, status),
       table);

@@ -1,0 +1,24 @@
+{
+  "id": "pioneer-ddj-flx10",
+  "name": "Pioneer DDJ-FLX10",
+  "version": "1.0.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "4-deck controller with jog displays and stems. Pad modes from its rekordbox mapping: HOT CUE, PAD FX 1/2, BEAT JUMP, BEAT LOOP, SAMPLER, KEYBOARD, KEY SHIFT.",
+  "match": [
+    "DDJ-FLX10"
+  ],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 4,
+  "padModes": {
+    "1": "HOT CUE",
+    "2": "PAD FX",
+    "3": "BEAT JUMP",
+    "4": "SAMPLER",
+    "5": "KEYBOARD",
+    "6": "PAD FX2",
+    "7": "BEAT LOOP",
+    "8": "KEY SHIFT"
+  }
+}

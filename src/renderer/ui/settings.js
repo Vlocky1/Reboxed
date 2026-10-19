@@ -3,6 +3,7 @@ import { BPM_RANGES } from '../analysis/analyzer.js';
 import { SHORTCUT_HELP } from './keyboard.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 import { openRelink } from './relink.js';
+import { pluginsSection } from './plugins.js';
 
 const FORMAT_LABELS = [['m4a', 'M4A (AAC, original quality, no re-encode)'], ['mp3', 'MP3 320 kbps'], ['flac', 'FLAC'], ['wav', 'WAV']];
 
@@ -104,7 +105,7 @@ async function librarySection(app) {
       const n = app.library.all().filter((t) => t.path.slice(0, 2).toUpperCase() === drive).length;
       return n ? `${n} track(s) of the collection are still on this computer (${drive}).` : '✓ No track of the collection is on this computer.';
     })()),
-    h('p.dim', {}, 'Move the collection to a folder of your drive (for example J:\\Tracks): each track is linked to the same music there — same name, another format, or a similar name confirmed by tags and duration — or copied there. You check every doubtful match first. Cues, tags, analysis and playlists are kept, stems move along, and the local files can go to the Recycle Bin.'),
+    h('p.dim', {}, 'Move the collection to a folder you choose on your drive: each track is linked to the same music there — same name, another format, or a similar name confirmed by tags and duration — or copied there. You check every doubtful match first. Cues, tags, analysis and playlists are kept, stems move along, and the local files can go to the Recycle Bin.'),
     h('button.dbtn', { onclick: () => openRelink(app) }, 'Move my collection to a USB drive…'));
 }
 
@@ -117,7 +118,7 @@ async function downloadsSection(app, library) {
   showFolder();
   const tools = h('span.dim', {}, 'Looking for yt-dlp…');
   app.downloads.tools().then((t) => {
-    tools.textContent = t.ytdlp ? `yt-dlp ${t.version ?? ''} · ffmpeg ${t.ffmpeg ? '✓' : '✗'} · deno ${t.deno ? '✓' : '✗'} — ${t.ytdlp}` : 'yt-dlp not found (install Stacher, or choose the folder that holds it)';
+    tools.textContent = t.ytdlp ? `yt-dlp ${t.version ?? ''} · ffmpeg ${t.ffmpeg ? '✓' : '✗'} · deno ${t.deno ? '✓' : '✗'} — ${t.ytdlp}` : 'yt-dlp not found (install yt-dlp and ffmpeg, or choose the folder that holds them)';
   });
   const c = cfg();
   return h('div.form-grid', {},
@@ -177,6 +178,7 @@ export async function openSettings(library, engine, apply, midi, app) {
     ['stems', 'Stems', () => stemsSection(library, apply)],
     ['downloads', 'Downloads', () => downloadsSection(app, library)],
     ['midi', 'MIDI', () => (midi ? midi.renderSettings() : h('p.dim', {}, 'MIDI not initialised'))],
+    ['plugins', 'Plugins', () => pluginsSection(app)],
     ['keyboard', 'Keyboard', () => h('table.shortcuts', {}, h('tr', {}, h('th', {}, 'Function'), h('th', {}, 'Deck 1'), h('th', {}, 'Deck 2')),
       SHORTCUT_HELP.map(([f, a, b]) => h('tr', {}, h('td', {}, f), h('td', {}, a), h('td', {}, b))))],
   ];
