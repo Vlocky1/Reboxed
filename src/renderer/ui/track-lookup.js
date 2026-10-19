@@ -67,7 +67,7 @@ export function lookupPanel(t, inputs, pending) {
     table.replaceChildren(...[h('div.ti-sp-head', {}, h('span'), h('span', {}, 'Field'), h('span', {}, 'Now'), h('span'), h('span', {}, `Found on ${src}`)), ...rows,
       h('div.ti-sp-foot', {},
         c.url ? h('a', { href: '#', onclick: (e) => { e.preventDefault(); window.rb.openExternal(c.url); } }, `Open on ${src}`) : null,
-        c.duration ? h('span.dim', {}, ` · ${fmtTime(c.duration)}${t.duration ? ` (this file: ${fmtTime(t.duration)})` : ''}`) : null)].filter(Boolean));
+        c.duration ? h('span.dim', {}, `${c.url ? ' · ' : ''}Length ${fmtTime(c.duration)}${t.duration ? ` (this file: ${fmtTime(t.duration)})` : ''}`) : null)].filter(Boolean));
     applyBtn.hidden = false;
   };
 
