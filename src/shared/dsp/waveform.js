@@ -34,6 +34,54 @@ export function reduceBands(bands, sampleRate, pps = WAVEFORM_PPS) {
   return { pps, low: scaled[0], mid: scaled[1], high: scaled[2] };
 }
 
+export const FINE_BLOCK = 16; // samples per point of the fine (zoomed-in) waveform: ~2756 points/s
+
+/**
+ * Fine waveform for the zoomed-in view: the real signal's min and max (mono mix) every FINE_BLOCK
+ * samples, scaled like the bands (99.5th percentile = full height), so the drawn shape is the
+ * actual wave, with its asymmetric top and bottom.
+ * @param {Float32Array[]} channels 1 or 2 channels
+ * @param {number} sampleRate
+ * @returns {{pps: number, min: Int8Array, max: Int8Array}}
+ */
+export function finePeaks(channels, sampleRate, block = FINE_BLOCK) {
+  const [l, r = channels[0]] = channels;
+  const n = Math.ceil(l.length / block);
+  const lo = new Float32Array(n);
+  const hi = new Float32Array(n);
+  for (let p = 0, i = 0; p < n; p++) {
+    let mn = 0; let mx = 0;
+    for (const end = Math.min(l.length, i + block); i < end; i++) {
+      const v = (l[i] + r[i]) * 0.5;
+      if (v < mn) mn = v; else if (v > mx) mx = v;
+    }
+    lo[p] = mn; hi[p] = mx;
+  }
+  // Reference level from a subsample of the peaks (sorting all of them is slow on long tracks).
+  const stride = Math.max(1, Math.floor(n / 50000));
+  const sample = [];
+  for (let p = 0; p < n; p += stride) sample.push(Math.max(-lo[p], hi[p]));
+  sample.sort((a, b) => a - b);
+  const ref = sample[Math.floor(sample.length * 0.995)] || sample[sample.length - 1] || 1;
+  const min = new Int8Array(n);
+  const max = new Int8Array(n);
+  for (let p = 0; p < n; p++) {
+    min[p] = Math.max(-127, Math.round((lo[p] / ref) * 127));
+    max[p] = Math.min(127, Math.round((hi[p] / ref) * 127));
+  }
+  return { pps: sampleRate / block, min, max };
+}
+
+/** Linear interpolation of a point array at a fractional position (points are centred on their span). */
+export function lerpAt(arr, pos) {
+  const x = pos - 0.5;
+  const i = Math.floor(x);
+  if (i < 0) return arr[0] ?? 0;
+  if (i >= arr.length - 1) return arr[arr.length - 1] ?? 0;
+  const f = x - i;
+  return arr[i] + (arr[i + 1] - arr[i]) * f;
+}
+
 /**
  * Loudness estimate (RMS in dBFS over blocks above a gate) for auto-gain.
  * @param {Float32Array} samples mono

@@ -1,6 +1,7 @@
 // Waveform canvases: scrolling detail view (play head centred) and full-track overview.
 import { waveformArrays } from '../analysis/analyzer.js';
 import { PHRASE_COLORS } from '../../shared/dsp/phrase.js';
+import { lerpAt } from '../../shared/dsp/waveform.js';
 
 /** Stem colours, index = [drums, bass, other(inst), vocals]. Used by waveforms and stem buttons. */
 export const STEM_COLORS = ['#ffa91f', '#3d8dff', '#3ddc84', '#ff4fa3'];
@@ -53,6 +54,30 @@ function drawColumn(g, style, x, cy, hh, lo, mi, hi, colW) {
 }
 
 /**
+ * Zoomed-in column: the real wave (up / down = its top and bottom, 0..1), coloured by the bands
+ * at that instant. The band layers follow the wave's shape.
+ */
+function drawWave(g, style, x, cy, hh, up, down, lo, mi, hi, colW) {
+  const mx = Math.max(lo, mi, hi);
+  if (!mx || (up <= 0 && down <= 0)) return;
+  const layer = (k) => g.fillRect(x, cy - up * hh * k, colW, (up + down) * hh * k);
+  if (style === 'rgb') {
+    const c = (v) => Math.round(255 * (v / mx) ** 0.65);
+    const r = c(lo); const gr = c(mi); const bl = c(hi);
+    g.fillStyle = `rgb(${r},${gr},${bl})`;
+    layer(1);
+    const lift = (v) => Math.round(v + (255 - v) * 0.55);
+    g.fillStyle = `rgb(${lift(r)},${lift(gr)},${lift(bl)})`;
+    layer((Math.max(mi, hi) / mx) * 0.55);
+    return;
+  }
+  const c = STYLES[style] ?? STYLES['3band'];
+  g.fillStyle = c.low; layer(1); // the whole wave, mids and highs inside it
+  g.fillStyle = c.mid; layer((mi / mx) * 0.62);
+  g.fillStyle = c.high; layer((hi / mx) * 0.38);
+}
+
+/**
  * Detail waveform. Called every animation frame.
  * @param {HTMLCanvasElement} canvas
  * @param {import('../audio/deck.js').Deck} deck
@@ -90,11 +115,30 @@ export function drawDetail(canvas, deck, opts) {
   if (wf) {
     const step = Math.max(1, Math.round(dpr));
     if (showStems) g.globalAlpha = 0.22;
+    // Zoomed in (a band point spans more than a column): the real wave from the fine peaks, with
+    // the band colours interpolated. Zoomed out: band peaks per column (simplified view).
+    const fine = deck.fine;
+    const pointsPerCol = secPerPx * step * wf.pps;
     for (let x = 0; x < w; x += step) {
       const ta = t0 + x * secPerPx;
       if (ta < 0 || ta > deck.duration) continue;
+      const tb = ta + secPerPx * step;
+      if (pointsPerCol < 1.5) {
+        const at = ((ta + tb) / 2) * wf.pps;
+        const lo = lerpAt(wf.low, at); const mi = lerpAt(wf.mid, at); const hi = lerpAt(wf.high, at);
+        if (fine) {
+          const fa = Math.floor(ta * fine.pps);
+          const fb = Math.min(fine.max.length, Math.max(fa + 1, Math.floor(tb * fine.pps)));
+          let top = 0; let bottom = 0;
+          for (let i = fa; i < fb; i++) { if (fine.max[i] > top) top = fine.max[i]; if (fine.min[i] < bottom) bottom = fine.min[i]; }
+          drawWave(g, opts.style, x, cy, hh, top / 127, -bottom / 127, lo, mi, hi, step);
+        } else {
+          drawColumn(g, opts.style, x, cy, hh, lo, mi, hi, step);
+        }
+        continue;
+      }
       const pa = Math.floor(ta * wf.pps);
-      const pb = Math.floor((ta + secPerPx * step) * wf.pps);
+      const pb = Math.floor(tb * wf.pps);
       drawColumn(g, opts.style, x, cy, hh, bandMax(wf.low, pa, pb), bandMax(wf.mid, pa, pb), bandMax(wf.high, pa, pb), step);
     }
     g.globalAlpha = 1;
@@ -111,7 +155,8 @@ export function drawDetail(canvas, deck, opts) {
       for (let x = 0; x < w; x += step) {
         const ta = t0 + x * secPerPx;
         if (ta < 0 || ta > deck.duration) continue;
-        const v = bandMax(env, Math.floor(ta * pps), Math.floor((ta + secPerPx * step) * pps)) / 255;
+        const smooth = secPerPx * step * pps < 1.5; // zoomed in: interpolate instead of steps
+        const v = (smooth ? lerpAt(env, (ta + secPerPx * step / 2) * pps) : bandMax(env, Math.floor(ta * pps), Math.floor((ta + secPerPx * step) * pps))) / 255;
         const hgt = Math.min(1, v * 1.6) * hh;
         if (hgt > 0.5) g.fillRect(x, cy - hgt, step, hgt * 2);
       }

@@ -1,7 +1,7 @@
 # Pioneer DDJ-GRV6 et Reboxed
 
 Branche le contrôleur et lance Reboxed, il est reconnu automatiquement :
-- **Mapping** : le profil est intégré à l'app. Il a été généré depuis le fichier de mapping officiel `DDJ-GRV6.midi.csv` de ton installation Rekordbox, soit 273 entrées et 258 fonctions.
+- **Mapping** : c'est un plugin fourni avec l'app (`src/plugins/pioneer-ddj-grv6`, Préférences ▸ Plugins). Il a été généré depuis le fichier de mapping officiel `DDJ-GRV6.midi.csv` de Rekordbox, soit 273 entrées et 258 fonctions. Pour l'ajuster sans recompiler, installe un plugin du même id (voir [PLUGINS.md](PLUGINS.md)).
 - **Carte son** : celle du GRV6 est choisie toute seule. Le master sort sur les sorties 1/2, le casque sur 3/4. On peut le désactiver dans ⚙ > Audio output.
 - **Diagnostic** : ⚙ > MIDI affiche le **moniteur MIDI**. Chaque message reçu y apparaît avec la fonction qu'il a déclenchée.
 

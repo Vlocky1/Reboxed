@@ -152,7 +152,7 @@ export class PioneerController {
     switch (name) {
       // ---- browser
       case 'Browse': browser.browseMove(ev.delta); break;
-      case 'Zoom': app.zoom = Math.max(2, Math.min(32, app.zoom * (ev.delta > 0 ? 1 / 1.15 : 1.15) ** Math.abs(ev.delta))); break;
+      case 'Zoom': app.zoom = Math.max(1, Math.min(32, app.zoom * (ev.delta > 0 ? 1 / 1.15 : 1.15) ** Math.abs(ev.delta))); break;
       case 'Forward': if (press) browser.browsePress(); break;
       case 'Back': if (press) browser.browseBack(); break;
       case 'Area': if (press) browser.setFocus(browser.focusArea === 'tree' ? 'list' : 'tree'); break;

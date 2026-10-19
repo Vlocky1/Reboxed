@@ -83,20 +83,23 @@ Légende : ✅ fait · 🟡 partiel · ⬜ à faire
 - ⬜ Séparation en temps réel pendant la lecture. Aujourd'hui elle se fait à l'avance, en environ 1,4 × la durée du morceau sur CPU.
 - ⬜ DirectML (GPU) : le moteur ONNX plante nativement sur ce PC pendant l'inférence. L'option reste expérimentale, avec repli automatique sur CPU.
 
-## Contrôleurs (✅ DDJ-GRV6)
-- ✅ **DDJ-GRV6** : mapping intégré, LED, jogs (scratch, pitch bend, recherche), pad modes, Groove Circuit, PART ISOLATOR, Beat FX du GRV6, carte son 4 canaux, moniteur MIDI. Détails dans [DDJ-GRV6.md](DDJ-GRV6.md).
+## Contrôleurs (✅ plugins)
+- ✅ **Plugins matériels** : un dossier par contrôleur (`plugin.json` + mapping), gestionnaire dans Préférences ▸ Plugins (activer, installer, créer depuis un mapping rekordbox, supprimer), guide pour les contributeurs dans [PLUGINS.md](PLUGINS.md).
+- ✅ **DDJ-GRV6** (plugin fourni) : mapping, LED, jogs (scratch, pitch bend, recherche), pad modes, Groove Circuit, PART ISOLATOR, Beat FX du GRV6, carte son 4 canaux, moniteur MIDI. Détails dans [DDJ-GRV6.md](DDJ-GRV6.md).
+- ✅ **DDJ-FLX2, DDJ-FLX4, DDJ-FLX6, DDJ-FLX10** (plugins fournis) : générés depuis leurs mappings rekordbox ; pads génériques des FLX10 (PAD FX 2, BEAT LOOP, STEMS…), sections mixer, Smart CFX. Pas encore testés sur le matériel.
 - ✅ **Autres contrôleurs Pioneer** : lecture de leur `.midi.csv` dans l'installation Rekordbox.
 - ⬜ Couleurs RGB des pads (palette non documentée), banques de boucles DRUM SWAP fournies d'office, FX PART SELECT réel.
 
 ## Phase 5 : extras
-- ⬜ Export USB/SD pour CDJ : `export.pdb` et fichiers `ANLZ0000.DAT/.EXT/.2EX`, d'après les spécifications publiques.
+- ✅ Export USB/SD pour CDJ : `export.pdb`, fichiers `ANLZ0000.DAT/.EXT/.2EX` (couleurs des hot cues, formes d'onde bleue, RGB et 3Band) et My Settings, d'après une analyse d'un export rekordbox 7 et les descriptions publiques du format. Vérifié avec des lecteurs indépendants ; reste à essayer sur un vrai lecteur.
+- ⬜ `exportLibrary.db` (base chiffrée des lecteurs récents, en plus d'`export.pdb`).
 - ⬜ Mode EDIT : éditeur de clips quantisé, rendu en fichier.
 - ⬜ Pad FX presets, Merge FX, Groove Circuit.
 - ⬜ Vidéo, paroles, éclairage DMX, synchro cloud et mobile.
 
 ## Limites connues
 - **Grille et phrases :** la détection est calibrée sur de la musique électronique à kick. Les phrases et le mood sont des heuristiques (énergie, kick, aigus), pas un modèle appris ; corrige au besoin avec le bouton GRID et les cues.
-- **Stems :** environ 42 Mo de cache par minute de musique (4 stems en PCM 16 bits), soit environ 250 Mo pour un morceau de 6 min. Le cache se vide dans les Préférences.
+- **Stems :** en MP3 256 kbps, environ 8 Mo par minute de musique pour les 4 stems (42 Mo en WAV). L'encodage MP3 ajoute quelques secondes après la séparation.
 - **Master Tempo et effets de hauteur :** le Master Tempo utilise un time-stretch granulaire, et PITCH un pitch-shifter à deux têtes. Corrects jusqu'à environ ±10 %, en dessous de la qualité studio.
 - **Cue casque :** passe par un élément `<audio>` sur un second périphérique, avec quelques dizaines de ms de latence.
 - **Sampler en mode SYNC :** il change la vitesse de lecture, donc aussi la hauteur.

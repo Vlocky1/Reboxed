@@ -882,7 +882,7 @@ class App {
     });
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.zoom = Math.max(2, Math.min(32, this.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
+      this.zoom = Math.max(1, Math.min(32, this.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
     }, { passive: false });
   }
 
@@ -1216,6 +1216,40 @@ async function smoke(app) {
       const boxes = [...app.waveRows.slice(0, app.deckCount), ...app.deckViews.slice(0, app.deckCount).map((v) => v.el.querySelector('.ov-box'))]
         .map((row) => { const box = row.classList.contains('canvas-box') ? row : row.querySelector('.canvas-box'); const c = box.querySelector('canvas').getBoundingClientRect(); const b = box.getBoundingClientRect(); return [c.left - b.left, c.right - b.right, b.width]; });
       step('play head centred', boxes.every(([l, r, w]) => Math.abs(l) < 1 && Math.abs(r) < 1 && w > 50), JSON.stringify(boxes.map((x) => x.map((v) => Math.round(v)))));
+    }
+    // Zoomed in, the detail waveform is the real wave: its top edge changes from column to column
+    // (band points alone would give flat steps ~10 px wide at this zoom).
+    {
+      const zoomBefore = app.zoom;
+      const edges = async (zoom) => {
+        app.zoom = zoom;
+        await new Promise((r) => setTimeout(r, 300));
+        const c = app.waveCanvases[2]; const W = c.width; const H = c.height;
+        const img = c.getContext('2d').getImageData(0, 0, W, H).data;
+        const tops = [];
+        for (let x = Math.floor(W * 0.02); x < W * 0.98; x++) {
+          if (Math.abs(x - W / 2) < 4 * devicePixelRatio) continue; // play head
+          let y = Math.round(14 * devicePixelRatio);
+          for (; y < H / 2; y++) { const i = (y * W + x) * 4; if (img[i] + img[i + 1] + img[i + 2] > 200) break; }
+          tops.push(y);
+        }
+        // Only where there is sound (the test tracks are silent between their hits).
+        const loud = H / 2 - 3 * devicePixelRatio;
+        let changes = 0; let pairs = 0;
+        for (let i = 1; i < tops.length; i++) {
+          if (tops[i] > loud || tops[i - 1] > loud) continue;
+          pairs++;
+          if (tops[i] !== tops[i - 1]) changes++;
+        }
+        edges.info = `${W}x${H} pairs ${pairs} topmin ${Math.min(...tops)} pos ${d3.position().toFixed(2)}`;
+        return pairs > 20 ? changes / pairs : 0;
+      };
+      d3.seek(8);
+      const zoomed = await edges(1);
+      await window.rb.smokeShot('wave-zoom');
+      const wide = await edges(32);
+      app.zoom = zoomBefore;
+      step('zoomed waveform is a real wave', d3.fine?.max.length > 0 && zoomed > 0.3, `top edge changes on ${(zoomed * 100).toFixed(0)}% of columns at 1 s, ${(wide * 100).toFixed(0)}% at 32 s; ${edges.info}`);
     }
     // Stems (only when models are provided: REBOXED_SPLEETER_DIR / REBOXED_STEM_MODEL for this test).
     const stemModels = (await window.rb.stems.status()).models;
