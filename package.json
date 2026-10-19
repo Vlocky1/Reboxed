@@ -1,11 +1,20 @@
 {
   "name": "reboxed",
   "productName": "Reboxed",
-  "version": "1.2.1",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
-  "description": "Reboxed - DJ library and performance software",
-  "author": "mateo",
+  "description": "Comme Rekordbox mais en mieux — free DJ software for Windows (library, 4 decks, stems, DDJ-GRV6).",
+  "author": "Vlocky1",
+  "license": "MIT",
+  "homepage": "https://github.com/Vlocky1/Reboxed#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vlocky1/Reboxed.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Vlocky1/Reboxed/issues"
+  },
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
@@ -30,7 +39,7 @@
   "build": {
     "appId": "com.reboxed.app",
     "productName": "Reboxed",
-    "copyright": "Reboxed",
+    "copyright": "Copyright (c) 2026 Vlocky1 and the Reboxed contributors (MIT License)",
     "directories": {
       "output": "dist",
       "buildResources": "build"

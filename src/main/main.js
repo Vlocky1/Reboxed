@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, shell } from 'electron';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dirname, extname, join, normalize, sep } from 'node:path';
-import { access, mkdir, open, readdir, readFile, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, join, normalize, sep } from 'node:path';
+import { access, copyFile, mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { mkdtempSync } from 'node:fs';
 import { wavHeader } from '../shared/wav.js';
 import { tmpdir } from 'node:os';
@@ -103,6 +103,31 @@ function registerIpc(win) {
   });
   ipcMain.handle('stems:relocate', (_e, id, oldPath, newPath) => stems.relocate(id, oldPath, newPath));
   ipcMain.handle('fs:listAudio', (_e, dir) => listAudio(dir));
+  // Migration to a USB drive: tags of candidate files (no artwork), 8 at a time.
+  ipcMain.handle('tags:readMany', async (_e, paths) => {
+    const out = {};
+    for (let i = 0; i < paths.length; i += 8) {
+      const part = await Promise.all(paths.slice(i, i + 8).map((p) => readTags(p)));
+      part.forEach((t, k) => { out[paths[i + k]] = { title: t.title, artist: t.artist, duration: t.duration ?? 0 }; });
+    }
+    return out;
+  });
+  /** Copy a file into a folder without overwriting (same size already there = reused). Returns the new path. */
+  ipcMain.handle('fs:copyInto', async (_e, src, dir) => {
+    await mkdir(dir, { recursive: true });
+    const size = (await stat(src)).size;
+    const ext = extname(src); const name = basename(src, ext);
+    for (let k = 1; k < 100; k++) {
+      const dest = join(dir, k === 1 ? `${name}${ext}` : `${name} (${k})${ext}`);
+      let existing = null;
+      try { existing = await stat(dest); } catch { /* free */ }
+      if (existing) { if (existing.size === size) return dest; continue; }
+      await copyFile(src, dest);
+      if ((await stat(dest)).size !== size) throw new Error(`copy of ${src} is incomplete`);
+      return dest;
+    }
+    throw new Error(`no free name for ${src} in ${dir}`);
+  });
   // Local copies replaced by the ones on the USB drive go to the Recycle Bin (recoverable).
   ipcMain.handle('fs:trash', async (_e, paths) => {
     let n = 0;
@@ -217,6 +242,7 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 1100, minHeight: 700,
     backgroundColor: '#111315', title: 'Reboxed', autoHideMenuBar: true,
+    fullscreen: !smoke && storage.cfg.fullscreen !== false,
     // Smoke runs need real animation frames (hidden windows get almost none): show it fully transparent.
     ...(smoke ? { opacity: 0, focusable: false, skipTaskbar: true } : {}),
     webPreferences: {
@@ -225,6 +251,16 @@ async function createWindow() {
     },
   });
   registerIpc(win);
+  // Full screen: F11 toggles it; Preferences > General chooses whether Reboxed starts in it.
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11') { e.preventDefault(); win.setFullScreen(!win.isFullScreen()); }
+  });
+  ipcMain.handle('win:fullscreen', () => ({ now: win.isFullScreen(), atStart: storage.cfg.fullscreen !== false }));
+  ipcMain.handle('win:setFullscreen', async (_e, { now, atStart } = {}) => {
+    if (typeof now === 'boolean') win.setFullScreen(now);
+    if (typeof atStart === 'boolean') { storage.cfg.fullscreen = atStart; await storage.save(); }
+    return { now: win.isFullScreen(), atStart: storage.cfg.fullscreen !== false };
+  });
 
   if (smoke) {
     ipcMain.handle('smoke:dir', () => store.dir);

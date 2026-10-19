@@ -10,6 +10,7 @@ export const ICONS = {
   fx: svg('<path d="M2 12c2-8 4-8 6 0s4 8 6 0" />'),
   sampler: svg('<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor"/>'),
   mixer: svg('<path d="M4 2v12M8 2v12M12 2v12"/><rect x="2.5" y="8" width="3" height="2" rx=".5" fill="currentColor"/><rect x="6.5" y="4" width="3" height="2" rx=".5" fill="currentColor"/><rect x="10.5" y="10" width="3" height="2" rx=".5" fill="currentColor"/>'),
+  trash: svg('<path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5"/><path d="M4 4.5l.7 8.6a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-8.6M6.8 7v4.5M9.2 7v4.5"/>'),
   download: svg('<path d="M8 2v8M4.5 6.5L8 10l3.5-3.5"/><path d="M2.5 11.5v1.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-1.5"/>'),
   rec: svg('<circle cx="8" cy="8" r="4.5" fill="currentColor" stroke="none"/>'),
   link: svg('<path d="M6.5 9.5l3-3"/><path d="M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2"/><path d="M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"/>'),

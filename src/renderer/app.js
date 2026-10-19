@@ -1559,21 +1559,29 @@ async function smoke(app) {
       const k128 = await copy('Kick 128', 'Kick 128.wav');
       await copy('Kick 100', 'Kick 100.wav');
       await copy('Kick 100', 'Only On The Key.wav');
+      // A homonym under another name and folder (track number, mix name): found and confirmed by duration.
+      const structure = await copy('Structure', 'Hip\\01 - Structure (Original Mix).wav');
+      const kick140 = lib.all().find((x) => /^Kick 140/.test(x.title)); // not on the drive: copied there
       const before = await window.rb.stems.meta(k128.id, k128.path);
       const done = openRelink(app, usb);
-      for (let k = 0; k < 50 && !document.querySelector('.rbi-stats'); k++) await wait(100);
+      for (let k = 0; k < 100 && !document.querySelector('.mig-row'); k++) await wait(100);
+      const rows = document.querySelectorAll('.mig-row').length;
       await window.rb.smokeShot('relink');
       document.querySelector('.rbi-dialog .dialog-buttons button.primary')?.click();
-      for (let k = 0; k < 100 && !document.querySelector('.rbi-report'); k++) await wait(100);
+      for (let k = 0; k < 150 && !document.querySelector('.rbi-report'); k++) await wait(100);
       document.querySelector('.rbi-dialog .dialog-buttons button.primary')?.click();
       const rep = await done;
       const moved = lib.get(k128.id);
       const after = await window.rb.stems.meta(k128.id, moved.path);
       const info = await window.rb.storage.info();
       const added = lib.all().some((x) => x.path.endsWith('Only On The Key.wav'));
-      step('link tracks to a USB folder', rep?.linked >= 2 && moved.path.toLowerCase() === `${usb}\\Kick 128.wav`.toLowerCase()
-        && (!before || after?.dir.toLowerCase() === `${usb}\\stems\\Kick 128`.toLowerCase()) && info.stemsRoot === `${usb}\\stems` && added,
-        `report=${JSON.stringify(rep)} stems ${before?.dir} -> ${after?.dir}, root ${info.stemsRoot}, new track added=${added}`);
+      const homonym = lib.get(structure.id).path.toLowerCase() === `${usb}\\Hip\\01 - Structure (Original Mix).wav`.toLowerCase();
+      const copied = lib.get(kick140.id).path.toLowerCase().startsWith(`${usb}\\From computer\\`.toLowerCase());
+      const missing = lib.all().filter((x) => x.missing).length;
+      step('move the collection to a USB folder', rep?.linked >= 3 && rows > 0 && moved.path.toLowerCase() === `${usb}\\Kick 128.wav`.toLowerCase()
+        && (!before || after?.dir.toLowerCase() === `${usb}\\stems\\Kick 128`.toLowerCase()) && info.stemsRoot === `${usb}\\stems` && added
+        && homonym && copied && rep.remaining <= missing,
+        `report=${JSON.stringify(rep)} homonym=${homonym} copied=${copied} (missing files ${missing}), stems ${before?.dir} -> ${after?.dir}`);
     }
 
     // ---- Browser: resizable columns (fit to content) and the detailed track information ----
@@ -1644,6 +1652,37 @@ async function smoke(app) {
       const top = lib.findNode(pl.id)?.parent === null && lib.playlists.at(-1).id === pl.id;
       step('playlist tree: drag into a folder and back', inside && /drop-into/.test(mark) && refused && top, `inside=${inside} (${mark}) refused=${refused} top=${top}`);
       lib.deleteNode(folder.id); lib.deleteNode(pl.id);
+    }
+
+    // ---- Histories can be cleaned: entries, one day, or all; full screen setting ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const b = app.browser;
+      const ids = lib.all().slice(0, 3).map((t) => t.id);
+      lib.histories.push({ id: 'history-2026-01-01', date: '2026-01-01', trackIds: [...ids] });
+      lib.emit('history', {});
+      b.select('history-2026-01-01');
+      await wait(100);
+      b.selected = new Set([b.rows[0].key]);
+      await b.removeSelected();
+      const afterRemove = lib.histories.find((x) => x.id === 'history-2026-01-01')?.trackIds.length;
+      const okDialog = async (fn) => { const p = fn(); await wait(150); document.querySelector('.dialog-buttons button.primary')?.click(); await p; };
+      await okDialog(() => b.deleteHistory(lib.histories.find((x) => x.id === 'history-2026-01-01')));
+      const deleted = !lib.histories.some((x) => x.id === 'history-2026-01-01') && b.source === 'collection';
+      lib.histories.push({ id: 'history-2026-01-02', date: '2026-01-02', trackIds: [ids[0]] }, { id: 'history-2026-01-03', date: '2026-01-03', trackIds: [ids[1]] });
+      lib.emit('history', {});
+      await wait(100);
+      const before = lib.histories.length;
+      await okDialog(() => b.clearHistories());
+      await wait(100);
+      const trashBtn = !!document.querySelector('.tree-section button[title="Delete all histories"]');
+      step('histories: remove entries, delete a day, delete all', afterRemove === 2 && deleted && before >= 2 && lib.histories.length === 0 && !trashBtn && lib.all().length >= ids.length,
+        `entries 3 -> ${afterRemove}, day deleted=${deleted}, all ${before} -> ${lib.histories.length}`);
+      const fs = await window.rb.fullscreen();
+      await window.rb.setFullscreen({ atStart: false });
+      const off = await window.rb.fullscreen();
+      await window.rb.setFullscreen({ atStart: true });
+      step('full screen at start (setting)', fs.atStart === true && fs.now === false && off.atStart === false, `default atStart=${fs.atStart}, smoke window full screen=${fs.now}`);
     }
 
     if (!d1.hotCue(0)) d1.hotCuePress(0); // automix replaced deck 1's track

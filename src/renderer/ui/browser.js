@@ -8,6 +8,7 @@ import { suggest } from '../../shared/dsp/features.js';
 import { icon } from './icons.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 import { editSmartList, relatedPanel } from './lists-ui.js';
+import { openRelink } from './relink.js';
 
 const ROW_H = 24;
 const COLOR_CSS = Object.fromEntries(TRACK_COLORS.map((c) => [c.name, c.css]));
@@ -217,10 +218,19 @@ export class Browser {
       item('suggest', h('span', {}, icon('suggest'), 'Track Suggestion'), 'suggest'),
       playlistsHeader,
       ...nodes(lib.playlists, 0),
-      h('div.tree-section', {}, h('span', {}, 'Histories')),
+      h('div.tree-section', {}, h('span', {}, 'Histories'),
+        lib.histories.length ? h('button.icon', { title: 'Delete all histories', onclick: () => this.clearHistories() }, icon('trash')) : null),
       ...lib.histories.map((x) => {
         const row = item(x.id, h('span', {}, icon('history'), x.date, h('span.dim.count-badge', {}, `${x.trackIds.length}`)), 'history');
-        row.addEventListener('contextmenu', (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, [{ label: 'Turn into playlist', action: () => lib.historyToPlaylist(x.id) }]); });
+        row.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          contextMenu(e.clientX, e.clientY, [
+            { label: 'Turn into playlist', action: () => lib.historyToPlaylist(x.id) },
+            '-',
+            { label: 'Delete this history', action: () => this.deleteHistory(x) },
+            { label: 'Delete all histories', action: () => this.clearHistories() },
+          ]);
+        });
         return row;
       }));
     if (this.focusArea === 'tree') this.paintTreeCursor();
@@ -269,6 +279,7 @@ export class Browser {
       '-',
       { label: 'Analyze all unanalyzed tracks', action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },
       { label: 'Find missing files', action: () => this.app.findMissing() },
+      { label: 'Move my collection to a USB drive…', action: () => openRelink(this.app) },
     ]);
   }
 
@@ -709,9 +720,24 @@ export class Browser {
       }
     } else if (this.source === 'tag-list') {
       this.lib.removeFromTagList(rows.map((r) => r.pos));
-    } else if (this.lib.findNode(this.source)?.node.type === 'playlist') {
+    } else if (this.lib.findNode(this.source)?.node.type === 'playlist' || this.isHistory(this.source)) {
       this.lib.removeFromPlaylist(this.source, rows.map((r) => r.pos));
     }
+  }
+
+  isHistory(id) { return this.lib.histories.some((x) => x.id === id); }
+
+  async deleteHistory(x) {
+    if (!(await confirmDialog('Delete history', `Delete the history of ${x.date} (${x.trackIds.length} track(s))? The tracks stay in the collection.`))) return;
+    if (this.source === x.id) this.select('collection');
+    this.lib.deleteHistory(x.id);
+  }
+
+  async clearHistories() {
+    if (!this.lib.histories.length) return;
+    if (!(await confirmDialog('Delete all histories', `Delete all ${this.lib.histories.length} histories? The tracks stay in the collection.`))) return;
+    if (this.isHistory(this.source)) this.select('collection');
+    this.lib.clearHistories();
   }
 
   rowMenu(e, i) {
@@ -755,8 +781,8 @@ export class Browser {
       '-',
       this.source === 'collection'
         ? { label: 'Remove from collection', action: () => this.removeSelected() }
-        : { label: this.source === 'tag-list' ? 'Remove from Tag List' : 'Remove from playlist',
-          disabled: !(this.source === 'tag-list' || lib.findNode(this.source)?.node.type === 'playlist'), action: () => this.removeSelected() },
+        : { label: this.source === 'tag-list' ? 'Remove from Tag List' : this.isHistory(this.source) ? 'Remove from history' : 'Remove from playlist',
+          disabled: !(this.source === 'tag-list' || this.isHistory(this.source) || lib.findNode(this.source)?.node.type === 'playlist'), action: () => this.removeSelected() },
     ]);
   }
 

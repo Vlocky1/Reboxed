@@ -574,3 +574,22 @@ code.path { background: #111; padding: 2px 6px; border-radius: 3px; font-size: 1
 .tree-item.drop-after { box-shadow: inset 0 -2px 0 var(--accent-2); }
 .tree-item.drop-into, .tree-section.drop-into { outline: 1px solid var(--accent); background: #17324f; }
 .tree-item[draggable="true"] { cursor: grab; }
+
+/* Move the collection to a USB drive */
+.mig-dialog { width: min(1040px, 95vw); }
+.mig-bulk { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
+.mig-tabs { display: flex; margin-bottom: 6px; }
+.mig-list { max-height: 46vh; overflow-y: auto; background: #141416; border: 1px solid #000; border-radius: 4px; }
+.mig-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1.1fr); gap: 10px; align-items: center; padding: 5px 8px; border-bottom: 1px solid #1f1f23; }
+.mig-track { min-width: 0; }
+.mig-title { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mig-path { font-size: 10px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mig-choice { width: 100%; min-width: 0; }
+.mig-badge { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 3px 6px; border-radius: 3px; text-align: center; }
+.mig-badge.sure { background: #173d1b; color: var(--green); }
+.mig-badge.likely { background: #17324f; color: var(--accent-2); }
+.mig-badge.check { background: #3a2d10; color: #ffd27a; }
+.mig-badge.none { background: #2a2a30; color: var(--text-2); }
+.mig-badge.missing { background: #3d151b; color: #ff7d8b; }
+.mig-opts { margin-top: 8px; }
+@media (max-width: 760px) { .mig-row { grid-template-columns: 1fr; } }
