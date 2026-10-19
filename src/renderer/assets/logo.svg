@@ -1,45 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Reboxed: a record (white ring) with the play head in its gap, and the box at its centre. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#172036"/>
-      <stop offset="1" stop-color="#07080c"/>
+      <stop offset="0" stop-color="#1c1c20"/>
+      <stop offset="1" stop-color="#09090b"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.78" cy="0.18" r="0.7">
-      <stop offset="0" stop-color="#3d8dff" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="#3d8dff" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="sleeve" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4b9bff"/>
-      <stop offset="0.55" stop-color="#2f6cf0"/>
-      <stop offset="1" stop-color="#6a3dff"/>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3d8dff"/>
+      <stop offset="1" stop-color="#1473eb"/>
     </linearGradient>
-    <linearGradient id="label" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ff4fa3"/>
-      <stop offset="1" stop-color="#ff8a3d"/>
-    </linearGradient>
-    <radialGradient id="disc" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0.3" stop-color="#16181d"/>
-      <stop offset="1" stop-color="#040506"/>
-    </radialGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
-  <!-- record sliding out of its sleeve -->
-  <g transform="translate(346 200)">
-    <circle r="140" fill="url(#disc)"/>
-    <g fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2.5">
-      <circle r="128"/><circle r="115"/><circle r="102"/><circle r="89"/><circle r="76"/><circle r="63"/>
-    </g>
-    <path d="M -90 -90 A 127 127 0 0 1 36 -122" fill="none" stroke="#ffffff" stroke-opacity="0.24" stroke-width="7" stroke-linecap="round"/>
-    <circle r="46" fill="url(#label)"/>
-    <circle r="8" fill="#07080c"/>
-  </g>
-  <!-- sleeve (the box) with its shadow, and a geometric R -->
-  <g transform="translate(-12 26) scale(0.875)">
-    <rect x="92" y="168" width="256" height="256" rx="36" fill="#000" opacity="0.4" transform="translate(12 14)"/>
-    <rect x="92" y="168" width="256" height="256" rx="36" fill="url(#sleeve)"/>
-    <path d="M 128 173 H 312" stroke="#ffffff" stroke-opacity="0.35" stroke-width="5" stroke-linecap="round"/>
-    <path fill="#ffffff" fill-rule="evenodd"
-      d="M150 216 H238 A56 56 0 0 1 250 326.7 L294 380 H253 L213 328 H186 V380 H150 Z M186 248 H236 A24 24 0 0 1 236 296 H186 Z"/>
-  </g>
+  <circle cx="256" cy="256" r="123" fill="none" stroke="#ffffff" stroke-width="54" stroke-linecap="round"
+    stroke-dasharray="682.8 90" transform="rotate(-24 256 256)"/>
+  <circle cx="343" cy="169" r="17" fill="url(#accent)"/>
+  <rect x="208" y="208" width="96" height="96" rx="16" fill="url(#accent)"/>
 </svg>

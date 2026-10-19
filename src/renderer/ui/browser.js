@@ -142,22 +142,65 @@ export class Browser {
       });
       return el;
     };
+    // Playlists, intelligent playlists and folders can be dragged: onto a folder = inside it,
+    // onto the upper / lower edge of a row = before / after it.
+    const NODE_TYPE = 'application/x-rb-node';
+    const clearMarks = () => this.tree.querySelectorAll('.drop-before, .drop-after, .drop-into').forEach((x) => x.classList.remove('drop-before', 'drop-after', 'drop-into'));
+    const zone = (e, row, n) => {
+      const r = row.getBoundingClientRect();
+      const y = (e.clientY - r.top) / Math.max(1, r.height);
+      if (n.type === 'folder') return y < 0.25 ? 'before' : y > 0.75 ? 'after' : 'inside';
+      return y < 0.5 ? 'before' : 'after';
+    };
+    const movable = (row, n) => {
+      row.draggable = true;
+      row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(NODE_TYPE, n.id); e.dataTransfer.effectAllowed = 'move'; });
+      row.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes(NODE_TYPE)) return;
+        e.preventDefault();
+        clearMarks();
+        row.classList.add({ before: 'drop-before', after: 'drop-after', inside: 'drop-into' }[zone(e, row, n)]);
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drop-before', 'drop-after', 'drop-into'));
+      row.addEventListener('drop', (e) => {
+        const id = e.dataTransfer.getData(NODE_TYPE);
+        clearMarks();
+        if (!id) return;
+        e.preventDefault(); e.stopPropagation();
+        if (!lib.moveNode(id, n.id, zone(e, row, n))) toast('A folder cannot go inside itself');
+      });
+      row.addEventListener('dragend', clearMarks);
+      return row;
+    };
     const nodes = (list, depth) => list.flatMap((n) => {
       const pad = { style: { paddingLeft: `${10 + depth * 14}px` } };
       if (n.type === 'folder') {
-        const row = item(n.id, h('span', {}, h('span.twisty', { onclick: (e) => { e.stopPropagation(); lib.toggleFolder(n.id); } }, n.open ? '▾' : '▸'), icon('folder'), n.name), 'folder', pad);
+        const row = movable(item(n.id, h('span', {}, h('span.twisty', { onclick: (e) => { e.stopPropagation(); lib.toggleFolder(n.id); } }, n.open ? '▾' : '▸'), icon('folder'), n.name), 'folder', pad), n);
         row.addEventListener('contextmenu', (e) => this.nodeMenu(e, n));
         row.onclick = () => lib.toggleFolder(n.id);
         return [row, ...(n.open ? nodes(n.children, depth + 1) : [])];
       }
       if (n.type === 'smart') {
-        const row = item(n.id, h('span', {}, icon('smart'), n.name), 'smart', pad);
+        const row = movable(item(n.id, h('span', {}, icon('smart'), n.name), 'smart', pad), n);
         row.addEventListener('contextmenu', (e) => this.nodeMenu(e, n));
         return [row];
       }
-      const row = item(n.id, h('span', {}, icon('playlist'), n.name, h('span.dim.count-badge', {}, `${n.trackIds.length}`)), 'playlist', pad);
+      const row = movable(item(n.id, h('span', {}, icon('playlist'), n.name, h('span.dim.count-badge', {}, `${n.trackIds.length}`)), 'playlist', pad), n);
       row.addEventListener('contextmenu', (e) => this.nodeMenu(e, n));
       return [row];
+    });
+    // Dropping on the "Playlists" header moves the node back to the top level.
+    const playlistsHeader = h('div.tree-section', {}, h('span', {}, 'Playlists'),
+      h('button.icon', { title: 'New playlist', onclick: async () => { const n = await promptText('New playlist', 'Untitled Playlist'); if (n) this.select(lib.createNode('playlist', n).id); } }, icon('playlist')),
+      h('button.icon', { title: 'New intelligent playlist', onclick: () => this.newSmartList() }, icon('smart')),
+      h('button.icon', { title: 'New folder', onclick: async () => { const n = await promptText('New folder', 'New Folder'); if (n) lib.createNode('folder', n); } }, icon('folder')));
+    playlistsHeader.title = 'Drop a playlist or folder here to move it to the top level';
+    playlistsHeader.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes(NODE_TYPE)) { e.preventDefault(); clearMarks(); playlistsHeader.classList.add('drop-into'); } });
+    playlistsHeader.addEventListener('dragleave', () => playlistsHeader.classList.remove('drop-into'));
+    playlistsHeader.addEventListener('drop', (e) => {
+      const id = e.dataTransfer.getData(NODE_TYPE);
+      clearMarks();
+      if (id) { e.preventDefault(); lib.moveNode(id, null); }
     });
     const tagItem = item('tag-list', h('span', {}, icon('tag'), 'Tag List', h('span.dim.count-badge', {}, `${lib.tagList.length}`)), 'taglist');
     tagItem.addEventListener('contextmenu', (e) => {
@@ -172,10 +215,7 @@ export class Browser {
       tagItem,
       item('related', h('span', {}, icon('related'), 'Related Tracks'), 'related'),
       item('suggest', h('span', {}, icon('suggest'), 'Track Suggestion'), 'suggest'),
-      h('div.tree-section', {}, h('span', {}, 'Playlists'),
-        h('button.icon', { title: 'New playlist', onclick: async () => { const n = await promptText('New playlist', 'Untitled Playlist'); if (n) this.select(lib.createNode('playlist', n).id); } }, icon('playlist')),
-        h('button.icon', { title: 'New intelligent playlist', onclick: () => this.newSmartList() }, icon('smart')),
-        h('button.icon', { title: 'New folder', onclick: async () => { const n = await promptText('New folder', 'New Folder'); if (n) lib.createNode('folder', n); } }, icon('folder'))),
+      playlistsHeader,
       ...nodes(lib.playlists, 0),
       h('div.tree-section', {}, h('span', {}, 'Histories')),
       ...lib.histories.map((x) => {
@@ -204,6 +244,12 @@ export class Browser {
         { label: 'Analyze tracks', action: () => this.app.analyzeTracks(n.trackIds) },
         { label: 'Export as M3U8…', action: () => this.app.exportM3u(n) },
         '-']),
+      { label: 'Move to', submenu: [
+        { label: 'Top level', disabled: lib.playlists.includes(n), action: () => lib.moveNode(n.id, null) },
+        ...lib.folderTargets(n.id).map(({ node, depth }) => ({
+          label: `${'   '.repeat(depth)}${node.name}`, disabled: node.children.includes(n), action: () => lib.moveNode(n.id, node.id, 'inside'),
+        })),
+      ] },
       { label: 'Rename…', action: async () => { const name = await promptText('Rename', n.name); if (name) lib.renameNode(n.id, name); } },
       { label: 'Delete', action: async () => {
         if (await confirmDialog('Delete', `Delete "${n.name}"${n.type === 'folder' ? ' and everything in it' : ''}?`)) {

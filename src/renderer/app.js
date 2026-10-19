@@ -133,7 +133,7 @@ class App {
     const root = h('div.app', {},
       h('header.gbar', {},
         h('div.gbar-left', {},
-          h('div.wordmark', {}, h('img', { src: 'assets/logo.svg', alt: '' }), h('span', {}, 'Re', h('b', {}, 'boxed'))),
+          h('div.wordmark', {}, h('img', { src: 'assets/logo.svg', alt: '' }), h('span', {}, 're', h('b', {}, 'box'), 'ed')),
           this.modeSel,
           h('div.lbtns', {}, this.layoutBtns)),
         h('div.gbar-center', {}, this.fxBtn, this.samplerBtn, this.mixerBtn, this.mplBtn, this.automixBtn, this.automixStatus, this.dlBtn),
@@ -1614,6 +1614,36 @@ async function smoke(app) {
       const e = lib.get(t.id);
       step('track information: detailed and editable', sections.length === 4 && fields >= 20 && e.title === 'Kick 140 (edited)' && e.rating === 4 && e.key === '5A' && e.myTags.join() === 'peak,vocal',
         `${sections.join(' | ')} · ${fields} fields · saved: ${e.title}, ${e.rating}★, ${e.key}, [${e.myTags}]`);
+    }
+
+    // ---- Playlist tree: drag a playlist into a folder, then back to the top level ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const folder = lib.createNode('folder', 'Club sets');
+      const pl = lib.createNode('playlist', 'Peak time');
+      await wait(100);
+      const row = (id) => document.querySelector(`.tree-item[data-id="${id}"]`);
+      const drag = (from, to, where) => {
+        const dt = new DataTransfer();
+        from.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+        const r = to.getBoundingClientRect();
+        const y = r.top + r.height * (where === 'before' ? 0.1 : where === 'after' ? 0.9 : 0.5);
+        to.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }));
+        const mark = to.className;
+        to.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }));
+        return mark;
+      };
+      const mark = drag(row(pl.id), row(folder.id), 'inside');
+      await wait(100);
+      const inside = lib.findNode(pl.id)?.parent?.id === folder.id;
+      await window.rb.smokeShot('tree');
+      drag(row(folder.id), row(pl.id), 'inside');   // a folder into its own child: refused
+      const refused = lib.findNode(folder.id)?.parent === null;
+      drag(row(pl.id), document.querySelector('.tree-section[title^="Drop"]'), 'inside');
+      await wait(100);
+      const top = lib.findNode(pl.id)?.parent === null && lib.playlists.at(-1).id === pl.id;
+      step('playlist tree: drag into a folder and back', inside && /drop-into/.test(mark) && refused && top, `inside=${inside} (${mark}) refused=${refused} top=${top}`);
+      lib.deleteNode(folder.id); lib.deleteNode(pl.id);
     }
 
     if (!d1.hotCue(0)) d1.hotCuePress(0); // automix replaced deck 1's track

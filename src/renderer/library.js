@@ -243,6 +243,44 @@ export class Library extends EventTarget {
     this.emit('playlists');
   }
 
+  /**
+   * Move a playlist / intelligent playlist / folder in the tree.
+   * where: 'inside' (end of a folder), 'before' or 'after' another node; targetId null = end of the top level.
+   * A folder never goes inside itself or one of its subfolders.
+   * @returns {boolean} moved
+   */
+  moveNode(id, targetId, where = 'inside') {
+    const src = this.findNode(id);
+    if (!src || id === targetId) return false;
+    let tgt = null;
+    if (targetId) {
+      tgt = this.findNode(targetId);
+      if (!tgt) return false;
+      if (src.node.type === 'folder' && this.findNode(targetId, src.node.children)) return false;
+      if (where === 'inside' && tgt.node.type !== 'folder') where = 'after';
+    }
+    src.siblings.splice(src.siblings.indexOf(src.node), 1);
+    if (!tgt) this.playlists.push(src.node);
+    else if (where === 'inside') { tgt.node.children.push(src.node); tgt.node.open = true; } else {
+      const i = tgt.siblings.indexOf(tgt.node);
+      tgt.siblings.splice(where === 'before' ? i : i + 1, 0, src.node);
+    }
+    this.emit('playlists');
+    return true;
+  }
+
+  /** Folders a node may move into (not itself nor its own subfolders), with their depth. */
+  folderTargets(id) {
+    const out = [];
+    const walk = (list, depth) => list.forEach((n) => {
+      if (n.type !== 'folder' || n.id === id) return;
+      out.push({ node: n, depth });
+      walk(n.children, depth + 1);
+    });
+    walk(this.playlists, 0);
+    return out;
+  }
+
   toggleFolder(id) {
     const r = this.findNode(id);
     if (r?.node.type === 'folder') { r.node.open = !r.node.open; this.emit('playlists'); }
