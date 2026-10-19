@@ -1805,6 +1805,51 @@ async function smoke(app) {
         step('track information: real Deezer lookup has genres', r.sources.includes('Deezer') && !!dz?.genre && dz.year > 0, `${dz?.artist} — ${dz?.title} · ${dz?.album} ${dz?.year} · ${dz?.genres} · ${dz?.label} · errors ${r.errors}`);
       }
 
+      // Auto-tag (offline: canned Spotify / Deezer): recipe -> review -> apply -> undo.
+      {
+        const { autotagApi, openAutoTag, undoAutoTag } = await import('./ui/autotag.js');
+        const real = { ...autotagApi };
+        const asked = [];
+        autotagApi.pause = 0;
+        autotagApi.lookup = async (q, source) => {
+          asked.push(`${source}:${q.artist}|${q.title}`);
+          if (source === 'spotify') return { candidates: [{ title: 'Kick 128', mixName: 'Original Mix', artist: 'Smoke DJ', duration: lib.all().find((x) => x.title === 'Kick 128')?.duration ?? 24 }] };
+          return { candidates: q.artist === 'Smoke DJ' ? [{ title: 'Kick 128', mixName: 'Original Mix', artist: 'Smoke DJ', genre: 'Techno', duration: 24 }] : [] };
+        };
+        const k128 = lib.all().find((x) => x.title === 'Kick 128');
+        const before = { title: k128.title, artist: k128.artist ?? '', genre: k128.genre ?? '' };
+        lib.update(k128.id, { genre: '' });
+        const done = openAutoTag(app, [k128.id]);
+        await wait(200);
+        const stepsShown = document.querySelectorAll('.at-step').length;
+        document.querySelector('.autotag-dialog .dialog-buttons .primary').click();
+        for (let i = 0; i < 50 && !document.querySelector('.at-change'); i++) await wait(50);
+        const changes = [...document.querySelectorAll('.at-change')].map((x) => `${x.querySelector('.at-k').textContent}=${x.querySelector('.at-to')?.textContent}`);
+        await window.rb.smokeShot('autotag');
+        document.querySelector('.autotag-dialog .dialog-buttons .primary').click();
+        for (let i = 0; i < 50 && !/done/.test(document.querySelector('.autotag-dialog h2')?.textContent ?? ''); i++) await wait(50);
+        const after = lib.get(k128.id);
+        const applied = { title: after.title, artist: after.artist, genre: after.genre };
+        document.querySelector('.autotag-dialog .dialog-buttons .primary').click();
+        await done;
+        undoAutoTag(app);
+        const undone = lib.get(k128.id);
+        Object.assign(autotagApi, real);
+        step('auto-tag: Spotify title + artist, then Deezer genre with them; review, apply, undo',
+          stepsShown === 2 && changes.join() === 'Title=Kick 128 (Original Mix),Artist=Smoke DJ,Genre=Techno' && asked.join() === `spotify:${before.artist}|Kick 128,deezer:Smoke DJ|Kick 128 (Original Mix)`
+            && applied.title === 'Kick 128 (Original Mix)' && applied.artist === 'Smoke DJ' && applied.genre === 'Techno'
+            && undone.title === 'Kick 128' && (undone.artist ?? '') === before.artist && (undone.genre ?? '') === '',
+          `${stepsShown} steps · ${changes} · asked ${asked} · applied ${JSON.stringify(applied)} · undo → ${undone.title}/${undone.artist}/${undone.genre}`);
+        lib.update(k128.id, { genre: before.genre });
+        if (await window.rb.smokeDlTest()) {
+          const { runRecipe } = await import('../shared/autotag.js');
+          const [r] = await runRecipe([{ id: 'x', title: 'INDOCHINE - Trois nuits par semaine (clip officiel)', artist: '', duration: 312 }],
+            { tolerance: 4, steps: [{ source: 'deezer', fields: ['title', 'artist', 'genre', 'year'], titleWithMix: true }] }, window.rb.metadata.lookup);
+          step('auto-tag: real Deezer recipe', r.steps[0].changes.map((c) => `${c.field}=${c.to}`).join() === 'title=Trois nuits par semaine,artist=Indochine,genre=Disco,year=1985',
+            r.steps[0].changes.map((c) => `${c.field}=${c.to}`).join() || r.steps[0].error);
+        }
+      }
+
       // Date Added shows the time for tracks added now.
       b.select('collection');
       await wait(200);

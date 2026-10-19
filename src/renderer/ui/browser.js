@@ -11,6 +11,7 @@ import { editSmartList, relatedPanel } from './lists-ui.js';
 import { openRelink } from './relink.js';
 import { openCdjExport } from './cdj-export.js';
 import { lookupPanel } from './track-lookup.js';
+import { openAutoTag, undoAutoTag } from './autotag.js';
 import { addedTime, dateAddedText } from '../../shared/date-added.js';
 
 /** Value of the Track information date-time field. */
@@ -282,6 +283,8 @@ export class Browser {
       { label: 'Import from rekordbox (playlists, cues, tags)…', action: () => this.app.importXml() },
       { label: 'Download tracks (YouTube, new releases)…', action: () => this.app.downloads.open() },
       { label: 'Export to USB for CDJ / XDJ…', action: () => openCdjExport(this.app) },
+      { label: 'Auto-tag the tracks shown… (Spotify / Deezer)', action: () => openAutoTag(this.app, (this.selectedRows().length > 1 ? this.selectedRows() : this.rows ?? []).map((r) => r.track.id)) },
+      { label: 'Undo the last auto-tag', disabled: !this.app.lastAutoTag?.length, action: () => undoAutoTag(this.app) },
       { label: 'Export collection as rekordbox xml…', action: () => this.app.exportXml() },
       '-',
       { label: 'Analyze all unanalyzed tracks', action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },
@@ -784,6 +787,7 @@ export class Browser {
       { label: 'Color', submenu: [{ label: 'None', action: () => ids.forEach((id) => lib.update(id, { color: '' })) },
         ...TRACK_COLORS.map((c) => ({ label: c.name, checked: first.color === c.name, action: () => ids.forEach((id) => lib.update(id, { color: c.name })) }))] },
       { label: 'Track information…', action: () => this.editTrack(first.id) },
+      { label: `Auto-tag with Spotify / Deezer… (${ids.length})`, action: () => openAutoTag(this.app, ids) },
       { label: 'Show in Explorer', action: () => window.rb.showItem(first.path) },
       '-',
       this.source === 'collection'

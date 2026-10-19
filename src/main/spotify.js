@@ -4,13 +4,11 @@
 // Development-mode limits (2026): 10 search results, no album label / popularity. Genres come from
 // the artist (Spotify gives no genre per track).
 
-const API = 'https://api.spotify.com/v1';
+import { splitMix } from '../shared/autotag.js';
 
-/** "Song - Extended Mix" / "Song (Extended Mix)" -> {title: 'Song', mixName: 'Extended Mix'}. */
-export function splitMix(name) {
-  const m = /^(.*?)\s*(?:-\s+|\()([^()]*\b(?:mix|remix|edit|version|dub|rework|bootleg|vip)\b[^()]*)\)?\s*$/i.exec(name ?? '');
-  return m && m[1] ? { title: m[1].trim(), mixName: m[2].trim() } : { title: name ?? '', mixName: '' };
-}
+export { splitMix };
+
+const API = 'https://api.spotify.com/v1';
 
 const titleCase = (s) => s.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
@@ -77,8 +75,9 @@ export class Spotify {
   /**
    * Candidates for a track, best first.
    * @param {{title: string, artist?: string, query?: string}} q
+   * @param {{genres?: boolean}} [opts] genres: false skips the artist requests (batch tagging without genre)
    */
-  async lookup({ title, artist, query }) {
+  async lookup({ title, artist, query }, { genres: withGenres = true } = {}) {
     const clean = (s) => String(s ?? '').replace(/["]/g, ' ').trim();
     const tries = query ? [clean(query)] : [
       `track:"${clean(splitMix(title).title)}"${artist ? ` artist:"${clean(artist.split(/,|&| feat\.? | ft\.? /i)[0])}"` : ''}`,
@@ -93,7 +92,7 @@ export class Spotify {
     }
     // Genres of each first artist (one request per distinct artist: batch endpoints are gone).
     const genres = new Map();
-    for (const id of [...new Set(items.map((t) => t.artists?.[0]?.id).filter(Boolean))].slice(0, 5)) {
+    for (const id of withGenres ? [...new Set(items.map((t) => t.artists?.[0]?.id).filter(Boolean))].slice(0, 5) : []) {
       try { genres.set(id, (await this.get(`/artists/${id}`)).genres ?? []); } catch { genres.set(id, []); }
     }
     return items.map((t) => toFields(t, genres.get(t.artists?.[0]?.id) ?? []));

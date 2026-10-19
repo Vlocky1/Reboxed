@@ -31,15 +31,18 @@ export class MetadataLookup {
   /**
    * @param {object} q {title, artist} or {query}
    * @param {'deezer'|'spotify'} source the service the user chose
+   * @param {{complete?: boolean, genres?: boolean, max?: number, duration?: number}} [opts] batch tagging:
+   *   complete: false keeps Spotify results pure (no Deezer genres), genres / max / duration limit requests
    * @returns {Promise<{candidates: object[], errors: string[], sources: string[]}>}
    */
-  async lookup(q, source = 'deezer') {
+  async lookup(q, source = 'deezer', opts = {}) {
     if (source !== 'spotify') {
-      const candidates = await this.deezer.lookup(q);
+      const candidates = await this.deezer.lookup(q, opts);
       return { candidates, errors: [], sources: ['Deezer'] };
     }
     if (!this.spotifyReady()) throw new Error('Spotify is not set up: add your Client ID and Client Secret in Preferences > Library, or choose Deezer');
-    const sp = await this.spotify.lookup(q);
+    const sp = await this.spotify.lookup(q, opts);
+    if (opts.complete === false) return { candidates: sp, errors: [], sources: ['Spotify'] };
     // Spotify gives no genre for most artists: take it from the same recording on Deezer when found.
     const errors = [];
     const dz = sp.length ? await this.deezer.lookup(q).catch((err) => { errors.push(`genres from Deezer: ${err.message}`); return []; }) : [];
