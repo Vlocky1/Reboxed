@@ -2,22 +2,27 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, shell 
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, extname, join, normalize, sep } from 'node:path';
-import { access, mkdir, mkdtemp, open, readdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, open, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtempSync } from 'node:fs';
 import { wavHeader } from '../shared/wav.js';
 import { tmpdir } from 'node:os';
 import { LibraryStore } from './library-store.js';
-import { scanPaths, readTags, findFiles, AUDIO_EXTENSIONS } from './scanner.js';
+import { scanPaths, readTags, findFiles, listAudio, AUDIO_EXTENSIONS } from './scanner.js';
 import { StemService } from './stems.js';
+import { Storage, migrateLegacyAppDir, hasLibrary, copyDatabase, moveStemsRoot } from './storage.js';
 import { Downloader } from './downloader.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
 const smoke = process.argv.includes('--smoke');
 
-// Product name "Reboxed"; the data stays where earlier versions put it (%APPDATA%/rbclone: library,
-// analysis, stem models and caches), so renaming the app loses nothing.
+// App folder %APPDATA%/Reboxed (machine-local: location.json, stem models, caches). Versions before
+// 1.2 used %APPDATA%/rbclone: it is moved here once. The smoke test runs in a temporary folder.
 app.setName('Reboxed');
-app.setPath('userData', join(app.getPath('appData'), 'rbclone'));
+const smokeDir = smoke ? mkdtempSync(join(tmpdir(), 'reboxed-smoke-')) : null;
+if (!smoke) migrateLegacyAppDir(app.getPath('appData'));
+const appDir = smokeDir ?? join(app.getPath('appData'), 'Reboxed');
+app.setPath('userData', appDir);
 if (process.platform === 'win32') app.setAppUserModelId('com.reboxed.app');
 
 protocol.registerSchemesAsPrivileged([
@@ -55,6 +60,7 @@ function serveMedia(request) {
 let store;
 let stems;
 let downloader;
+let storage;
 
 /** Embedded cover -> 96 px JPEG thumbnail in userData/artwork (deduplicated by content hash). */
 async function saveArtwork(data) {
@@ -70,10 +76,42 @@ async function saveArtwork(data) {
 }
 
 function registerIpc(win) {
-  stems = new StemService(store.dir, (ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); });
+  stems = new StemService(appDir, storage, (ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); });
   // Dev/smoke: point at already-downloaded models instead of fetching them.
-  if (process.env.RBCLONE_STEM_MODEL) stems.overrides.hq = process.env.RBCLONE_STEM_MODEL;
-  if (process.env.RBCLONE_SPLEETER_DIR) stems.overrides.fast = process.env.RBCLONE_SPLEETER_DIR;
+  if (process.env.REBOXED_STEM_MODEL) stems.overrides.hq = process.env.REBOXED_STEM_MODEL;
+  if (process.env.REBOXED_SPLEETER_DIR) stems.overrides.fast = process.env.REBOXED_SPLEETER_DIR;
+
+  // Database folder (library, analysis, artwork, captures; may be a USB drive) and stems folder.
+  ipcMain.handle('storage:info', () => storage.info());
+  ipcMain.handle('storage:hasLibrary', (_e, dir) => hasLibrary(dir));
+  /** mode 'move': copy the current library there; 'open': use the library already there. Restarts. */
+  ipcMain.handle('storage:setDatabase', async (_e, dir, mode) => {
+    if (mode === 'move') await copyDatabase(store.dir, dir, { withStems: storage.cfg.stemsMode === 'database' });
+    storage.cfg.database = dir && normalize(dir) !== normalize(appDir) ? dir : null;
+    await storage.save();
+    if (!smoke) { app.relaunch(); app.exit(0); }
+    return storage.info();
+  });
+  /** mode 'database' | 'custom' | 'beside'; move = bring the existing stems folders along. */
+  ipcMain.handle('storage:setStems', async (_e, mode, dir, move) => {
+    const before = storage.stemsRoot;
+    storage.cfg.stemsMode = mode;
+    storage.cfg.stemsDir = mode === 'custom' ? dir : storage.cfg.stemsDir;
+    await storage.save();
+    const moved = move ? await moveStemsRoot(before, storage.stemsRoot) : 0;
+    return { moved, info: storage.info() };
+  });
+  ipcMain.handle('stems:relocate', (_e, id, oldPath, newPath) => stems.relocate(id, oldPath, newPath));
+  ipcMain.handle('fs:listAudio', (_e, dir) => listAudio(dir));
+  // Local copies replaced by the ones on the USB drive go to the Recycle Bin (recoverable).
+  ipcMain.handle('fs:trash', async (_e, paths) => {
+    let n = 0;
+    for (const p of paths) { try { await shell.trashItem(p); n++; } catch { /* in use or gone */ } }
+    return n;
+  });
+  ipcMain.handle('shell:openExternal', (_e, url) => {
+    if (/^https:\/\/(www\.|music\.)?youtube\.com\/|^https:\/\/youtu\.be\//.test(url)) shell.openExternal(url);
+  });
   downloader = new Downloader((ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); });
   ipcMain.handle('dl:tools', (_e, dir) => { downloader.customDir = dir ?? ''; return downloader.tools(); });
   ipcMain.handle('dl:search', (_e, q, n) => downloader.search(q, n));
@@ -143,7 +181,7 @@ function registerIpc(win) {
   ipcMain.handle('fs:findFiles', (_e, dir, names) => findFiles(dir, names));
   ipcMain.handle('fs:writeFile', (_e, path, data) => store.writeExternal(path, data));
   ipcMain.handle('shell:showItem', (_e, path) => shell.showItemInFolder(path));
-  ipcMain.handle('app:paths', () => ({ userData: store.dir, music: smoke ? store.dir : app.getPath('music') }));
+  ipcMain.handle('app:paths', () => ({ userData: store.dir, appDir, music: smoke ? store.dir : app.getPath('music') }));
 
   // Streaming WAV recorder: PCM chunks are appended in order, the header is patched on stop.
   const recordings = new Map();
@@ -190,7 +228,7 @@ async function createWindow() {
 
   if (smoke) {
     ipcMain.handle('smoke:dir', () => store.dir);
-    ipcMain.handle('smoke:dlTest', () => process.env.RBCLONE_DL_TEST === '1');
+    ipcMain.handle('smoke:dlTest', () => process.env.REBOXED_DL_TEST === '1');
     // Extra screenshot mid-test: <shot>-<name>.png next to the final one.
     ipcMain.handle('smoke:shot', async (_e, name) => {
       const shot = process.argv.find((a) => a.startsWith('--shot='));
@@ -223,9 +261,30 @@ async function createWindow() {
   await win.loadURL(`app://rb/renderer/index.html${smoke ? '?smoke=1' : ''}`);
 }
 
+/** The database folder is on a drive that is not plugged in: retry, pick another or use the local one. */
+async function resolveDatabase() {
+  while (!(await storage.databaseReachable())) {
+    const r = await dialog.showMessageBox({
+      type: 'warning', title: 'Reboxed', noLink: true,
+      message: `The Reboxed library folder is not available:\n${storage.databaseDir}`,
+      detail: 'Plug in the drive that holds it and choose Retry, or choose another folder.',
+      buttons: ['Retry', 'Choose another folder…', 'Use the library on this computer'], defaultId: 0, cancelId: 2,
+    });
+    if (r.response === 1) {
+      const pick = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
+      if (!pick.canceled) { storage.cfg.database = pick.filePaths[0]; await storage.save(); }
+    } else if (r.response === 2) {
+      storage.cfg.database = null; await storage.save();
+    }
+  }
+  return storage.databaseDir;
+}
+
 app.whenReady().then(async () => {
-  // The smoke test never touches the user's real library.
-  store = new LibraryStore(smoke ? await mkdtemp(join(tmpdir(), 'rbclone-smoke-')) : app.getPath('userData'));
+  // The smoke test never touches the user's real library (its app folder is a temporary one).
+  storage = new Storage(appDir);
+  await storage.load();
+  store = new LibraryStore(await resolveDatabase(), { legacyDir: smoke ? null : join(app.getPath('appData'), 'rbclone') });
   protocol.handle('app', serveApp);
   protocol.handle('media', serveMedia);
   createWindow();

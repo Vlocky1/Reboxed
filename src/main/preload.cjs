@@ -21,6 +21,15 @@ contextBridge.exposeInMainWorld('rb', {
   findFiles: (dir, names) => ipcRenderer.invoke('fs:findFiles', dir, names),
   writeFile: (path, data) => ipcRenderer.invoke('fs:writeFile', path, data),
   showItem: (path) => ipcRenderer.invoke('shell:showItem', path),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  listAudio: (dir) => ipcRenderer.invoke('fs:listAudio', dir),
+  trash: (paths) => ipcRenderer.invoke('fs:trash', paths),
+  storage: {
+    info: () => ipcRenderer.invoke('storage:info'),
+    hasLibrary: (dir) => ipcRenderer.invoke('storage:hasLibrary', dir),
+    setDatabase: (dir, mode) => ipcRenderer.invoke('storage:setDatabase', dir, mode),
+    setStems: (mode, dir, move) => ipcRenderer.invoke('storage:setStems', mode, dir, move),
+  },
   pathForFile: (file) => webUtils.getPathForFile(file),
   paths: () => ipcRenderer.invoke('app:paths'),
   recStart: (name) => ipcRenderer.invoke('rec:start', name),
@@ -50,6 +59,7 @@ contextBridge.exposeInMainWorld('rb', {
     meta: (id, trackPath) => ipcRenderer.invoke('stems:meta', id, trackPath),
     separate: (id, left, right, opts) => ipcRenderer.invoke('stems:separate', id, left, right, opts),
     remove: (id, trackPath) => ipcRenderer.invoke('stems:delete', id, trackPath),
+    relocate: (id, oldPath, newPath) => ipcRenderer.invoke('stems:relocate', id, oldPath, newPath),
     removeAll: () => ipcRenderer.invoke('stems:deleteAll'),
     on: (channel, cb) => {
       const allowed = ['stems:progress', 'stems:download', 'stems:fallback', 'stems:block', 'stems:job'];

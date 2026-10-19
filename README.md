@@ -1,13 +1,14 @@
 # Reboxed
 
-Reboxed (projet RBClone) est un logiciel DJ desktop (Electron + Web Audio) qui reprend les fonctionnalités de Rekordbox. Les fonctionnalités sont réimplémentées : aucun code, visuel ni asset de Pioneer/AlphaTheta n'est utilisé.
+Reboxed est un logiciel DJ desktop (Electron + Web Audio) qui reprend les fonctionnalités de Rekordbox. Les fonctionnalités sont réimplémentées : aucun code, visuel ni asset de Pioneer/AlphaTheta n'est utilisé.
 
 ```sh
 npm install
 npm start          # lance l'application
-npm test           # 65 tests unitaires (recherche, DSP, grilles, phrases, Camelot, rekordbox.xml, listes, MIDI, contrôleurs, WAV…)
+npm test           # 78 tests unitaires (recherche, DSP, grilles, phrases, Camelot, rekordbox.xml, listes, MIDI, contrôleurs, WAV, stockage…)
 npm run smoke      # test de bout en bout dans Electron, sans toucher à ta bibliothèque
-                   # (avec RBCLONE_SPLEETER_DIR=<dossier des 4 .fp16.onnx> et/ou RBCLONE_STEM_MODEL=<HT-Demucs .onnx>, il teste aussi les stems FAST/HQ)
+                   # (avec REBOXED_SPLEETER_DIR=<dossier des 4 .fp16.onnx> et/ou REBOXED_STEM_MODEL=<HT-Demucs .onnx>, il teste aussi les stems FAST/HQ ;
+                   #  avec REBOXED_DL_TEST=1, il fait une vraie recherche et un vrai téléchargement YouTube)
 ```
 
 ## Installeur Windows
@@ -18,7 +19,7 @@ npm run dist       # dist/Reboxed-Setup-<version>.exe : installeur, avec le choi
 npm run dist:dir   # dist/win-unpacked/Reboxed.exe : version portable, sans installation
 ```
 
-- **Données** : l'appli garde ses données dans `%APPDATA%\rbclone`, qui contient la bibliothèque, les analyses, les modèles de stems et les caches. La désinstallation ne les supprime pas.
+- **Données** : voir « Où sont les données » plus bas. La désinstallation ne les supprime pas.
 - **Avertissement Windows** : l'installeur n'est pas signé, donc SmartScreen affiche « Éditeur inconnu ». Clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
 - **Version empaquetée** : on la teste avec `dist\win-unpacked\Reboxed.exe --smoke "--shot=<png>"`.
 
@@ -26,10 +27,11 @@ npm run dist:dir   # dist/win-unpacked/Reboxed.exe : version portable, sans inst
 
 | Zone | Fonctionnalités |
 |---|---|
-| **Bibliothèque** | Import par dossier, fichiers ou glisser-déposer. Collection, playlists et dossiers. Intelligent Playlists (conditions ET/OU). Tag List, Related Tracks, historiques, notes, 8 couleurs, My Tag, édition des infos, colonnes configurables, détection des fichiers manquants. |
+| **Bibliothèque** | Import par dossier, fichiers ou glisser-déposer. Collection, playlists et dossiers. Intelligent Playlists (conditions ET/OU). Tag List, Related Tracks, historiques, notes, 8 couleurs, My Tag, détection des fichiers manquants. **Track information** (clic droit) : chaque champ modifiable, avec une aide, en sections Track, Credits, DJ (note, couleur, My Tag, commentaires, BPM, tonalité, nombre de lectures, date d'ajout) et File en lecture seule. **Colonnes** au choix (clic droit sur l'en-tête) et **redimensionnables** : glisser le bord, double-clic pour ajuster au contenu, « Fit all columns » dans le menu ; les largeurs sont mémorisées. |
 | **Recherche** | Moteur identique à Rekordbox ([preuves](docs/rekordbox-search-evidence.md)) et Track Filter (BPM ±%, Key, Rating, Color, My Tag). |
 | **Interop Rekordbox** | Outil **Import from rekordbox** (menu ⋯ du navigateur, ou glisser un `rekordbox.xml` sur la fenêtre). Il importe toutes les infos des morceaux, les hot cues, les memory cues, les boucles, les grilles, les playlists et les dossiers. Il affiche un aperçu chiffré, permet de choisir les playlists et de régler la fusion (rekordbox gagne ou garder mes modifs ; cues remplacées, fusionnées ou gardées), retrouve les fichiers déplacés et peut réimporter sans doublons. Export `rekordbox.xml` et M3U8. |
-| **Téléchargement** | Bouton **DOWNLOAD** : recherche YouTube, liens (vidéo ou playlist) et **nouveautés** des chaînes suivies (artistes, labels ; vérifiées au démarrage). Formats M4A (sans réencodage), MP3 320, FLAC ou WAV. Tags « Artiste - Titre » nettoyés et pochette intégrée. Les morceaux arrivent dans la collection et dans la playlist « Downloads ». Le moteur est yt-dlp + ffmpeg + deno, comme Stacher (repris de `~/.stacher` ou du PATH). |
+| **Téléchargement** | Bouton **DOWNLOAD**. **Ask for a track** : tu tapes « Artiste - Titre » (ou une liste, un par ligne). Reboxed propose une vidéo à la fois, les sources officielles d'abord : la chaîne « Topic » de l'artiste (audio officiel), puis sa propre chaîne ou VEVO. Les versions live, cover, remix, sped up ou lyrics passent derrière, sauf si tu les demandes. Tu réponds **Oui** (téléchargement) ou **Non** (proposition suivante), aussi avec les touches Y et N. Autres onglets : recherche YouTube, liens (vidéo ou playlist) et **nouveautés** des chaînes suivies (artistes, labels ; vérifiées au démarrage). Formats M4A (sans réencodage), MP3 320, FLAC ou WAV, réglés dans Préférences ▸ Downloads. Tags « Artiste - Titre » nettoyés et pochette intégrée. Les morceaux arrivent dans la collection et dans la playlist « Downloads ». Le moteur est yt-dlp + ffmpeg + deno, comme Stacher (repris de `~/.stacher` ou du PATH). |
+| **Bibliothèque amovible** | Préférences ▸ Library : le **dossier de la bibliothèque** peut être sur une clé USB. Si la lettre de la clé change d'un PC à l'autre, les chemins suivent ; si la clé est absente au démarrage, Reboxed propose Réessayer, un autre dossier ou la bibliothèque locale. Les **stems** vont par défaut dans `<bibliothèque>\stems`, déplaçables vers un autre dossier ou à côté de chaque morceau. **Relier mes morceaux à un dossier** (par exemple `J:\Tracks`) : la collection utilise les copies de la clé (cues, tags, analyses et playlists conservés), les stems suivent dans `J:\Tracks\stems`, les morceaux présents seulement sur la clé sont ajoutés, et les copies locales peuvent partir à la corbeille. |
 | **Analyse** | BPM et grille constante ou dynamique, premier temps de mesure, tonalité en Camelot ou classique, phrases (INTRO/UP/CHORUS/DOWN/OUTRO…), forme d'onde 3Band / RGB / BLUE, loudness, empreinte audio. |
 | **Stems** | VOCAL / INST / BASS / DRUMS par IA, en deux qualités. **FAST** (Spleeter, environ 7× le temps réel) est progressif : la séparation commence à la tête de lecture et le deck utilise les stems dès que le premier bloc est prêt. **HQ** (HT-Demucs) prend le relais en arrière-plan en mode *auto*. Avancement visible dans la pastille de la barre du haut, sur le bouton STEMS, sur la barre de couverture de la vue d'ensemble et dans la colonne « Stems ». La forme d'onde est colorée par stem. Coupure et solo par deck. |
 | **Préparation** | Éditeur de grille (tap tempo, verrouillage…), cues créés depuis les phrases, MIX IN / MIX OUT et Mix Point Link, Track Suggestion (morceaux qui sonnent pareil). |
@@ -39,20 +41,21 @@ npm run dist:dir   # dist/win-unpacked/Reboxed.exe : version portable, sans inst
 | **Beat FX** (16) | DELAY, ECHO, PING PONG, REVERB, FLANGER, PHASER, FILTER, TRANS, ROLL, REV ROLL, VINYL BRAKE, PITCH, UP ECHO, DOWN ECHO, PAN, ROBOT. Synchronisés au BPM, sur CH1–4 ou MASTER. |
 | **Sampler** | 16 slots en one-shot ou en boucle, synchro au master, glisser-déposer, capture de la boucle d'un deck. |
 | **Automix** | Joue la liste affichée avec préchargement, sync et fondu de 4 à 32 temps ; répétition et lecture aléatoire. |
-| **Enregistrement** | WAV 16 bits dans `Musique\RBClone Recordings\`, ajouté automatiquement à la collection. |
+| **Enregistrement** | WAV 16 bits dans `Musique\Reboxed Recordings\`, ajouté automatiquement à la collection. |
 | **Contrôle** | **Pioneer DDJ-GRV6 reconnu automatiquement** : mapping complet, LED, jogs, Groove Circuit, carte son 4 canaux ([notice](docs/DDJ-GRV6.md)). Autres contrôleurs Pioneer via leur mapping Rekordbox. Clavier façon preset « Performance 1 », MIDI learn. |
 
 ## Interface
 
 Disposition et ambiance du mode PERFORMANCE de Rekordbox :
-- **Barre globale** : mode, dispositions 2 decks / 4 decks / navigateur, panneaux FX / SAMPLER / MIXER / MIX POINT LINK / AUTOMIX, REC, état MIDI, horloge.
+- **Barre globale** : logo, mode, dispositions 2 decks / 4 decks / navigateur, panneaux FX / SAMPLER / MIXER / MIX POINT LINK / AUTOMIX, DOWNLOAD, REC, état MIDI, horloge.
+- **Préférences en onglets** : General, Decks & Mixer, Audio, Library, Stems, Downloads, MIDI, Keyboard.
 - **Panneau Beat FX** sur sa propre ligne.
 - **Formes d'onde agrandies** empilées, avec le repère de chaque deck.
 - **Decks** : pochette, KEY, BPM, MASTER/SYNC, vue d'ensemble, gros CUE/PLAY, pads colorés, fader de tempo.
 - **Mixer** : potards à arc de valeur, VU-mètres segmentés.
 - **Navigateur** : icônes, recherche, colonne pochette.
 
-Palette, icônes et dessins sont propres à RBClone : aucun fichier visuel ni logo de Pioneer/AlphaTheta n'est utilisé.
+Palette, icônes et dessins sont propres à Reboxed : aucun fichier visuel ni logo de Pioneer/AlphaTheta n'est utilisé.
 
 ## Architecture
 
@@ -64,10 +67,20 @@ src/renderer/
   analysis/      décodage, ré-échantillonnage, worker
   ui/            decks et pads, mixer, navigateur, listes intelligentes et related, sampler, MIDI, préférences
   automix.js, library.js, app.js
-src/shared/      code pur testé sous Node : DSP, Camelot, XML, rekordbox.xml, smartlist, related, MIDI, WAV
+src/shared/      code pur testé sous Node : DSP, Camelot, XML, rekordbox.xml, smartlist, related, MIDI, WAV,
+                 boucles DRUM SWAP, chemins portables, liaison USB, classement des propositions YouTube
 src/search/      moteur de recherche façon Rekordbox
 ```
 
-Les données sont dans `%APPDATA%\rbclone\` : `library.json`, `analysis/`, `samples/`, `models/` (modèles de stems : `spleeter/` pour FAST, `htdemucs_fp16weights.onnx` pour HQ). Les stems sont gardés **à côté de la musique**, dans `<dossier du morceau>\stems\<morceau>\{vocals,drums,bass,other}.wav`, la version HQ remplaçant la FAST. Si le dossier n'est pas inscriptible, ou selon le réglage, ils vont dans `stems/<id>/` (cache caché).
+## Où sont les données
+
+- `%APPDATA%\Reboxed\` (propre à l'ordinateur) contient :
+  - `location.json`, qui indique où est la bibliothèque ;
+  - `models\` : les modèles de stems, `spleeter\` pour FAST et `htdemucs_fp16weights.onnx` pour HQ ;
+  - les caches.
+
+  Les versions précédentes utilisaient `%APPDATA%\rbclone\`, qui est renommé automatiquement au premier lancement.
+- **Dossier de la bibliothèque** (par défaut le même, ou une clé USB) : `library.json`, `analysis\`, `artwork\`, `groove\` (captures DRUM CAPTURE) et `stems\<morceau>\{vocals,drums,bass,other}.wav`. La version HQ des stems remplace la FAST.
+- **Emplacements des stems** : le dossier de la bibliothèque, un dossier au choix ou à côté de chaque morceau. Les stems déjà rangés à côté de la musique ou dans l'ancien cache restent lus.
 
 La suite est dans [docs/ROADMAP.md](docs/ROADMAP.md) : phase 5 (export USB pour CDJ, mode Edit, Pad FX, vidéo…).

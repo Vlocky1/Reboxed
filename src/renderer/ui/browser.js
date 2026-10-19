@@ -382,16 +382,72 @@ export class Browser {
 
   renderHead() {
     const s = this.sort;
+    this.applyWidths();
     this.head.replaceChildren(...this.columns.map((c) => {
       const def = COLUMNS[c];
-      const cell = h(`div.th.c-${c}${def.num ? '.num' : ''}`, { style: { width: `${def.width}px` } },
-        def.label, s.col === c ? h('span.sort', {}, s.dir > 0 ? ' ▲' : ' ▼') : '');
+      const grip = h('span.col-grip', { title: 'Drag to resize · double-click to fit the content' });
+      grip.addEventListener('pointerdown', (e) => this.startResize(e, c, grip));
+      grip.addEventListener('dblclick', (e) => { e.stopPropagation(); this.autoFit(c); });
+      grip.addEventListener('click', (e) => e.stopPropagation());
+      const cell = h(`div.th.c-${c}${def.num ? '.num' : ''}`, { style: { width: `var(--w-${c})` } },
+        def.label, s.col === c ? h('span.sort', {}, s.dir > 0 ? ' ▲' : ' ▼') : '', grip);
       cell.onclick = () => { this.sort = { col: c, dir: s.col === c ? -s.dir : 1 }; this.refreshRows(); };
       cell.oncontextmenu = (e) => this.columnMenu(e);
       return cell;
     }));
-    this.totalWidth = this.columns.reduce((a, c) => a + COLUMNS[c].width, 0);
-    this.head.style.width = `${this.totalWidth}px`;
+    this.head.style.width = 'var(--total)';
+  }
+
+  // ---- column widths (drag the header edge; double-click fits the content) -----------------------
+
+  colWidth(c) { return this.lib.settings.columnWidths?.[c] ?? COLUMNS[c].width; }
+
+  /** Widths live in CSS variables on the list, so a resize updates every row at once. */
+  applyWidths(draft = {}) {
+    let total = 0;
+    for (const c of this.columns) {
+      const w = draft[c] ?? this.colWidth(c);
+      total += w;
+      this.scroller.style.setProperty(`--w-${c}`, `${w}px`);
+    }
+    this.totalWidth = total;
+    this.scroller.style.setProperty('--total', `${total}px`);
+  }
+
+  setColWidth(c, w) {
+    this.lib.setSetting('columnWidths', { ...(this.lib.settings.columnWidths ?? {}), [c]: Math.round(w) });
+    this.applyWidths();
+  }
+
+  startResize(e, c, grip) {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    grip.setPointerCapture(e.pointerId);
+    const x0 = e.clientX; const w0 = this.colWidth(c);
+    let w = w0;
+    const move = (ev) => { w = Math.max(24, Math.min(1200, w0 + ev.clientX - x0)); this.applyWidths({ [c]: w }); };
+    const up = () => {
+      grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up);
+      if (w !== w0) this.setColWidth(c, w);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  }
+
+  /** Width that shows the longest value of the column (and its header) in full. */
+  autoFit(c) {
+    const def = COLUMNS[c];
+    const sample = this.body.querySelector(`.td.c-${c}`) ?? this.body.querySelector('.td');
+    const font = sample ? getComputedStyle(sample).font : '12px "Segoe UI"';
+    const g = (this.measureCtx ??= document.createElement('canvas').getContext('2d'));
+    g.font = font;
+    let max = g.measureText(def.label ?? '').width + 18;
+    const settings = this.lib.settings;
+    for (const r of this.rows.slice(0, 20000)) {
+      const text = String(def.get(r, settings) ?? '');
+      if (text) max = Math.max(max, g.measureText(text).width + (c === 'title' ? 26 : 16));
+    }
+    if (!['rating', 'artwork', 'color', 'stems'].includes(c)) this.setColWidth(c, Math.min(900, Math.ceil(max)));
   }
 
   columnMenu(e) {
@@ -400,7 +456,11 @@ export class Browser {
     contextMenu(e.clientX, e.clientY, Object.entries(COLUMNS).filter(([k]) => k !== 'pos').map(([k, def]) => ({
       label: def.menuLabel || def.label || 'Color', checked: cur.includes(k),
       action: () => this.lib.setSetting('columns', cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]),
-    })));
+    })).concat([
+      '-',
+      { label: 'Fit all columns to their content', action: () => this.columns.forEach((c) => this.autoFit(c)) },
+      { label: 'Reset column widths', action: () => { this.lib.setSetting('columnWidths', {}); this.applyWidths(); } },
+    ]));
   }
 
   renderBody() {
@@ -409,7 +469,7 @@ export class Browser {
     const first = Math.max(0, Math.floor(top / ROW_H) - 5);
     const last = Math.min(this.rows.length, Math.ceil((top + height) / ROW_H) + 5);
     this.spacer.style.height = `${this.rows.length * ROW_H}px`;
-    this.spacer.style.width = `${this.totalWidth}px`;
+    this.spacer.style.width = 'var(--total)';
     const loaded = new Set(this.app.engine.decks.filter((d) => d.track).map((d) => d.track.id));
     const settings = this.lib.settings;
     const frag = [];
@@ -417,11 +477,11 @@ export class Browser {
       const r = this.rows[i];
       const t = r.track;
       const row = h(`div.tr${this.selected.has(r.key) ? '.sel' : ''}${loaded.has(t.id) ? '.loaded' : ''}${t.missing ? '.missing' : ''}`, {
-        style: { top: `${i * ROW_H}px`, width: `${this.totalWidth}px` }, draggable: true, dataset: { i },
+        style: { top: `${i * ROW_H}px`, width: 'var(--total)' }, draggable: true, dataset: { i },
       });
       for (const c of this.columns) {
         const def = COLUMNS[c];
-        const cell = h(`div.td.c-${c}${def.num ? '.num' : ''}`, { style: { width: `${def.width}px` } });
+        const cell = h(`div.td.c-${c}${def.num ? '.num' : ''}`, { style: { width: `var(--w-${c})` } });
         if (c === 'color') cell.style.background = COLOR_CSS[t.color] ?? 'transparent';
         else if (c === 'artwork') { if (t.artwork) cell.append(h('img.thumb', { src: mediaUrl(t.artwork), loading: 'lazy', alt: '' })); }
         else if (c === 'stems') {
@@ -654,35 +714,83 @@ export class Browser {
     ]);
   }
 
+  /**
+   * Track information: everything that can be edited, grouped, each with what it changes.
+   * Edits are saved in the Reboxed library (the audio file's own tags are not rewritten).
+   */
   async editTrack(id) {
     const t = this.lib.get(id);
-    const fields = [
-      ['title', 'Track Title'], ['artist', 'Artist'], ['album', 'Album'], ['albumArtist', 'Album Artist'], ['genre', 'Genre'],
-      ['remixer', 'Remixer'], ['originalArtist', 'Original Artist'], ['composer', 'Composer'], ['label', 'Label'],
-      ['mixName', 'Mix Name'], ['grouping', 'Grouping'], ['year', 'Year'], ['comments', 'Comments'],
-    ];
+    if (!t) return;
     const inputs = {};
-    const grid = h('div.form-grid', {}, fields.map(([k, label]) => {
-      inputs[k] = h(k === 'comments' ? 'textarea.text' : 'input.text', { value: t[k] ?? '', spellcheck: false });
-      if (k === 'comments') inputs[k].value = t[k] ?? '';
-      return [h('label', {}, label), inputs[k]];
-    }),
-    h('label', {}, 'My Tag'), (inputs.myTags = h('input.text', { value: (t.myTags ?? []).join(', '), placeholder: 'comma separated' })),
-    h('label', {}, 'BPM'), (inputs.bpm = h('input.text', { value: t.bpm ? t.bpm.toFixed(2) : '' })),
-    h('label', {}, 'Key'), (inputs.key = h('input.text', { value: t.key ?? '', placeholder: '8A or Am' })),
-    h('label', {}, 'File'), h('div.path', {}, t.path));
-    const ok = await modal('Track information', grid, [{ label: 'Save', primary: true, value: true }, { label: 'Cancel', value: null }]);
+    const text = (k, opts = {}) => (inputs[k] = h(opts.area ? 'textarea.text' : 'input.text', {
+      value: opts.number ? (t[k] || '') : (t[k] ?? ''), spellcheck: false, placeholder: opts.placeholder ?? '',
+      ...(opts.area ? {} : { type: opts.number ? 'number' : 'text', min: opts.number ? 0 : undefined }),
+    }));
+    const row = (label, input, hint) => [h('label', {}, label), h('div.ti-field', {}, input, hint ? h('small.ti-hint', {}, hint) : null)];
+
+    const rating = h('div.ti-stars', {}, [1, 2, 3, 4, 5].map((n) => h('button.ti-star', { type: 'button', dataset: { n } }, '★')));
+    let ratingValue = t.rating ?? 0;
+    const paintStars = () => rating.querySelectorAll('.ti-star').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) <= ratingValue));
+    rating.onclick = (e) => { const n = Number(e.target.dataset?.n); if (n) { ratingValue = ratingValue === n ? 0 : n; paintStars(); } };
+    paintStars();
+    const color = h('select', {}, h('option', { value: '' }, 'None'),
+      TRACK_COLORS.map((c) => h('option', { value: c.name, selected: t.color === c.name, style: { color: c.css } }, `● ${c.name}`)));
+    const notation = this.lib.settings.keyNotation;
+    const key = h('select', {}, h('option', { value: '' }, '—'),
+      CAMELOT.map((k) => h('option', { value: k, selected: t.key === k }, notation === 'musical' ? `${displayKey(k, 'musical')} (${k})` : `${k} (${displayKey(k, 'musical')})`)));
+    const bpm = h('input.text', { type: 'number', step: '0.01', min: 0, value: t.bpm ? t.bpm.toFixed(2) : '' });
+    const tags = h('input.text', { value: (t.myTags ?? []).join(', '), placeholder: 'e.g. warm-up, vocal, peak' });
+    const cues = t.cues ?? [];
+    const kb = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n ? `${Math.round(n / 1024)} kB` : '');
+    const info = (label, value) => (value || value === 0 ? [h('label', {}, label), h('div.ti-ro', {}, String(value))] : []);
+
+    const body = h('div.trackinfo', {},
+      h('p.ti-note', {}, 'Every field below can be edited. Changes are saved in your Reboxed library (they appear everywhere in Reboxed and in exports); the audio file itself is not modified.'),
+      h('div.ti-cols', {},
+        h('div', {},
+          h('h4', {}, 'Track'),
+          h('div.form-grid', {},
+            row('Title', text('title')), row('Artist', text('artist'), 'Several artists: separate with ", " or " & "'),
+            row('Album', text('album')), row('Album artist', text('albumArtist')), row('Genre', text('genre')),
+            row('Year', text('year', { number: true })), row('Track number', text('trackNumber', { number: true })), row('Disc number', text('discNumber', { number: true }))),
+          h('h4', {}, 'Credits'),
+          h('div.form-grid', {},
+            row('Remixer', text('remixer')), row('Original artist', text('originalArtist')), row('Composer', text('composer')),
+            row('Label', text('label')), row('Mix name', text('mixName'), 'e.g. Original Mix, Extended Mix'), row('Grouping', text('grouping')))),
+        h('div', {},
+          h('h4', {}, 'DJ'),
+          h('div.form-grid', {},
+            row('Rating', rating, 'Click a star; click it again to clear'),
+            row('Color', color),
+            row('My Tag', tags, 'Comma separated; used by the Track Filter and Intelligent Playlists'),
+            row('Comments', text('comments', { area: true })),
+            row('BPM', bpm, t.beatgrid ? 'Changing it re-spaces the beatgrid from its first beat' : ''),
+            row('Key', key),
+            row('DJ play count', text('playCount', { number: true })),
+            row('Date added', (inputs.dateAdded = h('input.text', { type: 'date', value: t.dateAdded ?? '' })))),
+          h('h4', {}, 'File (read only)'),
+          h('div.form-grid', {},
+            h('label', {}, 'Location'), h('div.ti-ro', {}, h('span.path', {}, t.path), ' ', h('button.dbtn.small', { onclick: () => window.rb.showItem(t.path) }, 'Show in folder')),
+            ...info('Type', t.kind || t.path.split('.').pop().toUpperCase()),
+            ...info('Duration', t.duration ? fmtTime(t.duration) : ''),
+            ...info('Bitrate', t.bitrate ? `${t.bitrate} kbps` : ''),
+            ...info('Sample rate', t.sampleRate ? `${(t.sampleRate / 1000).toFixed(1)} kHz` : ''),
+            ...info('Size', kb(t.fileSize)),
+            ...info('Analysis', t.analyzed ? 'analysed' : 'not analysed yet'),
+            ...info('Stems', t.stems ? t.stems.toUpperCase() : 'none'),
+            ...info('Cues', `${cues.filter((c) => c.kind === 'hot').length} hot cues, ${cues.filter((c) => c.kind === 'memory').length} memory cues`)))));
+    const ok = await modal(`Track information — ${t.title || 'Untitled'}`, body, [{ label: 'Save', primary: true, value: true }, { label: 'Cancel', value: null }]);
     if (!ok) return;
-    const patch = {};
-    for (const [k] of fields) patch[k] = k === 'year' ? Number(inputs[k].value) || 0 : inputs[k].value;
-    patch.myTags = inputs.myTags.value.split(',').map((s) => s.trim()).filter(Boolean);
-    const bpm = Number(inputs.bpm.value);
-    if (bpm > 0 && Math.abs(bpm - (t.bpm ?? 0)) > 0.001) {
-      patch.bpm = bpm;
-      if (t.beatgrid) patch.beatgrid = { ...t.beatgrid, bpm };
+    const patch = { rating: ratingValue, color: color.value, key: key.value };
+    for (const k of ['title', 'artist', 'album', 'albumArtist', 'genre', 'remixer', 'originalArtist', 'composer', 'label', 'mixName', 'grouping', 'comments']) patch[k] = inputs[k].value;
+    for (const k of ['year', 'trackNumber', 'discNumber', 'playCount']) patch[k] = Math.max(0, Math.round(Number(inputs[k].value) || 0));
+    patch.dateAdded = inputs.dateAdded.value || t.dateAdded;
+    patch.myTags = tags.value.split(',').map((x) => x.trim()).filter(Boolean);
+    const newBpm = Number(bpm.value);
+    if (newBpm > 0 && Math.abs(newBpm - (t.bpm ?? 0)) > 0.001) {
+      patch.bpm = newBpm;
+      if (t.beatgrid) patch.beatgrid = { ...t.beatgrid, bpm: newBpm, beats: undefined };
     }
-    const { normalizeKeyText } = await import('../../shared/keys.js');
-    patch.key = normalizeKeyText(inputs.key.value) || (inputs.key.value ? t.key : '');
     this.lib.update(id, patch);
     this.app.onTrackEdited?.(id);
   }

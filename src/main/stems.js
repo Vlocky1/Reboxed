@@ -1,12 +1,13 @@
 // Stem separation service: model downloads, job queue, progressive results. Stems are kept as WAV
-// files next to the music: <track folder>/stems/<track name>/{drums,bass,other,vocals}.wav (+ meta),
-// the best quality replacing the previous one. Fallback (read-only music folder, or setting):
-// userData/stems/<trackId>/<quality>/. Older caches there (.pcm) stay readable.
+// files, {drums,bass,other,vocals}.wav + reboxed-stems.json, one folder per track named after it:
+//   <database>/stems/<track>/ (default), <custom folder>/<track>/, or <track folder>/stems/<track>/.
+// The best quality replaces the previous one. Fallback when that place is not writable, and the
+// cache of older versions: <app folder>/stems/<trackId>/<quality>/ (.pcm stays readable).
 //   fast : Spleeter 4stems ONNX (4 x 19.7 MB, Apache-2.0 export of Deezer's MIT weights)
 //   hq   : HT-Demucs v4 ONNX (166 MB, MIT)
 import { utilityProcess, net } from 'electron';
 import { createWriteStream } from 'node:fs';
-import { access, mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { access, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,15 +29,23 @@ export const MODELS = {
 };
 
 const safe = (id) => String(id).replace(/[^\w-]/g, '_');
+/** Stem folder metadata file (older versions: rbclone-stems.json, meta.json). */
+export const STEMS_META = 'reboxed-stems.json';
+const META_FILES = [STEMS_META, 'rbclone-stems.json', 'meta.json'];
+const trackName = (p) => basename(p, extname(p));
 
 export class StemService {
-  /** @param {string} dataDir userData */
-  constructor(dataDir, send) {
-    this.dataDir = dataDir;
+  /**
+   * @param {string} appDir machine-local app folder (models, legacy cache)
+   * @param {import('./storage.js').Storage} storage where stems go (database, custom folder or beside)
+   */
+  constructor(appDir, storage, send) {
+    this.appDir = appDir;
+    this.storage = storage;
     this.send = send;               // (channel, ...args) -> renderer
-    this.modelDir = join(dataDir, 'models');
+    this.modelDir = join(appDir, 'models');
     this.overrides = {};            // quality -> dir/file (dev & smoke tests)
-    this.root = join(dataDir, 'stems');
+    this.root = join(appDir, 'stems'); // legacy cache by track id
     this.queue = [];
     this.busy = false;
     this.child = null;
@@ -98,51 +107,105 @@ export class StemService {
     }
   }
 
+  /** Legacy cache folder (by track id). */
   dirFor(id, quality) { return join(this.root, safe(id), quality); }
 
   /** Stems folder beside the track: <folder>/stems/<file name without extension>. */
-  besideDir(trackPath) { return join(dirname(trackPath), 'stems', basename(trackPath, extname(trackPath))); }
+  besideDir(trackPath) { return join(dirname(trackPath), 'stems', trackName(trackPath)); }
 
-  /** Best stems for a track: the folder beside it, then the userData cache (HQ, then FAST). */
-  async meta(id, trackPath) {
-    const dirs = [...(trackPath ? [this.besideDir(trackPath)] : []), this.dirFor(id, 'hq'), this.dirFor(id, 'fast')];
-    for (const dir of dirs) {
-      for (const file of ['rbclone-stems.json', 'meta.json']) {
-        try { return { format: 'pcm', ...JSON.parse(await readFile(join(dir, file), 'utf8')), dir }; } catch { /* next */ }
-      }
+  /** Folder for a track in the configured place (two tracks with the same name get the id appended). */
+  placeDirs(id, trackPath) {
+    const root = this.storage.stemsRoot;
+    if (!root) return [this.besideDir(trackPath)];
+    const name = trackName(trackPath);
+    return [join(root, name), join(root, `${name} [${safe(id).slice(0, 8)}]`)];
+  }
+
+  async readMeta(dir) {
+    for (const file of META_FILES) {
+      try { return { format: 'pcm', ...JSON.parse(await readFile(join(dir, file), 'utf8')), dir }; } catch { /* next */ }
     }
     return null;
   }
 
-  /** Where a new result goes: beside the track when that folder is writable, else userData. */
+  /** A stems folder belongs to this track when it records no track or the same file name. */
+  static matches(meta, trackPath) {
+    return !meta.track || !trackPath || basename(meta.track).toLowerCase() === basename(trackPath).toLowerCase();
+  }
+
+  /** Best stems for a track: the configured place, beside the track, the database folder, then the legacy cache. */
+  async meta(id, trackPath) {
+    const dirs = [];
+    if (trackPath) {
+      dirs.push(...this.placeDirs(id, trackPath), this.besideDir(trackPath));
+      const name = trackName(trackPath);
+      dirs.push(join(this.storage.databaseDir, 'stems', name), join(this.storage.databaseDir, 'stems', `${name} [${safe(id).slice(0, 8)}]`));
+    }
+    dirs.push(this.dirFor(id, 'hq'), this.dirFor(id, 'fast'));
+    for (const dir of [...new Set(dirs)]) {
+      const m = await this.readMeta(dir);
+      if (m && StemService.matches(m, trackPath)) return m;
+    }
+    return null;
+  }
+
+  /** Where a new result goes: the configured place when writable, else the app folder cache. */
   async outDirFor(job) {
-    if (job.trackPath && job.location !== 'appdata') {
-      const dir = this.besideDir(job.trackPath);
-      try {
-        await mkdir(dirname(dir), { recursive: true });
-        await access(dirname(dir), 2 /* W_OK */);
-        return dir;
-      } catch { /* read-only music folder */ }
+    if (job.trackPath) {
+      for (const dir of this.placeDirs(job.id, job.trackPath)) {
+        const m = await this.readMeta(dir);
+        if (m && !StemService.matches(m, job.trackPath)) continue; // another track with the same name
+        try {
+          await mkdir(dirname(dir), { recursive: true });
+          await access(dirname(dir), 2 /* W_OK */);
+          return dir;
+        } catch { break; /* read-only or unplugged */ }
+      }
     }
     return this.dirFor(job.id, job.quality);
   }
 
-  /** Delete a track's stems everywhere (beside the track too). */
-  async remove(id, trackPath) {
-    await rm(join(this.root, safe(id)), { recursive: true, force: true });
-    if (trackPath) await rm(this.besideDir(trackPath), { recursive: true, force: true });
+  /**
+   * The track's file moved (relinked to a USB drive...): move its stems to where they belong now.
+   * @returns {Promise<string|null>} new stems folder
+   */
+  async relocate(id, oldPath, newPath) {
+    const m = await this.meta(id, oldPath);
+    if (!m) return null;
+    const target = await this.outDirFor({ id, trackPath: newPath, quality: m.quality ?? 'hq' });
+    if (target.toLowerCase() !== m.dir.toLowerCase()) {
+      await mkdir(dirname(target), { recursive: true });
+      await rm(target, { recursive: true, force: true });
+      try { await rename(m.dir, target); } catch {
+        await cp(m.dir, target, { recursive: true });
+        await rm(m.dir, { recursive: true, force: true });
+      }
+    }
+    const { dir, ...meta } = m;
+    if (meta.format === 'wav') await writeFile(join(target, STEMS_META), JSON.stringify({ ...meta, track: newPath }));
+    return target;
   }
 
-  /** Clear the userData cache; stems kept beside the music are the DJ's files and stay. */
+  /** Delete a track's stems everywhere. */
+  async remove(id, trackPath) {
+    await rm(join(this.root, safe(id)), { recursive: true, force: true });
+    for (let k = 0; k < 6; k++) {
+      const m = await this.meta(id, trackPath);
+      if (!m) break;
+      await rm(m.dir, { recursive: true, force: true });
+    }
+  }
+
+  /** Clear the legacy hidden cache; stems in the database / music folders are the DJ's files and stay. */
   async removeAll() { await rm(this.root, { recursive: true, force: true }); }
 
   /**
    * Queue a separation. left/right: 44.1 kHz Float32Arrays. Blocks are streamed to the renderer
    * as 'stems:block' while the job runs. `urgent` jobs (a deck asked for stems) go first.
    */
-  separate(id, left, right, { quality = 'fast', ep = 'cpu', startSample = 0, urgent = false, trackPath = null, location = 'beside' } = {}) {
+  separate(id, left, right, { quality = 'fast', ep = 'cpu', startSample = 0, urgent = false, trackPath = null } = {}) {
     return new Promise((resolve, reject) => {
-      const job = { id, left, right, quality, ep, startSample, trackPath, location, resolve, reject };
+      const job = { id, left, right, quality, ep, startSample, trackPath, resolve, reject };
       if (urgent) this.queue.unshift(job); else this.queue.push(job);
       this.pump();
     });

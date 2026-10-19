@@ -1,4 +1,4 @@
-// RBClone's own icon set (simple geometric SVGs, 16x16 grid, currentColor).
+// Reboxed's own icon set (simple geometric SVGs, 16x16 grid, currentColor).
 const svg = (body, vb = 16) => `<svg viewBox="0 0 ${vb} ${vb}" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 
 export const ICONS = {

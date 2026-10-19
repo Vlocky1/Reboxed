@@ -122,7 +122,7 @@ Rekordbox is a native C++ app built on **JUCE**, with ICU 51 linked statically. 
 
 ## What was reimplemented and where
 
-| Rekordbox | RBClone |
+| Rekordbox | Reboxed |
 |---|---|
 | `formatForSearch` NFKD → folds → upper, plus the mask | `src/search/normalize.js`: `normalizeForSearch`, `charClassMask`, `SearchString` |
 | `MultipurposeString::contains` | `SearchString.contains` |

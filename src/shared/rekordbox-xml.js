@@ -79,7 +79,7 @@ export function importRekordboxXml(text) {
     const cues = childrenNamed(t, 'POSITION_MARK').map((m) => {
       const n = num(m.attrs.Num, -1);
       const hasColor = m.attrs.Red !== undefined;
-      // RBClone exports Mix Point Link points as memory cues named MIX IN / MIX OUT.
+      // Reboxed exports Mix Point Link points as memory cues named MIX IN / MIX OUT.
       const mix = n < 0 && m.attrs.Name === 'MIX IN' ? 'mixin' : n < 0 && m.attrs.Name === 'MIX OUT' ? 'mixout' : null;
       return {
         kind: mix ?? (n >= 0 ? 'hot' : 'memory'),

@@ -21,6 +21,7 @@ import { icon } from './ui/icons.js';
 import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.js';
 import { openRekordboxImport } from './ui/rekordbox-import.js';
 import { DownloadCenter } from './ui/downloads.js';
+import { openRelink } from './ui/relink.js';
 
 /** One cached stem as interleaved 16-bit stereo: WAV beside the track (skip the 44-byte header) or legacy raw PCM. */
 async function readStem(meta, name) {
@@ -100,7 +101,7 @@ class App {
     this.recBtn.classList.add('rec');
     this.recTime = h('span.rec-time');
     this.downloads = new DownloadCenter(this);
-    this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download new tracks (YouTube search, links, followed channels)', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'search'));
+    this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download tracks: ask for a track, search YouTube, links, new releases', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'request'));
     this.dlBadge = h('span.dl-badge', { hidden: true });
     this.dlBtn.append(this.dlBadge);
     this.samplerView = new SamplerView(this.sampler, this);
@@ -132,7 +133,7 @@ class App {
     const root = h('div.app', {},
       h('header.gbar', {},
         h('div.gbar-left', {},
-          h('div.wordmark', {}, 'Re', h('b', {}, 'boxed')),
+          h('div.wordmark', {}, h('img', { src: 'assets/logo.svg', alt: '' }), h('span', {}, 'Re', h('b', {}, 'boxed'))),
           this.modeSel,
           h('div.lbtns', {}, this.layoutBtns)),
         h('div.gbar-center', {}, this.fxBtn, this.samplerBtn, this.mixerBtn, this.mplBtn, this.automixBtn, this.automixStatus, this.dlBtn),
@@ -180,7 +181,9 @@ class App {
     if (s.phonesDevice) this.engine.setPhonesDevice(s.phonesDevice).catch(() => toast('Headphone device unavailable'));
   }
 
-  openSettings() {
+  /** @param {string} [tab] general | decks | audio | library | stems | downloads | midi | keyboard */
+  openSettings(tab) {
+    if (typeof tab === 'string') { try { localStorage.setItem('reboxed.settingsTab', tab); } catch { /* private storage */ } }
     return openSettings(this.library, this.engine, (key, value) => {
       this.library.setSetting(key, value);
       if (key === 'masterDevice') this.engine.setMasterDevice(value).catch((e) => toast(String(e)));
@@ -189,7 +192,7 @@ class App {
       else if (key === 'deckCount') this.applyLayout();
       else this.applySettingsToEngine();
       this.deckViews.forEach((v) => v.refresh());
-    }, this.midi);
+    }, this.midi, this);
   }
 
   onLibraryChange({ kind, id }) {
@@ -583,7 +586,7 @@ class App {
       const deck = from?.track?.id === trackId ? from : holders.find((d) => d.playing) ?? holders[0];
       const startSample = deck ? Math.floor(deck.position() * 44100) : 0;
       const meta = await window.rb.stems.separate(trackId, r44.getChannelData(0), r44.getChannelData(1),
-        { quality: q, ep: this.library.settings.stemsProvider, startSample, urgent, trackPath: t.path, location: this.library.settings.stemsLocation });
+        { quality: q, ep: this.library.settings.stemsProvider, startSample, urgent, trackPath: t.path });
       const stored = (await window.rb.getAnalysis(trackId)) ?? {};
       await window.rb.putAnalysis(trackId, { ...stored, vocals: meta.vocals });
       this.library.update(trackId, { stems: q === 'hq' || t.stems === 'hq' ? 'hq' : 'fast' });
@@ -1191,7 +1194,7 @@ async function smoke(app) {
         .map((row) => { const box = row.classList.contains('canvas-box') ? row : row.querySelector('.canvas-box'); const c = box.querySelector('canvas').getBoundingClientRect(); const b = box.getBoundingClientRect(); return [c.left - b.left, c.right - b.right, b.width]; });
       step('play head centred', boxes.every(([l, r, w]) => Math.abs(l) < 1 && Math.abs(r) < 1 && w > 50), JSON.stringify(boxes.map((x) => x.map((v) => Math.round(v)))));
     }
-    // Stems (only when models are provided: RBCLONE_SPLEETER_DIR / RBCLONE_STEM_MODEL for this test).
+    // Stems (only when models are provided: REBOXED_SPLEETER_DIR / REBOXED_STEM_MODEL for this test).
     const stemModels = (await window.rb.stems.status()).models;
     if (stemModels.fast || stemModels.hq) {
       const q = stemModels.fast ? 'fast' : 'hq';
@@ -1249,7 +1252,7 @@ async function smoke(app) {
       // Stems are kept as WAV files beside the track: <folder>/stems/<track>/.
       const kept = await window.rb.stems.meta(id128, lib.get(id128).path);
       const wavOk = await window.rb.exists(`${kept?.dir}/vocals.wav`);
-      step('stems kept beside the track', kept?.format === 'wav' && /stems.Kick 128$/.test(kept.dir) && wavOk, `${kept?.dir} quality=${kept?.quality} wav=${wavOk}`);
+      step('stems kept in the library stems folder', kept?.format === 'wav' && /stems.Kick 128$/.test(kept.dir) && wavOk, `${kept?.dir} quality=${kept?.quality} wav=${wavOk}`);
       lib.setSetting('stemsQuality', 'auto');
     } else {
       report.steps.push({ name: 'stems (skipped: no model)', ok: true, info: '' });
@@ -1453,7 +1456,7 @@ async function smoke(app) {
         && lib.all().filter((x) => x.title === 'Lost').length === 1, JSON.stringify(again));
     }
 
-    // ---- download centre (yt-dlp from Stacher); the real network test only with RBCLONE_DL_TEST=1 ----
+    // ---- download centre (yt-dlp from Stacher); the real network test only with REBOXED_DL_TEST=1 ----
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const tools = await app.downloads.tools();
@@ -1488,6 +1491,129 @@ async function smoke(app) {
       await new Promise((r) => setTimeout(r, 400));
       await window.rb.smokeShot('rgb');
       lib.setSetting('waveformColor', before);
+    }
+
+    // ---- Preferences in tabs; download quality lives there ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const closed = app.openSettings('downloads');
+      await wait(400);
+      const tabs = [...document.querySelectorAll('.settings-tabs button')].map((b) => b.textContent);
+      const active = document.querySelector('.settings-tabs button.on')?.textContent;
+      const quality = [...document.querySelectorAll('.settings-pane select option')].some((o) => /MP3 320/.test(o.textContent));
+      await window.rb.smokeShot('settings');
+      document.querySelector('.settings-tabs button[data-tab="library"]').click();
+      await wait(400);
+      const libPath = document.querySelector('.settings-pane code.path')?.textContent;
+      const info = await window.rb.storage.info();
+      document.querySelector('.dialog:has(.settings) .dialog-buttons button').click();
+      await closed;
+      step('preferences tabs', tabs.length === 8 && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
+        `${tabs.join(' | ')} — active ${active}, library ${libPath}, stems ${info.stemsRoot}`);
+    }
+
+    // ---- Ask for a track: one proposal at a time, official sources first, yes / no ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const dlc = app.downloads;
+      dlc.open('request');
+      await wait(200);
+      const fake = [
+        { id: 'aaaaaaaaaa1', url: 'https://www.youtube.com/watch?v=aaaaaaaaaa1', title: 'Artist - Song | Lyrics', channel: 'Lyrics Hub', duration: 210, views: 900000 },
+        { id: 'aaaaaaaaaa2', url: 'https://www.youtube.com/watch?v=aaaaaaaaaa2', title: 'Song', channel: 'Artist - Topic', duration: 212, views: 50000 },
+        { id: 'aaaaaaaaaa3', url: 'https://www.youtube.com/watch?v=aaaaaaaaaa3', title: 'Artist - Song (Official Video)', channel: 'Artist', verified: true, duration: 230, views: 4000000 },
+      ];
+      const { rankCandidates } = await import('../shared/track-request.js');
+      dlc.req = { text: '', queue: [], query: 'Artist - Song', list: rankCandidates(fake, 'Artist - Song'), k: 0, loading: false, error: '', accepted: [] };
+      dlc.renderTab(false);
+      await wait(200);
+      const first = document.querySelector('.dlc-proposal .dlc-ptitle')?.textContent;
+      const badge = document.querySelector('.dlc-proposal .dlc-official')?.textContent ?? '';
+      await window.rb.smokeShot('request');
+      document.querySelector('.dlc-proposal .dlc-no').click();
+      await wait(100);
+      const second = document.querySelector('.dlc-proposal .dlc-ptitle')?.textContent;
+      step('ask for a track: proposals', first === 'Song' && /Topic/.test(badge) && second === 'Artist - Song (Official Video)', `1: ${first} (${badge}) · after No: ${second}`);
+      const tools = await dlc.tools();
+      if (tools.ytdlp && (await window.rb.smokeDlTest())) {
+        dlc.req.queue = ['jawed - Me at the zoo'];
+        await dlc.nextRequest();
+        const top = dlc.req.list?.[0];
+        document.querySelector('.dlc-proposal .dlc-yes')?.click();
+        for (let k = 0; k < 600 && !(top && dlc.isDone(top.id)); k++) await wait(100);
+        step('ask for a track: real request + yes', top?.id === 'jNQXAC9IVRw' && top.official === 'artist' && dlc.isDone(top.id), `${top?.title} by ${top?.channel} (${top?.official})`);
+      }
+      document.querySelector('.dlc-x')?.click();
+    }
+
+    // ---- Link the collection to a USB-like music folder (J:\Tracks), stems move along ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const usb = `${dir}\\usb\\Tracks`;
+      const copy = async (title, name) => {
+        const t = lib.all().find((x) => x.title === title);
+        const buf = await (await fetch(mediaUrl(t.path))).arrayBuffer();
+        await window.rb.writeFile(`${usb}\\${name}`, new Uint8Array(buf));
+        return t;
+      };
+      const k128 = await copy('Kick 128', 'Kick 128.wav');
+      await copy('Kick 100', 'Kick 100.wav');
+      await copy('Kick 100', 'Only On The Key.wav');
+      const before = await window.rb.stems.meta(k128.id, k128.path);
+      const done = openRelink(app, usb);
+      for (let k = 0; k < 50 && !document.querySelector('.rbi-stats'); k++) await wait(100);
+      await window.rb.smokeShot('relink');
+      document.querySelector('.rbi-dialog .dialog-buttons button.primary')?.click();
+      for (let k = 0; k < 100 && !document.querySelector('.rbi-report'); k++) await wait(100);
+      document.querySelector('.rbi-dialog .dialog-buttons button.primary')?.click();
+      const rep = await done;
+      const moved = lib.get(k128.id);
+      const after = await window.rb.stems.meta(k128.id, moved.path);
+      const info = await window.rb.storage.info();
+      const added = lib.all().some((x) => x.path.endsWith('Only On The Key.wav'));
+      step('link tracks to a USB folder', rep?.linked >= 2 && moved.path.toLowerCase() === `${usb}\\Kick 128.wav`.toLowerCase()
+        && (!before || after?.dir.toLowerCase() === `${usb}\\stems\\Kick 128`.toLowerCase()) && info.stemsRoot === `${usb}\\stems` && added,
+        `report=${JSON.stringify(rep)} stems ${before?.dir} -> ${after?.dir}, root ${info.stemsRoot}, new track added=${added}`);
+    }
+
+    // ---- Browser: resizable columns (fit to content) and the detailed track information ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const b = app.browser;
+      b.select('collection');
+      const t = lib.all().find((x) => x.title === 'Kick 140 (rb)') ?? lib.all()[0];
+      lib.update(t.id, { title: 'A very long track title that does not fit the default column width at all (Extended Club Mix)' });
+      b.refreshRows();
+      await wait(200);
+      const grips = document.querySelectorAll('.thead .col-grip').length;
+      const before = b.colWidth('title');
+      b.autoFit('title');
+      await wait(100);
+      const after = b.colWidth('title');
+      const cell = [...document.querySelectorAll('.td.c-title')].find((x) => x.textContent.includes('very long track'));
+      const shown = cell ? cell.scrollWidth <= cell.clientWidth + 1 : false;
+      await window.rb.smokeShot('columns');
+      b.lib.setSetting('columnWidths', {}); b.applyWidths();
+      step('browser columns: resize to fit', grips === b.columns.length && after > before && shown && lib.settings.columnWidths.title === undefined,
+        `grips=${grips} title ${before}px -> ${after}px, full title visible=${shown}`);
+
+      const closed = b.editTrack(t.id);
+      await wait(300);
+      const sections = [...document.querySelectorAll('.trackinfo h4')].map((x) => x.textContent);
+      const fields = document.querySelectorAll('.trackinfo input, .trackinfo select, .trackinfo textarea').length;
+      const title = document.querySelector('.trackinfo .ti-field input');
+      title.value = 'Kick 140 (edited)';
+      document.querySelectorAll('.trackinfo .ti-star')[3].click();
+      const keySel = [...document.querySelectorAll('.trackinfo select')].find((x) => [...x.options].some((o) => o.value === '5A'));
+      keySel.value = '5A';
+      const tagInput = [...document.querySelectorAll('.trackinfo input')].find((x) => /warm-up/.test(x.placeholder));
+      tagInput.value = 'peak, vocal';
+      await window.rb.smokeShot('trackinfo');
+      document.querySelector('.dialog:has(.trackinfo) .dialog-buttons button.primary').click();
+      await closed;
+      const e = lib.get(t.id);
+      step('track information: detailed and editable', sections.length === 4 && fields >= 20 && e.title === 'Kick 140 (edited)' && e.rating === 4 && e.key === '5A' && e.myTags.join() === 'peak,vocal',
+        `${sections.join(' | ')} · ${fields} fields · saved: ${e.title}, ${e.rating}★, ${e.key}, [${e.myTags}]`);
     }
 
     if (!d1.hotCue(0)) d1.hotCuePress(0); // automix replaced deck 1's track

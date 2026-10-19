@@ -1,4 +1,4 @@
-// Merge rules for bringing a parsed rekordbox.xml (see rekordbox-xml.js) into the RBClone library:
+// Merge rules for bringing a parsed rekordbox.xml (see rekordbox-xml.js) into the Reboxed library:
 // which fields win, how cues combine, which playlists and tracks are taken, moved-file paths.
 
 /** Fields where an empty / 0 value in rekordbox means "unknown", never "cleared by the DJ". */
@@ -90,7 +90,7 @@ export function mergeCues(ours = [], theirs = [], mode = 'replace') {
 /**
  * Track fields after import.
  * metadata 'overwrite': rekordbox wins, including text the DJ cleared there (empty comment, 0 stars);
- * 'fill': only fields that are empty in RBClone take rekordbox's value.
+ * 'fill': only fields that are empty in Reboxed take rekordbox's value.
  * @returns {object} patch for `existing`, or all fields of a new track when existing is null
  */
 export function trackPatch(existing, x, { metadata = 'overwrite', cues = 'replace', beatgrid = true } = {}) {

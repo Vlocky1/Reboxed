@@ -11,8 +11,9 @@ async function collect(paths, out = []) {
     try { s = await stat(p); } catch { continue; }
     if (s.isDirectory()) {
       const entries = await readdir(p);
-      // Stems that RBClone keeps beside the music are not tracks of their own.
-      if (entries.includes('rbclone-stems.json') || p.endsWith('.part')) continue;
+      // Stems folders and a database folder kept among the music are not tracks of their own.
+      if (entries.includes('reboxed-stems.json') || entries.includes('rbclone-stems.json') || p.endsWith('.part')) continue;
+      if (entries.includes('library.json')) entries.splice(0, entries.length, ...entries.filter((e) => !['analysis', 'artwork', 'groove'].includes(e)));
       await collect(entries.filter((e) => !e.startsWith('.')).map((e) => join(p, e)), out);
     } else if (AUDIO_EXTENSIONS.has(extname(p).toLowerCase())) {
       out.push(p);
@@ -95,4 +96,14 @@ export async function findFiles(dir, names) {
   };
   await walk(dir);
   return found;
+}
+
+/** Audio files under a folder with their sizes (linking the library to a USB drive). */
+export async function listAudio(dir) {
+  const files = await collect([dir]);
+  return Promise.all(files.map(async (path) => {
+    let size = 0;
+    try { size = (await stat(path)).size; } catch { /* unreadable */ }
+    return { path, size };
+  }));
 }

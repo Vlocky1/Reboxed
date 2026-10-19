@@ -42,6 +42,7 @@ export function toItem(e) {
     duration: e.duration ?? 0,
     timestamp: e.timestamp ?? e.release_timestamp ?? date,
     views: e.view_count ?? null,
+    verified: !!e.channel_is_verified,
     thumb: thumbs.length ? thumbs[thumbs.length - 1].url : (e.thumbnail ?? ''),
   };
 }

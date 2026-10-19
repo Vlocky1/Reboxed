@@ -1,11 +1,14 @@
-// Download centre: find new tracks on YouTube (search, pasted links, followed channels / playlists)
-// and download their audio with yt-dlp (the engine Stacher uses). Finished files join the
-// collection, get analysed and land in a "Downloads" playlist.
+// Download centre: ask for a track (one proposal at a time, official sources first, yes / no),
+// search YouTube, paste links, follow channels for new releases, and download the audio with
+// yt-dlp (the engine Stacher uses). Finished files join the collection, get analysed and land in
+// a "Downloads" playlist. Quality and folder live in Preferences > Downloads.
 import { h, toast, fmtTime } from './dom.js';
 import { icon } from './icons.js';
 import { DEFAULT_SETTINGS } from '../library.js';
+import { rankCandidates } from '../../shared/track-request.js';
 
-const FORMAT_LABELS = [['m4a', 'M4A (AAC, original quality, no re-encode)'], ['mp3', 'MP3 320 kbps'], ['flac', 'FLAC'], ['wav', 'WAV']];
+const FORMAT_NAMES = { m4a: 'M4A', mp3: 'MP3 320', flac: 'FLAC', wav: 'WAV' };
+const OFFICIAL = { topic: 'Official audio — artist "Topic" channel', artist: "Official — artist's channel", vevo: 'Official — VEVO' };
 const ACTIVE = new Set(['queued', 'starting', 'downloading', 'converting']);
 
 const ago = (ts) => {
@@ -19,7 +22,7 @@ const ago = (ts) => {
 };
 
 export class DownloadCenter {
-  /** @param {object} app RBClone app */
+  /** @param {object} app Reboxed app */
   constructor(app) {
     this.app = app;
     /** key -> {item, state, pct, speed, eta, file, error} */
@@ -131,20 +134,18 @@ export class DownloadCenter {
 
   // ---- panel -------------------------------------------------------------------------------------
 
-  open(tab = 'search') {
+  open(tab = 'request') {
     if (this.overlay) { this.showTab(tab); return; }
-    const tabs = [['search', 'Search'], ['link', 'Link'], ['feeds', 'New releases'], ['queue', 'Queue']];
+    const tabs = [['request', 'Ask for a track'], ['search', 'Search'], ['link', 'Link'], ['feeds', 'New releases'], ['queue', 'Queue']];
     this.tabBtns = new Map(tabs.map(([id, label]) => [id, h('button.seg-btn', { onclick: () => this.showTab(id) }, label)]));
     this.body = h('div.dlc-body');
     this.toolsLine = h('div.dlc-tools');
     const folderEl = h('span.dlc-folder');
-    this.folder().then((f) => { folderEl.textContent = f; folderEl.title = f; });
+    const summary = async () => { const f = await this.folder(); folderEl.textContent = `${FORMAT_NAMES[this.cfg.format] ?? this.cfg.format} → ${f}`; folderEl.title = f; };
+    summary();
     const footer = h('div.dlc-footer', {},
-      h('label', {}, 'Folder '), folderEl,
-      h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { this.save({ folder: d }); folderEl.textContent = d; } } }, 'Change…'),
-      h('select', { onchange: (e) => this.save({ format: e.target.value }) },
-        FORMAT_LABELS.map(([v, l]) => h('option', { value: v, selected: this.cfg.format === v }, l))),
-      h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: this.cfg.playlist, onchange: (e) => this.save({ playlist: e.target.checked }) }), ' Add to the "Downloads" playlist'));
+      h('label', {}, 'Saving as '), folderEl,
+      h('button.dbtn.small', { onclick: async () => { await this.app.openSettings('downloads'); summary(); } }, 'Quality & folder…'));
     const close = () => { this.overlay.remove(); this.overlay = null; this.listeners.delete(this.rerender); };
     this.overlay = h('div.overlay', { onpointerdown: (e) => { if (e.target === this.overlay) close(); } },
       h('div.dialog.dlc', { role: 'dialog' },
@@ -180,7 +181,8 @@ export class DownloadCenter {
     this.tabBtns.get('feeds').textContent = `New releases${this.newCount ? ` (${this.newCount})` : ''}`;
     if (soft) { this.rows?.forEach((update) => update()); return; }
     const scroll = this.body.scrollTop;
-    if (this.tab === 'search') this.renderSearch();
+    if (this.tab === 'request') this.renderRequest();
+    else if (this.tab === 'search') this.renderSearch();
     else if (this.tab === 'link') this.renderLink();
     else if (this.tab === 'feeds') this.renderFeeds();
     else this.renderQueue();
@@ -224,6 +226,77 @@ export class DownloadCenter {
     return h('div.dlc-list', {}, items.length ? items.map((it) => this.row(it, opts)) : h('p.dim', {}, 'Nothing here.'));
   }
 
+  // ---- ask for a track ---------------------------------------------------------------------------
+
+  renderRequest() {
+    const r = this.req ??= { text: '', queue: [], query: null, list: null, k: 0, loading: false, error: '', accepted: [] };
+    const input = h('textarea.text.dlc-ask', { placeholder: 'Artist - Title   (one per line to ask for several tracks)', rows: 2, spellcheck: false });
+    input.value = r.text;
+    input.addEventListener('input', () => { r.text = input.value; });
+    const go = () => { r.queue = input.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean); this.nextRequest(); };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } });
+    let card;
+    if (r.loading) card = h('p.dim.dlc-card', {}, `Looking for “${r.query}” on YouTube…`);
+    else if (r.error) card = h('p.rbi-error.dlc-card', {}, r.error);
+    else if (r.list && r.k < r.list.length) card = this.proposal(r);
+    else if (r.list) {
+      card = h('div.dlc-card', {}, h('p', {}, `No other video found for “${r.query}”. Try other words (add the label, "original mix", "extended"…).`),
+        r.queue.length ? h('button.dbtn', { onclick: () => this.nextRequest() }, `Next track (${r.queue.length} left)`) : null);
+    } else {
+      card = h('p.dim.dlc-card', {}, 'Type a track as "Artist - Title". Reboxed searches YouTube and proposes one video at a time, official sources first ',
+        '(the artist\'s "Topic" channel = official audio, then the artist\'s own channel). Answer Yes to download it, No to see the next proposal.');
+    }
+    this.rows = [];
+    const history = r.accepted.length
+      ? h('div', {}, h('h4.dlc-h4', {}, 'Accepted'), h('div.dlc-list', {}, [...r.accepted].reverse().map((it) => this.row(it))))
+      : null;
+    this.body.replaceChildren(...[h('div.dlc-bar', {}, input, h('button.dbtn.dlc-primary', { onclick: go }, icon('search'), ' Find')), card, history].filter(Boolean));
+    if (!r.list && !r.loading) setTimeout(() => input.isConnected && input.focus());
+  }
+
+  /** Next line of the request list: search, rank, show the first proposal. */
+  async nextRequest() {
+    const r = this.req;
+    const q = r.queue.shift();
+    if (!q) { r.list = null; r.query = null; r.error = ''; this.renderTab(false); return; }
+    Object.assign(r, { query: q, loading: true, error: '', list: null, k: 0 });
+    this.renderTab(false);
+    try {
+      r.list = rankCandidates(await window.rb.dl.search(q, 12), q);
+      if (r.queue.length === 0) r.text = '';
+    } catch (err) { r.error = err.message; }
+    r.loading = false;
+    this.renderTab(false);
+  }
+
+  /** One proposal with Yes / No (keys Y / N). */
+  proposal(r) {
+    const it = r.list[r.k];
+    const yes = () => { if (!r.accepted.some((x) => x.id === it.id)) r.accepted.push(it); this.enqueue([it]); this.nextRequest(); };
+    const no = () => { r.k++; this.renderTab(false); };
+    const meta = [it.duration ? fmtTime(it.duration) : '', it.views ? `${it.views.toLocaleString()} views` : '', ago(it.timestamp)].filter(Boolean).join(' · ');
+    const card = h('div.dlc-proposal.dlc-card', {
+      tabIndex: 0,
+      onkeydown: (e) => { const k = e.key.toLowerCase(); if (k === 'y' || k === 'o') { e.preventDefault(); yes(); } else if (k === 'n') { e.preventDefault(); no(); } },
+    },
+    it.thumb ? h('img.dlc-big', { src: it.thumb, alt: '' }) : h('div.dlc-big'),
+    h('div.dlc-pinfo', {},
+      h('div.dim', {}, `“${r.query}” — proposal ${r.k + 1} of ${r.list.length}${r.queue.length ? ` · ${r.queue.length} more track(s) to find` : ''}`),
+      h('div.dlc-ptitle', {}, it.title),
+      h('div.dlc-sub', {}, it.channel, it.verified ? ' ✓' : ''),
+      it.official ? h('div.dlc-official', {}, OFFICIAL[it.official]) : h('div.dlc-unofficial', {}, 'Not from an official channel'),
+      h('div.dlc-sub', {}, meta),
+      this.isDone(it.id) ? h('div.dlc-done', {}, '✓ Already downloaded') : null,
+      h('p.dlc-q', {}, 'Is this the track you want?'),
+      h('div.dlc-yn', {},
+        h('button.dbtn.dlc-yes', { onclick: yes, title: 'Y' }, '✓ Yes, download'),
+        h('button.dbtn.dlc-no', { onclick: no, title: 'N' }, '✕ No, next'),
+        h('button.dbtn.small', { onclick: () => window.rb.openExternal(it.url) }, 'Watch on YouTube'),
+        h('button.dbtn.small', { onclick: () => this.nextRequest() }, r.queue.length ? 'Skip this track' : 'Stop'))));
+    setTimeout(() => card.isConnected && card.focus());
+    return card;
+  }
+
   renderSearch() {
     const input = h('input.text', { placeholder: 'Artist, title, label… (YouTube)', value: this.query ?? '', spellcheck: false });
     const results = h('div', {}, this.searchResults ? this.list(this.searchResults) : h('p.dim', {}, 'Search YouTube, then download the audio straight into your collection.'));
@@ -250,9 +323,9 @@ export class DownloadCenter {
       results.replaceChildren(h('p.dim', {}, 'Reading the link…'));
       try {
         this.linkResults = await window.rb.dl.resolve(url);
-        results.replaceChildren(
+        results.replaceChildren(...[
           this.linkResults.length > 1 ? h('button.dbtn.dlc-primary', { onclick: () => this.enqueue(this.linkResults.filter((it) => !this.isDone(it.id))) }, `Download all ${this.linkResults.length}`) : null,
-          this.list(this.linkResults));
+          this.list(this.linkResults)].filter(Boolean));
       } catch (err) { results.replaceChildren(h('p.rbi-error', {}, err.message)); }
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });

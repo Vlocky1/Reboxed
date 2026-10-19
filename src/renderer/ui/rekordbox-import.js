@@ -10,7 +10,7 @@ const keyOf = (p) => (/^[A-Za-z]:\\/.test(p) ? p.toLowerCase() : p);
 const baseName = (p) => p.split(/[\\/]/).pop();
 
 /**
- * @param {object} app RBClone app (library, browser, analyzeTracks)
+ * @param {object} app Reboxed app (library, browser, analyzeTracks)
  * @param {string} [file] rekordbox.xml to open directly (drag & drop)
  * @returns {Promise<object|null>} import report, or null when cancelled
  */

@@ -1,4 +1,4 @@
-# Feuille de route RBClone
+# Feuille de route Reboxed
 
 Source : un inventaire statique de Rekordbox 7.2.18, fait avec REA en lecture seule. Il s'appuie sur :
 - les chaînes de l'interface (`locale\*.lang`, environ 5 400 entrées) ;
@@ -52,7 +52,7 @@ Légende : ✅ fait · 🟡 partiel · ⬜ à faire
   - configuration restaurée au démarrage.
 - ✅ Automix : depuis la liste affichée, préchargement, sync, fondu au crossfader de 4 à 32 temps, répétition et lecture aléatoire.
 - ✅ Censor (maintien), Instant Doubles, éjection.
-- ✅ Enregistrement WAV 16 bits en streaming dans `Musique\RBClone Recordings\`, ajouté automatiquement à la collection et à la playlist « Recordings ».
+- ✅ Enregistrement WAV 16 bits en streaming dans `Musique\Reboxed Recordings\`, ajouté automatiquement à la collection et à la playlist « Recordings ».
 - ⬜ PAD FX, ACTIVE CENSOR, SP.SCRATCH.
 - ⬜ Séquenceur du sampler, packs `.spp`, sampler OSC.
 - ⬜ Enregistrement : déclenchement à -60 dB, arrêt sur silence, découpage.

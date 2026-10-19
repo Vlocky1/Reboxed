@@ -1,6 +1,6 @@
-/* RBClone — dark performance UI in the spirit of rekordbox's PERFORMANCE mode.
+/* Reboxed — dark performance UI in the spirit of rekordbox's PERFORMANCE mode.
    Palette: near-black canvas, graphite panels, blue accent (#1473eb), orange CUE/MASTER,
-   green PLAY, red REC/clip. All artwork/icons are RBClone's own. */
+   green PLAY, red REC/clip. All artwork/icons are Reboxed's own. */
 :root {
   --bg: #0e0e0f;
   --bg-2: #141415;
@@ -505,3 +505,66 @@ textarea.text { min-height: 54px; resize: vertical; }
 .dlc-folder { flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
 .dlc-legal { margin: 0; padding: 6px 16px 10px; font-size: 10px; color: var(--faint, #777); background: #18181a; border-radius: 0 0 6px 6px; }
 @media (max-width: 700px) { .dlc-action { width: 120px; } .dlc-thumb { display: none; } }
+
+/* Preferences in tabs */
+.dialog:has(.settings) { width: min(880px, 94vw); height: min(680px, 88vh); max-width: none; }
+.settings { display: flex; gap: 0; min-height: 100%; margin: -14px -16px; }
+.settings-tabs { flex: 0 0 168px; display: flex; flex-direction: column; gap: 1px; padding: 10px 0; background: #161618; border-right: 1px solid #000; }
+.settings-tabs button { text-align: left; background: none; border: 0; color: var(--text-2); padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; border-left: 3px solid transparent; }
+.settings-tabs button:hover { color: #fff; background: #1f1f23; }
+.settings-tabs button.on { color: #fff; background: var(--accent-bg); border-left-color: var(--accent); }
+.settings-pane { flex: 1; min-width: 0; padding: 16px 18px; overflow-y: auto; }
+.settings-pane h4 { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent-2); margin: 16px 0 8px; }
+.settings-pane h4:first-child { margin-top: 0; }
+code.path { background: #111; padding: 2px 6px; border-radius: 3px; font-size: 11px; word-break: break-all; }
+@media (max-width: 640px) {
+  .settings { flex-direction: column; }
+  .settings-tabs { flex: 0 0 auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid #000; padding: 0; }
+  .settings-tabs button { border-left: 0; border-bottom: 3px solid transparent; white-space: nowrap; }
+  .settings-tabs button.on { border-bottom-color: var(--accent); }
+}
+
+/* Download centre: ask for a track */
+.dlc-ask { flex: 1; min-width: 200px; resize: vertical; min-height: 34px; font: inherit; padding: 6px 8px; }
+.dlc-card { margin: 4px 0 14px; }
+.dlc-proposal { display: flex; gap: 16px; padding: 14px; background: #161618; border: 1px solid #000; box-shadow: 0 0 0 1px #2c2c31; border-radius: 6px; outline: none; }
+.dlc-proposal:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.dlc-big { width: 320px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; background: #0d0d0f; flex: 0 0 auto; }
+.dlc-pinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.dlc-ptitle { font-size: 16px; font-weight: 700; color: #fff; line-height: 1.3; }
+.dlc-official { color: var(--green); font-weight: 700; font-size: 11px; }
+.dlc-unofficial { color: #ffd27a; font-size: 11px; }
+.dlc-q { margin: 8px 0 2px; color: var(--text); font-weight: 600; }
+.dlc-yn { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.dlc-yn .dlc-yes, .dlc-yn .dlc-no { height: 34px; padding: 0 18px; font-size: 13px; font-weight: 800; }
+.dlc-yes { background: linear-gradient(#2a8a3a, #1f6e2c); border-color: #0d3a14; color: #fff; }
+.dlc-no { background: linear-gradient(#8a2a33, #6e1f27); border-color: #3a0d12; color: #fff; }
+.dlc-h4 { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent-2); margin: 6px 0; }
+@media (max-width: 760px) { .dlc-proposal { flex-direction: column; } .dlc-big { width: 100%; } }
+
+/* Logo in the global bar */
+.wordmark { display: inline-flex; align-items: center; gap: 6px; }
+.wordmark img { width: 20px; height: 20px; }
+
+/* Resizable browser columns */
+.th { position: relative; }
+.col-grip { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 2; }
+.col-grip::after { content: ''; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 1px; background: transparent; }
+.col-grip:hover::after { background: var(--accent-2); }
+
+/* Track information */
+.dialog:has(.trackinfo) { width: min(960px, 95vw); max-width: none; }
+.trackinfo .ti-note { margin: 0 0 10px; color: var(--text-2); font-size: 11px; background: #141416; border: 1px solid #000; border-radius: 4px; padding: 7px 10px; }
+.trackinfo .ti-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.trackinfo h4 { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent-2); margin: 12px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #2a2a2e; }
+.trackinfo .form-grid { grid-template-columns: 112px 1fr; }
+.trackinfo .ti-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.trackinfo .ti-field > input, .trackinfo .ti-field > select, .trackinfo .ti-field > textarea { width: 100%; box-sizing: border-box; }
+.trackinfo textarea { min-height: 54px; resize: vertical; }
+.trackinfo .ti-hint { color: var(--faint, #777); font-size: 10px; }
+.trackinfo .ti-ro { color: var(--text-2); font-size: 11px; min-width: 0; }
+.trackinfo .ti-ro .path { word-break: break-all; }
+.ti-stars { display: flex; gap: 2px; }
+.ti-star { background: none; border: 0; padding: 0 2px; font-size: 18px; line-height: 1; color: #3a3a40; cursor: pointer; }
+.ti-star.on { color: #ffd23a; }
+@media (max-width: 760px) { .trackinfo .ti-cols { grid-template-columns: 1fr; } }

@@ -1,4 +1,4 @@
-// Pioneer DJ controller driver (rekordbox mapping functions -> RBClone actions, plus LEDs).
+// Pioneer DJ controller driver (rekordbox mapping functions -> Reboxed actions, plus LEDs).
 // Built for the DDJ-GRV6 profile; most function names are shared by other Pioneer controllers,
 // so a rekordbox .midi.csv for another model works for the functions it has in common.
 import { ControllerCore } from '../../shared/controllers/core.js';
@@ -35,7 +35,7 @@ export const PAD_FX = [
 
 export class PioneerController {
   /**
-   * @param {object} app RBClone App
+   * @param {object} app Reboxed App
    * @param {{device: string, entries: object[]}} profile
    * @param {(bytes: number[]) => void} send MIDI output
    */

@@ -72,7 +72,7 @@ process.parentPort.on('message', async (e) => {
       vocals: vocalRegions(vocalsF),
       env: { pps: ENV_PPS, data: env.map((a) => Buffer.from(a).toString('base64')) },
     };
-    await writeFile(join(tmp, 'rbclone-stems.json'), JSON.stringify(meta));
+    await writeFile(join(tmp, 'reboxed-stems.json'), JSON.stringify(meta));
     await rm(m.outDir, { recursive: true, force: true });
     await rename(tmp, m.outDir);
     post({ type: 'done', meta });

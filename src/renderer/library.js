@@ -31,12 +31,11 @@ export const DEFAULT_SETTINGS = {
   stemsProvider: 'cpu',        // 'cpu' | 'dml' (DirectML GPU, experimental)
   stemsQuality: 'auto',        // 'fast' (Spleeter) | 'hq' (HT-Demucs) | 'auto' (FAST now, HQ upgrade in background)
   stemsOnLoad: false,          // separate stems as soon as a track is loaded
-  stemsLocation: 'beside',     // 'beside' (<music folder>/stems/<track>/*.wav) | 'appdata' (hidden cache)
   stemWaveform: 'muted',       // stem-coloured waveform: 'off' | 'muted' (while a part is muted) | 'always'
   outputLayout: 'stereo',      // 'stereo' | 'quad' (controller sound card: master 1/2, phones 3/4)
   controllerAudioAuto: true,   // use a recognised controller's sound card automatically
   controllerTempoInvert: false,
-  // Track downloader (yt-dlp, as used by Stacher): folder '' = <Music>/RBClone Downloads.
+  // Track downloader (yt-dlp, as used by Stacher): folder '' = <Music>/Reboxed Downloads.
   downloads: { folder: '', format: 'm4a', toolsDir: '', playlist: true, subs: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
 };
 
@@ -109,6 +108,18 @@ export class Library extends EventTarget {
     this.tracks.set(id, next);
     if (!silent) this.emit('track', { id });
     else this.scheduleSave();
+    return next;
+  }
+
+  /** The same music now lives at another path (e.g. linked to the copy on a USB drive). */
+  relink(id, path) {
+    const t = this.tracks.get(id);
+    if (!t) return null;
+    this.byPath.delete(pathKey(t.path));
+    const next = { ...t, path, missing: false };
+    this.tracks.set(id, next);
+    this.byPath.set(pathKey(path), id);
+    this.emit('track', { id });
     return next;
   }
 
