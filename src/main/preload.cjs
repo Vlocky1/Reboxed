@@ -1,6 +1,8 @@
-const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { contextBridge, ipcRenderer, webUtils, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('rb', {
+  /** Interface size (Preferences > Appearance). */
+  setZoom: (f) => webFrame.setZoomFactor(Math.min(1.5, Math.max(0.7, Number(f) || 1))),
   loadLibrary: () => ipcRenderer.invoke('library:load'),
   saveLibrary: (data) => ipcRenderer.invoke('library:save', data),
   getAnalysis: (id) => ipcRenderer.invoke('analysis:get', id),
@@ -31,7 +33,7 @@ contextBridge.exposeInMainWorld('rb', {
     setCredentials: (clientId, secret) => ipcRenderer.invoke('spotify:setCredentials', clientId, secret),
     lookup: (q) => ipcRenderer.invoke('spotify:lookup', q),
   },
-  metadata: { lookup: (q) => ipcRenderer.invoke('metadata:lookup', q) },
+  metadata: { lookup: (q, source) => ipcRenderer.invoke('metadata:lookup', q, source) },
   artworkFromUrl: (url) => ipcRenderer.invoke('artwork:fromUrl', url),
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),

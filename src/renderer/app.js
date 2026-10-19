@@ -9,6 +9,7 @@ import { installKeyboard } from './ui/keyboard.js';
 import { openSettings } from './ui/settings.js';
 import { MidiController } from './ui/midi.js';
 import { PluginRegistry } from './controller/plugins.js';
+import { applyTheme } from './themes.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
 import { Automix } from './automix.js';
@@ -150,13 +151,19 @@ class App {
     this.fxPanel = h('section.fxpanel', {}, this.fxView.el);
     this.lastPos = [];
     const root = h('div.app', {},
+      // Top bar, grouped by use: [logo · mode · layout]   [panels shown | mixing helpers]
+      // [tools: download, record]   [status: stems, MIDI, clock · appearance · preferences].
       h('header.gbar', {},
         h('div.gbar-left', {},
           h('div.wordmark', {}, h('img', { src: 'assets/logo.svg', alt: '' }), h('span', {}, 're', h('b', {}, 'box'), 'ed')),
           this.modeSel,
           h('div.lbtns', {}, this.layoutBtns)),
-        h('div.gbar-center', {}, this.fxBtn, this.samplerBtn, this.mixerBtn, this.mplBtn, this.automixBtn, this.automixStatus, this.dlBtn),
-        h('div.gbar-right', {}, this.stemStatus, this.recBtn, this.recTime, this.midiStatus, this.clock,
+        h('div.gbar-center', {},
+          h('div.ggroup', { title: 'Panels' }, this.fxBtn, this.mixerBtn, this.samplerBtn),
+          h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
+          h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.recBtn, this.recTime)),
+        h('div.gbar-right', {}, this.stemStatus, this.midiStatus, this.clock,
+          h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: 'Appearance: themes, colours, size' }, icon('palette')),
           h('button.lbtn', { onclick: () => this.openSettings(), title: 'Preferences' }, icon('gear')))),
       this.fxPanel,
       (this.wavesEl = h('section.waves')),
@@ -164,6 +171,7 @@ class App {
       this.samplerView.el,
       this.browser.el);
     document.body.replaceChildren(root);
+    applyTheme(this.library.settings);
     this.applyPanels();
     this.applyLayout();
     this.restoreSampler();
@@ -210,6 +218,7 @@ class App {
       else if (key === 'outputLayout') { try { this.engine.setOutputLayout(value); } catch (e) { toast(e.message, 6000); } }
       else if (key === 'phonesDevice') this.engine.setPhonesDevice(value).catch((e) => toast(String(e)));
       else if (key === 'deckCount') this.applyLayout();
+      else if (['theme', 'themeAccent', 'uiScale', 'topbarLabels'].includes(key)) applyTheme(this.library.settings);
       else this.applySettingsToEngine();
       this.deckViews.forEach((v) => v.refresh());
     }, this.midi, this);
@@ -1012,6 +1021,18 @@ async function smoke(app) {
     await new Promise((r) => setTimeout(r, 1200));
     const lp = d1.position();
     step('beat loop holds', d1.loop && lp >= d1.loop.start - 0.02 && lp <= d1.loop.end + 0.02, `${lp.toFixed(3)} in [${d1.loop.start.toFixed(3)}, ${d1.loop.end.toFixed(3)}]`);
+    // The size arrows resize the loop that is playing (and the next one), from the loop start.
+    {
+      const view = app.deckViews[0].el;
+      const startBefore = d1.loop.start;
+      view.querySelector('.row.loops button[title^="Bigger"]').click();
+      view.querySelector('.row.loops button[title^="Bigger"]').click();
+      const big = { ...d1.loop };
+      view.querySelector('.row.loops button[title^="Smaller"]').click();
+      const len = (d1.loop.end - d1.loop.start) / d1.period;
+      step('loop size arrows resize the current loop', big.beats === 4 && d1.loop.beats === 2 && Math.abs(len - 2) < 0.01 && d1.loop.start === startBefore && d1.beatLoopSize === 2
+        && view.querySelector('.loop-size .val').textContent.trim() !== '', `1 → ${big.beats} → ${d1.loop.beats} beats (${len.toFixed(2)}), next size ${d1.beatLoopSize}`);
+    }
     d1.exitLoop();
     d1.toggleKeyLock(); d1.setTempoPct(6);
     await new Promise((r) => setTimeout(r, 300));
@@ -1585,9 +1606,39 @@ async function smoke(app) {
       await window.rb.smokeShot('plugins');
       document.querySelector('.dialog:has(.settings) .dialog-buttons button').click();
       await closed;
-      step('preferences tabs', tabs.length === 9 && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
+      step('preferences tabs', tabs.length === 10 && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
         `${tabs.join(' | ')} — active ${active}, library ${libPath}, stems ${info.stemsRoot}`);
       step('plugins manager', cards.length >= 5 && cards.includes('Pioneer DDJ-GRV6') && live === [...app.midi.controllers.values()].filter((d) => d.plugin?.id).length, `${cards.join(', ')} — connected ${live}`);
+    }
+
+    // ---- Appearance: themes change the colour variables, accent, icons-only top bar ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const bg = () => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+      const before = bg();
+      const closed = app.openSettings('appearance');
+      await wait(300);
+      const cards = document.querySelectorAll('.theme-card').length;
+      document.querySelector('.theme-card[data-theme="midnight"]').click();
+      await wait(200);
+      const midnight = bg();
+      const panelBg = getComputedStyle(document.querySelector('.gbtn')).backgroundColor;
+      await window.rb.smokeShot('theme-midnight');
+      document.querySelector('.accent-dot[data-accent="#ff4f8b"]').click();
+      await wait(100);
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      document.querySelector('.dialog:has(.settings) .dialog-buttons button').click();
+      await closed;
+      app.library.setSetting('topbarLabels', 'icons');
+      (await import('./themes.js')).applyTheme(app.library.settings);
+      await wait(100);
+      const labelHidden = getComputedStyle(document.querySelector('.gbtn > span:not(.ico)')).display === 'none' && getComputedStyle(document.querySelector('.gbtn > .ico')).display !== 'none';
+      await window.rb.smokeShot('theme-icons');
+      const groups = [...document.querySelectorAll('.gbar .ggroup')].map((g) => g.title);
+      for (const [k, v] of [['theme', 'dark'], ['themeAccent', null], ['topbarLabels', 'full']]) app.library.setSetting(k, v);
+      (await import('./themes.js')).applyTheme(app.library.settings);
+      step('appearance: themes, accent, top bar', cards >= 8 && before === '#0e0e0f' && midnight === '#0b1020' && accent === '#ff4f8b' && labelHidden
+        && groups.join() === 'Panels,Mixing helpers,Tools' && bg() === '#0e0e0f', `${cards} themes · bg ${before} → ${midnight} · accent ${accent} · gbtn ${panelBg} · groups ${groups}`);
     }
 
     // ---- Export to a USB drive for CDJ / XDJ (a folder stands for the drive) ----
@@ -1729,6 +1780,15 @@ async function smoke(app) {
       await wait(200);
       const ticked = [...document.querySelectorAll('.ti-sp-row')].filter((r) => r.querySelector('input').checked).map((r) => r.querySelector('.ti-sp-k').textContent);
       const options = [...document.querySelectorAll('.ti-sp-status select option')].map((o) => o.textContent.slice(0, 9));
+      let askedSource = null;
+      const canned = lookupApi.lookup;
+      lookupApi.lookup = async (q, src) => { askedSource = src; return canned(q, src); };
+      document.querySelector('.ti-sp-source [data-source="spotify"]').click();
+      await wait(150);
+      const spotifyAsked = askedSource;
+      document.querySelector('.ti-sp-source [data-source="deezer"]').click();
+      await wait(150);
+      const deezerAsked = askedSource;
       await window.rb.smokeShot('lookup');
       document.querySelector('.ti-spotify .dlc-primary').click();
       await wait(100);
@@ -1737,10 +1797,10 @@ async function smoke(app) {
       lookupApi.lookup = realLookup;
       const s2 = lib.get(t.id);
       step('track information: Search online fills the ticked fields', ticked.join() === 'Genre' && s2.genre === 'Melodic Techno' && s2.title === 'Kick 140 (edited)' && s2.album !== 'Smoke EP'
-        && options.join() === '[Spotify],[Deezer] ',
-        `ticked [${ticked}] · genre ${s2.genre} · title ${s2.title} · album ${s2.album} · options ${options}`);
+        && options.join() === '[Spotify],[Deezer] ' && spotifyAsked === 'spotify' && deezerAsked === 'deezer',
+        `ticked [${ticked}] · genre ${s2.genre} · title ${s2.title} · album ${s2.album} · options ${options} · source ${spotifyAsked}/${deezerAsked}`);
       if (await window.rb.smokeDlTest()) {
-        const r = await window.rb.metadata.lookup({ title: 'Trois nuits par semaine', artist: 'Indochine' });
+        const r = await window.rb.metadata.lookup({ title: 'Trois nuits par semaine', artist: 'Indochine' }, 'deezer');
         const dz = r.candidates.find((c) => c.source === 'deezer');
         step('track information: real Deezer lookup has genres', r.sources.includes('Deezer') && !!dz?.genre && dz.year > 0, `${dz?.artist} — ${dz?.title} · ${dz?.album} ${dz?.year} · ${dz?.genres} · ${dz?.label} · errors ${r.errors}`);
       }

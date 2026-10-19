@@ -1,7 +1,7 @@
-// Track information ▸ "Search online": find the track on Deezer (no account needed) and Spotify
-// (when set up in Preferences), show what was found next to each field, and copy only the ticked
-// values into the form (Genre is ticked by default). Nothing is saved until the Track information
-// dialog is saved.
+// Track information ▸ "Search info": find the track on Deezer (no account needed) or Spotify (set
+// up in Preferences), as the user chooses; show what was found next to each field, and copy only the
+// ticked values into the form (Genre is ticked by default). Nothing is saved until the Track
+// information dialog is saved.
 import { h, fmtTime } from './dom.js';
 
 const FIELDS = [
@@ -12,7 +12,11 @@ const FIELDS = [
 const DEFAULT_ON = new Set(['genre']);
 const SOURCE = { spotify: 'Spotify', deezer: 'Deezer' };
 /** Online search (replaced by the smoke test, which runs offline). */
-export const lookupApi = { lookup: (q) => window.rb.metadata.lookup(q) };
+export const lookupApi = { lookup: (q, source) => window.rb.metadata.lookup(q, source) };
+
+/** The service chosen last time (per computer). */
+function savedSource() { try { return localStorage.getItem('reboxed.lookupSource') === 'spotify' ? 'spotify' : 'deezer'; } catch { return 'deezer'; } }
+function saveSource(v) { try { localStorage.setItem('reboxed.lookupSource', v); } catch { /* private storage */ } }
 
 /** Results with the closest duration first (within 3 s), keeping the services' order otherwise. */
 export function orderByDuration(list, duration) {
@@ -35,6 +39,12 @@ export function lookupPanel(t, inputs, pending) {
   const applyBtn = h('button.dbtn.dlc-primary', { hidden: true }, 'Use the ticked values');
   let results = [];
   let checks = new Map();
+  let source = savedSource();
+  const srcBtns = Object.entries(SOURCE).map(([id, label]) => h(`button.seg-btn${id === source ? '.on' : ''}`, {
+    type: 'button', dataset: { source: id },
+    title: id === 'deezer' ? 'Deezer: no account needed; has genres and labels' : 'Spotify: needs your Client ID / Secret (Preferences > Library); genres come from the same track on Deezer',
+    onclick: () => { source = id; saveSource(id); srcBtns.forEach((b) => b.classList.toggle('on', b.dataset.source === id)); search(); },
+  }, label));
 
   const current = (k) => (k === 'artwork' ? (pending.artwork ? 'new cover' : t.artwork ? 'current cover' : '') : String(inputs[k]?.value ?? ''));
 
@@ -73,15 +83,15 @@ export function lookupPanel(t, inputs, pending) {
 
   const search = async () => {
     panel.hidden = false;
-    status.textContent = 'Searching online…';
+    status.textContent = `Searching ${SOURCE[source]}…`;
     table.replaceChildren(); pick.hidden = true; applyBtn.hidden = true;
     let r;
     try {
       const q = query.value.trim();
       const same = q === [t.artist, t.title].filter(Boolean).join(' - ');
-      r = await lookupApi.lookup(same ? { title: inputs.title.value || t.title, artist: inputs.artist.value || t.artist } : { query: q });
+      r = await lookupApi.lookup(same ? { title: inputs.title.value || t.title, artist: inputs.artist.value || t.artist } : { query: q }, source);
     } catch (err) {
-      status.textContent = err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+      status.textContent = `✗ ${SOURCE[source]}: ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`;
       return;
     }
     results = orderByDuration(r.candidates, t.duration);
@@ -112,10 +122,9 @@ export function lookupPanel(t, inputs, pending) {
     if (n) showCandidate();
   };
 
-  const open = h('button.dbtn.small.ti-sp-open', { type: 'button', onclick: search, title: 'Deezer (genres, label…), plus Spotify when it is set up in Preferences > Library' }, 'Search Deezer');
-  window.rb.spotify?.status().then((st) => { if (st.clientId && st.hasSecret) open.textContent = 'Search Deezer + Spotify'; }).catch(() => {});
+  const open = h('button.dbtn.small.ti-sp-open', { type: 'button', onclick: search, title: 'Find genre, album, year, label, cover… on Deezer or Spotify' }, 'Search info (Deezer / Spotify)');
   panel.append(
-    h('div.dlc-bar', {}, query, h('button.dbtn', { type: 'button', onclick: search }, 'Search'), h('button.dbtn.small', { type: 'button', onclick: () => { panel.hidden = true; } }, 'Close')),
+    h('div.dlc-bar', {}, h('div.seg.ti-sp-source', {}, srcBtns), query, h('button.dbtn', { type: 'button', onclick: search }, 'Search'), h('button.dbtn.small', { type: 'button', onclick: () => { panel.hidden = true; } }, 'Close')),
     h('div.ti-sp-status', {}, status, ' ', pick), table, applyBtn);
   return { button: open, panel };
 }

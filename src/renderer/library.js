@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
   autoGain: true,
   masterDevice: '',
   phonesDevice: '',
+  theme: 'dark', themeAccent: null, uiScale: 1, topbarLabels: 'full',
   columns: ['color', 'artwork', 'title', 'artist', 'album', 'genre', 'bpm', 'key', 'duration', 'stems', 'rating', 'dateAdded'],
   deckCount: 2,                // 2 | 4
   syncMode: 'beat',            // 'beat' (tempo + phase) | 'bpm' (tempo only)

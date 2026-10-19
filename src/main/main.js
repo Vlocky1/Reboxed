@@ -119,8 +119,14 @@ function registerIpc(win) {
   ipcMain.handle('plugins:createFromCsv', (_e, csv, opts) => plugins.createFromCsv(csv, opts));
   ipcMain.handle('plugins:openFolder', async () => { await mkdir(plugins.userDir, { recursive: true }); return shell.openPath(plugins.userDir); });
   // Spotify track information lookup. The Client Secret is kept encrypted (OS keychain) in location.json.
+  // Online lookups never hang the dialog: 15 s per request at most.
+  const timedFetch = async (url, opts = {}) => {
+    try { return await net.fetch(url, { ...opts, signal: AbortSignal.timeout(15000) }); } catch (err) {
+      throw new Error(err.name === 'TimeoutError' || err.name === 'AbortError' ? `no answer from ${new URL(url).hostname} (15 s)` : `${new URL(url).hostname}: ${err.message}`);
+    }
+  };
   const spotify = new Spotify({
-    fetch: (url, opts) => net.fetch(url, opts),
+    fetch: timedFetch,
     credentials: () => {
       const c = storage.cfg.spotify;
       if (!c?.clientId || !c?.secret) return null;
@@ -139,8 +145,8 @@ function registerIpc(win) {
   });
   ipcMain.handle('spotify:lookup', (_e, q) => spotify.lookup(q));
   // Deezer (no account) + Spotify (when set up), merged: Deezer brings the genres Spotify lacks.
-  const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: (url, opts) => net.fetch(url, opts) }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret) });
-  ipcMain.handle('metadata:lookup', (_e, q) => metadata.lookup(q));
+  const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: timedFetch }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret) });
+  ipcMain.handle('metadata:lookup', (_e, q, source) => metadata.lookup(q, source));
   /** Cover from a URL (Spotify, Deezer) -> library artwork thumbnail path. */
   ipcMain.handle('artwork:fromUrl', async (_e, url) => {
     if (!/^https:\/\/(i\.scdn\.co|cdn-images\.dzcdn\.net|e-cdns-images\.dzcdn\.net)\//.test(url)) throw new Error('unsupported artwork URL');

@@ -28,15 +28,21 @@ export class MetadataLookup {
     Object.assign(this, { spotify, deezer, spotifyReady });
   }
 
-  /** @returns {Promise<{candidates: object[], errors: string[], sources: string[]}>} */
-  async lookup(q) {
+  /**
+   * @param {object} q {title, artist} or {query}
+   * @param {'deezer'|'spotify'} source the service the user chose
+   * @returns {Promise<{candidates: object[], errors: string[], sources: string[]}>}
+   */
+  async lookup(q, source = 'deezer') {
+    if (source !== 'spotify') {
+      const candidates = await this.deezer.lookup(q);
+      return { candidates, errors: [], sources: ['Deezer'] };
+    }
+    if (!this.spotifyReady()) throw new Error('Spotify is not set up: add your Client ID and Client Secret in Preferences > Library, or choose Deezer');
+    const sp = await this.spotify.lookup(q);
+    // Spotify gives no genre for most artists: take it from the same recording on Deezer when found.
     const errors = [];
-    const useSpotify = this.spotifyReady();
-    const fail = (name) => (err) => { errors.push(`${name}: ${err.message}`); return []; };
-    const [sp, dz] = await Promise.all([
-      useSpotify ? this.spotify.lookup(q).catch(fail('Spotify')) : [],
-      this.deezer.lookup(q).catch(fail('Deezer')),
-    ]);
-    return { candidates: mergeCandidates(sp, dz), errors, sources: useSpotify ? ['Spotify', 'Deezer'] : ['Deezer'] };
+    const dz = sp.length ? await this.deezer.lookup(q).catch((err) => { errors.push(`genres from Deezer: ${err.message}`); return []; }) : [];
+    return { candidates: mergeCandidates(sp, dz).filter((c) => c.source === 'spotify'), errors, sources: ['Spotify'] };
   }
 }

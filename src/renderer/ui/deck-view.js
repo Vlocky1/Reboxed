@@ -91,7 +91,9 @@ export class DeckView {
     this.outBtn = btn('OUT', '', () => d.loopOut(), 'Loop out');
     this.exitBtn = btn('RELOOP', 'reloop', () => d.reloopExit(), 'Reloop / Exit');
     this.jumpSize = h('span.val');
-    const sizeStep = (list, cur, dir) => list[Math.max(0, Math.min(list.length - 1, list.indexOf(cur) + dir))];
+    /** Next loop size up / down from any length (a manual loop of 3 beats goes to 2 or 4). */
+    const loopStep = (cur, dir) => (dir > 0 ? BEAT_LOOP_SIZES.find((s) => s > cur + 1e-6) ?? BEAT_LOOP_SIZES.at(-1)
+      : [...BEAT_LOOP_SIZES].reverse().find((s) => s < cur - 1e-6) ?? BEAT_LOOP_SIZES[0]);
 
     this.keyShiftVal = h('span.val');
     this.tempoFader = fader({ min: -1, max: 1, step: 0.0005, value: 0, vertical: true, cls: 'tempo', reset: 0,
@@ -122,9 +124,10 @@ export class DeckView {
           h('div.row.loops', {},
             h('div.seg', {},
               btn('½', '', () => d.resizeLoop(0.5), 'Loop halve'),
-              btn('◀', 'small', () => { d.beatLoopSize = sizeStep(BEAT_LOOP_SIZES, d.beatLoopSize, -1); this.refresh(); }),
+              // Size arrows change the playing loop too, not only the next one.
+              btn('◀', 'small', () => { d.setBeatLoopSize(loopStep(d.currentLoopBeats(), -1)); this.refresh(); }, 'Smaller loop (the current one too)'),
               this.loopBtn,
-              btn('▶', 'small', () => { d.beatLoopSize = sizeStep(BEAT_LOOP_SIZES, d.beatLoopSize, 1); this.refresh(); }),
+              btn('▶', 'small', () => { d.setBeatLoopSize(loopStep(d.currentLoopBeats(), 1)); this.refresh(); }, 'Bigger loop (the current one too)'),
               btn('×2', '', () => d.resizeLoop(2), 'Loop double')),
             h('div.seg', {}, this.inBtn, this.outBtn, this.exitBtn),
             h('span.spacer'),
