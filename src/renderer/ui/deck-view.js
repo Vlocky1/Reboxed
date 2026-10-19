@@ -283,7 +283,7 @@ export class DeckView {
       case 'BEAT LOOP': d.beatLoop(PAD_LOOPS[i]); break;
       case 'BEAT JUMP': d.beatJump(PAD_JUMPS[i]); break;
       case 'SLICER': d.slicerDown(i); this.heldSlice = true; break;
-      case 'SAMPLER': this.app.sampler?.trigger(slot); break;
+      case 'SAMPLER': this.app.samplerPress?.(slot, d); break;
       case 'KEY SHIFT': d.setKeyShift(d.keyShift === PAD_KEYS[i] ? 0 : PAD_KEYS[i]); break;
       case 'KEYBOARD': {
         // Play hot cue A (or the cue point) transposed by the pad's semitone.

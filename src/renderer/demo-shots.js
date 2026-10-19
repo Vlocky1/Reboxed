@@ -238,7 +238,7 @@ export async function runShots(app) {
       await wait(400);
       if (extra) await extra();
       await shot(name);
-      document.querySelector('.dialog:has(.settings) .dialog-buttons button').click();
+      document.querySelector('.settings-close').click();
       await done;
     };
     await attempt('appearance', () => prefs('appearance', '13-appearance'));

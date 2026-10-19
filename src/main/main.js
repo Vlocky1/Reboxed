@@ -16,6 +16,7 @@ import { PluginStore } from './plugins.js';
 import { Spotify } from './spotify.js';
 import { Deezer } from './deezer.js';
 import { MetadataLookup } from './metadata.js';
+import { Updater } from './updater.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
@@ -268,6 +269,15 @@ function registerIpc(win) {
   ipcMain.handle('fs:writeFile', (_e, path, data) => store.writeExternal(path, data));
   ipcMain.handle('shell:showItem', (_e, path) => shell.showItemInFolder(path));
   ipcMain.handle('app:version', () => app.getVersion());
+  // In-app updates (GitHub releases).
+  const updater = new Updater({
+    version: app.getVersion(), fetch: (url, opts) => net.fetch(url, opts), tempDir: app.getPath('temp'),
+    send: (ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); },
+    quit: () => app.quit(),
+  });
+  ipcMain.handle('update:check', () => updater.check());
+  ipcMain.handle('update:download', (_e, asset) => updater.download(asset));
+  ipcMain.handle('update:install', (_e, file) => { if (smoke) return false; updater.install(file); return true; });
   ipcMain.handle('app:paths', () => ({ userData: store.dir, appDir, music: smoke ? store.dir : app.getPath('music') }));
 
   // Streaming WAV recorder: PCM chunks are appended in order, the header is patched on stop.
