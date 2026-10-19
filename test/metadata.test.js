@@ -97,9 +97,13 @@ test('Deezer fields and Spotify results completed with Deezer genres', async () 
   // Spotify not set up: Deezer only; a failing service is reported, not fatal.
   const json = (body) => ({ ok: true, json: async () => body });
   const deezer = new Deezer({ fetch: async (url) => (url.includes('/search') ? json({ data: [{ id: 1 }] }) : url.includes('/track/') ? json({ id: 1, title: 'A', album: { id: 2 }, artist: { name: 'B' } }) : json({ genres: { data: [{ name: 'Pop' }] } })) });
+  // The user picks the service: Deezer alone, or Spotify (completed with Deezer genres).
   const meta = new MetadataLookup({ spotify: { lookup: async () => { throw new Error('boom'); } }, deezer, spotifyReady: () => false });
-  const r = await meta.lookup({ title: 'A', artist: 'B' });
+  const r = await meta.lookup({ title: 'A', artist: 'B' }, 'deezer');
   assert.deepEqual([r.sources, r.candidates.map((c) => c.genre), r.errors], [['Deezer'], ['Pop'], []]);
-  const both = await new MetadataLookup({ spotify: { lookup: async () => { throw new Error('boom'); } }, deezer, spotifyReady: () => true }).lookup({ title: 'A' });
-  assert.deepEqual([both.candidates.length, both.errors], [1, ['Spotify: boom']]);
+  await assert.rejects(meta.lookup({ title: 'A' }, 'spotify'), /not set up/);
+  await assert.rejects(new MetadataLookup({ spotify: { lookup: async () => { throw new Error('boom'); } }, deezer, spotifyReady: () => true }).lookup({ title: 'A' }, 'spotify'), /boom/);
+  const spOnly = new MetadataLookup({ spotify: { lookup: async () => [{ source: 'spotify', title: 'A', artist: 'B', genre: '', genres: [], label: '', isrc: '' }] }, deezer, spotifyReady: () => true });
+  const s = await spOnly.lookup({ title: 'A', artist: 'B' }, 'spotify');
+  assert.deepEqual([s.sources, s.candidates.map((c) => `${c.source}:${c.genre}`)], [['Spotify'], ['spotify:Pop']]);
 });

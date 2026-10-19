@@ -4,6 +4,7 @@ import { SHORTCUT_HELP } from './keyboard.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 import { openRelink } from './relink.js';
 import { pluginsSection } from './plugins.js';
+import { appearanceSection } from './appearance.js';
 
 const FORMAT_LABELS = [['m4a', 'M4A (AAC, original quality, no re-encode)'], ['mp3', 'MP3 320 kbps'], ['flac', 'FLAC'], ['wav', 'WAV']];
 
@@ -142,7 +143,7 @@ async function spotifySection() {
   };
   return h('div', {},
     h('h4', {}, 'Track information online (Deezer, Spotify)'),
-    h('p.dim', {}, 'Track information ▸ "Search online" fills genre, album, year, label, cover… It always searches Deezer (no account needed, it brings the genres). Spotify is optional: it needs a free Spotify app: on developer.spotify.com/dashboard create an app (any name; redirect URI: http://127.0.0.1:8888/callback — Reboxed never uses it, Spotify only requires one; tick Web API), then copy its Client ID and Client Secret here. The secret is stored encrypted on this computer.'),
+    h('p.dim', {}, 'Track information ▸ "Search info" fills genre, album, year, label, cover… from the service you pick there: Deezer works without any setup (and has the genres); Spotify is optional and needs a free Spotify app: on developer.spotify.com/dashboard create an app (any name; redirect URI: http://127.0.0.1:8888/callback — Reboxed never uses it, Spotify only requires one; tick Web API), then copy its Client ID and Client Secret here. The secret is stored encrypted on this computer.'),
     h('div.form-grid', {},
       h('label', {}, 'Client ID'), id,
       h('label', {}, 'Client Secret'), secret,
@@ -203,6 +204,7 @@ export async function openSettings(library, engine, apply, midi, app) {
           window.rb.fullscreen().then((f) => { sel.value = f.startMode; sel.disabled = false; });
           return h('div', {}, sel, h('span.dim', {}, '  F11 switches full screen on / off at any time'));
         })()))],
+    ['appearance', 'Appearance', () => appearanceSection(library, apply)],
     ['decks', 'Decks & Mixer', () => h('div.form-grid', {},
       h('label', {}, 'Decks'), sel('deckCount', [[2, '2 decks'], [4, '4 decks']], Number),
       h('label', {}, 'Sync mode'), sel('syncMode', [['beat', 'BEAT SYNC (tempo + phase)'], ['bpm', 'BPM SYNC (tempo only)']]),

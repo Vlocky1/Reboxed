@@ -561,6 +561,31 @@ export class Deck extends EventTarget {
     this.setLoop({ start: this.loop.start, end: this.loop.start + len, beats });
   }
 
+  /**
+   * Choose the beat loop size. A loop that is playing takes the new size at once (from its start,
+   * like a CDJ); otherwise it is the size of the next AUTO BEAT LOOP.
+   */
+  setBeatLoopSize(beats) {
+    beats = Math.min(512, Math.max(1 / 64, beats));
+    if (this.loop && this.period) {
+      const len = beats * this.period;
+      if (len >= 0.005 && this.loop.start + len <= this.duration + 1e-6) {
+        this.beatLoopSize = beats;
+        this.setLoop({ start: this.loop.start, end: this.loop.start + len, beats });
+        return;
+      }
+    }
+    this.beatLoopSize = beats;
+    this.emit('loop');
+  }
+
+  /** Current loop length in beats (manual IN/OUT loops too), else the chosen size. */
+  currentLoopBeats() {
+    if (this.loop?.beats) return this.loop.beats;
+    if (this.loop && this.period) return (this.loop.end - this.loop.start) / this.period;
+    return this.beatLoopSize;
+  }
+
   beatJump(beats) {
     if (!this.loaded) return;
     const delta = beats * (this.period || 0.5);

@@ -11,6 +11,16 @@ const STYLES = {
   blue: { low: '#1f4fd8', mid: '#3a8cff', high: '#c8e4ff' },
 };
 
+/** Theme colours used on the canvases (read from the CSS variables, refreshed on theme change). */
+const themeColor = { bg: '#0b0c0e', text: '#3a3f45', version: 0 };
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  themeColor.bg = cs.getPropertyValue('--wave-bg').trim() || '#0b0c0e';
+  themeColor.text = cs.getPropertyValue('--faint').trim() || '#3a3f45';
+  themeColor.version++;
+}
+if (typeof window !== 'undefined') { window.addEventListener('reboxed-theme', readTheme); queueMicrotask(readTheme); }
+
 function fitCanvas(canvas) {
   const dpr = devicePixelRatio || 1;
   const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
@@ -86,12 +96,12 @@ function drawWave(g, style, x, cy, hh, up, down, lo, mi, hi, colW) {
 export function drawDetail(canvas, deck, opts) {
   const { w, h, dpr } = fitCanvas(canvas);
   const g = canvas.getContext('2d');
-  g.fillStyle = '#0b0c0e';
+  g.fillStyle = themeColor.bg;
   g.fillRect(0, 0, w, h);
   const wf = waveformArrays(deck.analysis);
   const cx = Math.round(w / 2);
   if (!deck.loaded) {
-    g.fillStyle = '#3a3f45'; g.font = `${12 * dpr}px system-ui`; g.textAlign = 'center';
+    g.fillStyle = themeColor.text; g.font = `${12 * dpr}px system-ui`; g.textAlign = 'center';
     g.fillText(deck.loading ? 'Loading…' : `Deck ${deck.index + 1} — drop a track`, cx, h / 2 + 4 * dpr);
     return;
   }
@@ -164,7 +174,7 @@ export function drawDetail(canvas, deck, opts) {
     g.globalAlpha = 1;
   }
   if (!wf) {
-    g.fillStyle = '#3a3f45'; g.font = `${11 * dpr}px system-ui`; g.textAlign = 'center';
+    g.fillStyle = themeColor.text; g.font = `${11 * dpr}px system-ui`; g.textAlign = 'center';
     g.fillText('Analyzing…', cx, 14 * dpr);
   }
 
@@ -268,13 +278,13 @@ export class Overview {
     const { w, h, dpr } = fitCanvas(canvas);
     const g = canvas.getContext('2d');
     const wf = waveformArrays(deck.analysis);
-    const key = `${deck.track?.id}|${w}|${h}|${style}|${!!wf}`;
+    const key = `${deck.track?.id}|${w}|${h}|${style}|${!!wf}|${themeColor.version}`;
     if (key !== this.cacheKey) {
       this.cacheKey = key;
       this.image = document.createElement('canvas');
       this.image.width = w; this.image.height = h;
       const ig = this.image.getContext('2d');
-      ig.fillStyle = '#0b0c0e'; ig.fillRect(0, 0, w, h);
+      ig.fillStyle = themeColor.bg; ig.fillRect(0, 0, w, h);
       if (wf && deck.duration) {
         const n = wf.low.length;
         for (let x = 0; x < w; x++) {
