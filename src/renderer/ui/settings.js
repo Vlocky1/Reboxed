@@ -238,5 +238,5 @@ export async function openSettings(library, engine, apply, midi, app) {
   try { first = localStorage.getItem('reboxed.settingsTab') || first; } catch { /* private storage */ }
   await show(first);
   const body = h('div.settings', {}, bar, pane);
-  await modal('Preferences', body, [{ label: 'Close', primary: true, value: true }]);
+  await modal(`Preferences — Reboxed ${await window.rb.version()}`, body, [{ label: 'Close', primary: true, value: true }]);
 }
