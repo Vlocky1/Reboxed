@@ -2,7 +2,7 @@ import { h, modal, toast } from './dom.js';
 import { icon } from './icons.js';
 import { BPM_RANGES } from '../analysis/analyzer.js';
 import { keyboardSection } from './keyboard.js';
-import { updateSettings } from './updates.js';
+import { aboutSection } from './updates.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 import { openRelink } from './relink.js';
 import { pluginsSection } from './plugins.js';
@@ -202,9 +202,7 @@ export async function openSettings(library, engine, apply, midi, app) {
             [['maximized', 'Full screen windowed (maximised)'], ['fullscreen', 'Full screen'], ['window', 'Normal window']].map(([v, l]) => h('option', { value: v }, l)));
           window.rb.fullscreen().then((f) => { sel.value = f.startMode; sel.disabled = false; });
           return h('div', {}, sel, h('span.dim', {}, '  F11 switches full screen on / off at any time'));
-        })()),
-      h('h4', {}, 'Updates'),
-      h('div.form-grid', {}, ...updateSettings(app)))],
+        })()))],
     ['appearance', 'Appearance', () => appearanceSection(library, apply)],
     ['decks', 'Decks & Mixer', () => h('div.form-grid', {},
       h('label', {}, 'Decks'), sel('deckCount', [[2, '2 decks'], [4, '4 decks']], Number),
@@ -225,10 +223,11 @@ export async function openSettings(library, engine, apply, midi, app) {
     ['midi', 'MIDI', () => (midi ? midi.renderSettings() : h('p.dim', {}, 'MIDI not initialised'))],
     ['plugins', 'Plugins', () => pluginsSection(app)],
     ['keyboard', 'Keyboard', () => keyboardSection(library)],
+    ['about', 'About', async () => aboutSection(app, await window.rb.version())],
   ];
   // Sidebar icon and one-line description of every tab.
   const META = {
-    general: ['gear', 'Analysis, key notation, waveform, window and updates.'],
+    general: ['gear', 'Analysis, key notation, waveform and window.'],
     appearance: ['palette', 'Theme, accent colour, size of the interface.'],
     decks: ['layout2', 'Number of decks, sync, tempo range and mixer curves.'],
     audio: ['headphones', 'Sound cards for the master and the headphones.'],
@@ -238,6 +237,7 @@ export async function openSettings(library, engine, apply, midi, app) {
     midi: ['midi', 'Connected controllers, MIDI monitor and learn.'],
     plugins: ['plug', 'Hardware plugins: install, create, enable.'],
     keyboard: ['keyboard', 'Keyboard shortcuts: presets for QWERTY and AZERTY, every key can be changed.'],
+    about: ['info', 'Version, updates, links and credits.'],
   };
   const pane = h('div.settings-pane');
   const bar = h('div.settings-tabs', { role: 'tablist' });

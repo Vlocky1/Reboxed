@@ -1798,9 +1798,31 @@ async function smoke(app) {
       const cards = [...document.querySelectorAll('.plugin-card b')].map((b) => b.textContent);
       const live = [...document.querySelectorAll('.plugin-tag.live')].length;
       await window.rb.smokeShot('plugins');
+      // Scrolling a long tab (and focusing its last control) moves the pane only, never the category bar.
+      document.querySelector('.settings-tabs button[data-tab="keyboard"]').click();
+      await wait(400);
+      const pane = document.querySelector('.settings-pane');
+      const barTop = document.querySelector('.settings-tabs').getBoundingClientRect().top;
+      pane.scrollTop = pane.scrollHeight;
+      [...pane.querySelectorAll('button')].at(-1)?.focus();
+      await wait(100);
+      const barMoved = Math.abs(document.querySelector('.settings-tabs').getBoundingClientRect().top - barTop);
+      const outer = document.querySelector('.dialog:has(.settings) > .dialog-body').scrollTop + document.querySelector('.settings').scrollTop;
+      step('preferences: only the tab scrolls', pane.scrollTop > 100 && barMoved < 0.5 && outer === 0, `pane scrolled ${pane.scrollTop}px, category bar moved ${barMoved}px, outer scroll ${outer}`);
+      // About: version, Check for updates (real GitHub check), links.
+      document.querySelector('.settings-tabs button[data-tab="about"]').click();
+      await wait(400);
+      const aboutVersion = document.querySelector('.about-version')?.textContent;
+      document.querySelector('.about-check').click();
+      for (let i = 0; i < 100 && /Checking/.test(document.querySelector('.about-status').textContent); i++) await wait(100);
+      const aboutStatus = document.querySelector('.about-status').textContent;
+      const links = document.querySelectorAll('.about-links .dbtn').length;
+      await window.rb.smokeShot('about');
+      step('preferences: About tab with Check for updates', aboutVersion === `Version ${await window.rb.version()}` && /latest version|Up to date|is available|Could not reach/.test(aboutStatus) && links === 5,
+        `${aboutVersion} · ${aboutStatus} · ${links} links`);
       document.querySelector('.settings-close').click();
       await closed;
-      step('preferences tabs', tabs.length === 10 && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
+      step('preferences tabs', tabs.length === 11 && tabs.at(-1) === 'About' && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
         `${tabs.join(' | ')} — active ${active}, library ${libPath}, stems ${info.stemsRoot}`);
       step('plugins manager', cards.length >= 5 && cards.includes('Pioneer DDJ-GRV6') && live === [...app.midi.controllers.values()].filter((d) => d.plugin?.id).length, `${cards.join(', ')} — connected ${live}`);
     }

@@ -7,6 +7,7 @@ export const ICONS = {
   playpause: svg('<path d="M2.5 4v8l5-4z" fill="currentColor" stroke="none"/><rect x="9" y="4" width="1.8" height="8" fill="currentColor" stroke="none"/><rect x="12" y="4" width="1.8" height="8" fill="currentColor" stroke="none"/>'),
   headphones: svg('<path d="M3 10V8a5 5 0 0 1 10 0v2"/><rect x="2.5" y="9.5" width="3" height="4" rx="1"/><rect x="10.5" y="9.5" width="3" height="4" rx="1"/>'),
   keyboard: svg('<rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 6.5h.01M6.5 6.5h.01M9 6.5h.01M11.5 6.5h.01M4 9.5h8"/>'),
+  info: svg('<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r=".8" fill="currentColor" stroke="none"/>'),
   plug: svg('<path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11v3"/>'),
   wave: svg('<path d="M1.5 8h1.5M4.5 5v6M7 3v10M9.5 5.5v5M12 7v2M14.5 8h0"/>'),
   palette: svg('<path d="M8 2a6 6 0 1 0 0 12c1 0 1.4-.7 1.1-1.5-.3-.9.2-1.8 1.2-1.8H12a2.2 2.2 0 0 0 2-2.2A6 6 0 0 0 8 2z"/><circle cx="5" cy="7" r=".9" fill="currentColor" stroke="none"/><circle cx="7.5" cy="4.6" r=".9" fill="currentColor" stroke="none"/><circle cx="10.6" cy="5.6" r=".9" fill="currentColor" stroke="none"/>'),

@@ -197,8 +197,14 @@ function registerIpc(win) {
     for (const p of paths) { try { await shell.trashItem(p); n++; } catch { /* in use or gone */ } }
     return n;
   });
+  // Only known sites open in the browser: YouTube results, and Reboxed's own pages (GitHub, website, Instagram).
   ipcMain.handle('shell:openExternal', (_e, url) => {
-    if (/^https:\/\/(www\.|music\.)?youtube\.com\/|^https:\/\/youtu\.be\//.test(url)) shell.openExternal(url);
+    const allowed = /^https:\/\/(www\.|music\.)?youtube\.com\/|^https:\/\/youtu\.be\//.test(url)
+      || /^https:\/\/github\.com\/Vlocky1\/Reboxed(\/|$)/.test(url)
+      || /^https:\/\/vlocky1\.github\.io\//.test(url)
+      || /^https:\/\/(www\.)?instagram\.com\/rebox\.ed\/?$/.test(url);
+    if (allowed) shell.openExternal(url);
+    return allowed;
   });
   downloader = new Downloader((ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); });
   // yt-dlp / deno / ffmpeg installed from the app go to Reboxed's own tools folder.
