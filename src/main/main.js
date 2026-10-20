@@ -227,6 +227,7 @@ function registerIpc(win) {
   ipcMain.handle('stems:separate', (_e, id, left, right, opts) => stems.separate(id, left, right, opts));
   ipcMain.handle('stems:delete', (_e, id, trackPath) => stems.remove(id, trackPath));
   ipcMain.handle('stems:deleteAll', () => stems.removeAll());
+  ipcMain.handle('stems:bench', (_e, quality, ep, seconds) => stems.bench(quality, ep, seconds));
 
   // A connected controller's mapping from the user's rekordbox install (MidiMappings/<model>.midi.csv).
   ipcMain.handle('controller:rbMapping', async (_e, deviceName) => {

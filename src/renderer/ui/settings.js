@@ -8,11 +8,53 @@ import { openRelink } from './relink.js';
 import { pluginsSection } from './plugins.js';
 import { appearanceSection } from './appearance.js';
 import { cleanerSettings } from './clean-names.js';
+import { STEM_ENGINES, ENGINE_NAMES, pickEngine } from '../../shared/stem-engines.js';
 
 const FORMAT_LABELS = [['m4a', 'M4A (AAC, original quality, no re-encode)'], ['mp3', 'MP3 320 kbps'], ['flac', 'FLAC'], ['wav', 'WAV']];
 
-/** Stem model status/download, quality, processing device and cache. */
-async function stemsSection(library, apply) {
+/**
+ * Engine choice (Auto / CPU / GPU) and the engine test: speed of each engine on each installed
+ * model, measured on this computer; Auto uses the fastest.
+ */
+function stemEngineRows(app, library, apply) {
+  const s = library.settings;
+  const table = h('div.engine-table');
+  const fmt = (v) => (typeof v === 'number' ? `${v.toFixed(v < 2 ? 2 : 1)}× real time` : v === 'crash' ? 'crashes on this computer' : v === 'error' ? 'failed' : '—');
+  const render = (bench = library.settings.stemsBench) => {
+    const rows = [['fast', 'FAST'], ['hq', 'HQ']].filter(([q]) => bench?.[q]).map(([q, label]) => {
+      const used = pickEngine(library.settings.stemsProvider ?? 'auto', bench[q]);
+      return h('div.engine-row', {}, h('b', {}, label),
+        ...STEM_ENGINES.map((ep) => h(`span.engine-cell${ep === used ? '.used' : ''}`, { title: ep === used ? 'Used for this model' : '' }, `${ENGINE_NAMES[ep]}: ${fmt(bench[q][ep])}`)));
+    });
+    table.replaceChildren(...(rows.length ? rows : [h('span.dim', {}, 'Not tested yet: Auto uses the CPU. Test to let it pick the GPU when it is faster here.')]));
+  };
+  const status = h('span.dim');
+  const test = h('button.dbtn.small', { type: 'button' }, 'Test the engines');
+  test.onclick = async () => {
+    test.disabled = true;
+    const live = { ...(library.settings.stemsBench ?? {}) };
+    try {
+      await app.benchStemEngines((q, ep, v) => {
+        live[q] = { ...(live[q] ?? {}), [ep]: v };
+        status.textContent = ` ${q.toUpperCase()} on ${ENGINE_NAMES[ep]}: ${fmt(v)}`;
+        render(live);
+      }, {});
+      status.textContent = ' Done.';
+    } catch (err) { status.textContent = ` Test failed: ${err.message}`; } finally { test.disabled = false; render(); }
+  };
+  const choice = h('select', { onchange: (e) => { apply('stemsProvider', e.target.value); render(); } },
+    [['auto', 'Auto — the fastest measured here (CPU until tested)'], ['cpu', 'CPU'], ['webgpu', 'GPU · WebGPU (Direct3D 12)'], ['dml', 'GPU · DirectML']]
+      .map(([v, l]) => h('option', { value: v, selected: (s.stemsProvider ?? 'auto') === v }, l)));
+  render();
+  return [
+    h('label', {}, 'Engine'), h('div', {}, choice, h('small', {}, 'A GPU engine that crashes falls back to the CPU, and Auto stops using it.')),
+    h('label', {}, 'Speed on this computer'), h('div', {}, h('div.frow', {}, test, status), table,
+      h('small', {}, 'Separates a short test mix with each engine (HQ takes a minute or two). Integrated graphics are often slower than the CPU; a dedicated GPU is usually much faster.')),
+  ];
+}
+
+/** Stem model status/download, quality, processing engine and cache. */
+async function stemsSection(library, apply, app) {
   const status = await window.rb.stems.status();
   const s = library.settings;
   const modelRow = (quality, name, size) => {
@@ -48,8 +90,7 @@ async function stemsSection(library, apply) {
     h('label', {}, 'Separate on load'), h('input', { type: 'checkbox', checked: !!s.stemsOnLoad, onchange: (e) => apply('stemsOnLoad', e.target.checked) }),
     h('label', {}, 'Stem waveform'), sel('stemWaveform', [
       ['muted', 'Colour by stem, dim muted stems'], ['always', 'Always colour by stem'], ['off', 'Classic waveform']]),
-    h('label', {}, 'Processing'), sel('stemsProvider', [
-      ['cpu', 'CPU (recommended)'], ['dml', 'DirectML GPU (experimental, falls back to CPU)']]),
+    ...stemEngineRows(app, library, apply),
     h('label', {}, 'Stem files'), sel('stemsFormat', [
       ['mp3', 'MP3 256 kbps (about 9 MB per stem for 5 min)'], ['mp3-320', 'MP3 320 kbps (about 12 MB)'], ['wav', 'WAV (lossless, about 53 MB)']]),
     h('label', {}, ''), (() => {
@@ -219,7 +260,7 @@ export async function openSettings(library, engine, apply, midi, app) {
       h('label', {}, 'Output channels'), sel('outputLayout', [['stereo', 'Stereo (headphones on a 2nd device)'], ['quad', '4 channels: master 1/2, headphones 3/4 (DJ controller)']]),
       h('label', {}, 'Use controller sound card automatically'), check('controllerAudioAuto'))],
     ['library', 'Library', () => librarySection(app)],
-    ['stems', 'Stems', () => stemsSection(library, apply)],
+    ['stems', 'Stems', () => stemsSection(library, apply, app)],
     ['downloads', 'Downloads', () => downloadsSection(app, library)],
     ['midi', 'MIDI', () => (midi ? midi.renderSettings() : h('p.dim', {}, 'MIDI not initialised'))],
     ['plugins', 'Plugins', () => pluginsSection(app)],
@@ -233,7 +274,7 @@ export async function openSettings(library, engine, apply, midi, app) {
     decks: ['layout2', 'Number of decks, sync, tempo range and mixer curves.'],
     audio: ['headphones', 'Sound cards for the master and the headphones.'],
     library: ['collection', 'Where your library and stems live, USB drive, Spotify.'],
-    stems: ['wave', 'Stem separation models, quality and files.'],
+    stems: ['wave', 'Stem separation models, quality, engine (CPU or GPU) and files.'],
     downloads: ['download', 'Quality, folder, name cleaner and tools.'],
     midi: ['midi', 'Connected controllers, MIDI monitor and learn.'],
     plugins: ['plug', 'Hardware plugins: install, create, enable.'],

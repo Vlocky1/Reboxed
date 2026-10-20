@@ -12,6 +12,36 @@ export const STEM_NAMES = ['drums', 'bass', 'other', 'vocals'];
 export const STEM_RATE = 44100;
 export const ENV_PPS = 150; // stem envelope points per second (waveform display)
 
+/**
+ * onnxruntime session options for an engine. GPU engines need memory patterns off and sequential
+ * execution (DirectML does not support them: with them on, its sessions crash). Idle CPU sessions
+ * must not busy-wait (with several loaded, spinning pools steal the CPU from the busy one).
+ */
+export const sessionOptions = (ep) => ({
+  executionProviders: [ep], graphOptimizationLevel: 'all',
+  ...(ep === 'cpu' ? {} : { enableMemPattern: false, executionMode: 'sequential' }),
+  extra: { session: { intra_op: { allow_spinning: '0' }, inter_op: { allow_spinning: '0' } } },
+});
+
+/** A deterministic test mix (kick and hats, bass, chords, a voice-like tone) for engine speed tests. */
+export function benchMix(seconds) {
+  const n = Math.round(seconds * STEM_RATE);
+  const left = new Float32Array(n); const right = new Float32Array(n);
+  let seed = 1;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; };
+  for (let i = 0; i < n; i++) {
+    const t = i / STEM_RATE; const beat = (t * 2) % 1;
+    const kick = Math.exp(-beat * 30) * Math.sin(2 * Math.PI * (50 + 100 * Math.exp(-beat * 40)) * t) * 0.6;
+    const hat = ((t * 4) % 1) < 0.02 ? rnd() * 0.3 : 0;
+    const bass = 0.25 * Math.sin(2 * Math.PI * 55 * t);
+    const chord = 0.08 * (Math.sin(2 * Math.PI * 220 * t) + Math.sin(2 * Math.PI * 277.18 * t) + Math.sin(2 * Math.PI * 329.63 * t));
+    const voice = 0.15 * Math.sin(2 * Math.PI * (440 + 20 * Math.sin(2 * Math.PI * 5 * t)) * t) * (Math.sin(2 * Math.PI * 0.25 * t) > 0 ? 1 : 0);
+    left[i] = kick + hat + bass + chord + voice;
+    right[i] = kick + hat * 0.8 + bass + chord * 0.9 + voice;
+  }
+  return { left, right };
+}
+
 // ---------------------------------------------------------------------------------------------
 // HQ: HT-Demucs
 // ---------------------------------------------------------------------------------------------

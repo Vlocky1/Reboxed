@@ -1,11 +1,13 @@
-// Electron utilityProcess: runs the stem models with onnxruntime-node, isolated from the main
-// process (a native crash in a GPU provider only kills this process). Results stream back block
-// by block (from the play head), then the full stems are written to the cache.
+// Electron utilityProcess: runs the stem models with onnxruntime-node on the CPU or the GPU
+// (WebGPU / DirectML), isolated from the main process (a native crash in a GPU driver only kills
+// this process). Results stream back block by block (from the play head), then the full stems are
+// written to the cache. It also times the engines on a test mix ('bench').
 import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   separateSpleeter, separateDemucs, stemToPcm16, stemEnvelope, vocalRegions, STEM_NAMES, STEM_RATE, ENV_PPS, SPLEETER_STEMS,
+  sessionOptions, benchMix,
 } from './stems-core.js';
 import { wavHeader } from '../shared/wav.js';
 import { MP3_DELAY, encodeMp3 } from '../shared/mp3.js';
@@ -29,17 +31,38 @@ async function encodeStem(pcm, kbps, path) {
 const ort = require('onnxruntime-node');
 const sessions = new Map();
 
-// Idle sessions must not busy-wait: with several sessions loaded, spinning thread pools steal
-// the CPU from the one that is working (measured: 4 Spleeter nets went from 1.4x to 7x real time).
-const SESSION_OPTS = (ep) => ({
-  executionProviders: [ep], graphOptimizationLevel: 'all',
-  extra: { session: { intra_op: { allow_spinning: '0' }, inter_op: { allow_spinning: '0' } } },
-});
-
 async function session(path, ep) {
   const key = `${path}|${ep}`;
-  if (!sessions.has(key)) sessions.set(key, ort.InferenceSession.create(path, SESSION_OPTS(ep)));
+  if (!sessions.has(key)) sessions.set(key, ort.InferenceSession.create(path, sessionOptions(ep)));
   return sessions.get(key);
+}
+
+/**
+ * Speed of an engine on a model (x real time): FAST separates a short warm-up (shader compilation,
+ * driver caches) then `seconds` of the test mix; HQ one 7.8 s segment. Sessions are released after.
+ */
+async function bench(m) {
+  const opened = [];
+  const open = async (path) => { const sess = await ort.InferenceSession.create(path, sessionOptions(m.ep)); opened.push(sess); return sess; };
+  try {
+    if (m.quality === 'fast') {
+      const nets = {};
+      for (const s of SPLEETER_STEMS) nets[s] = await open(join(m.modelDir, `${s}.fp16.onnx`));
+      const warm = benchMix(2);
+      await separateSpleeter(nets, ort, warm.left, warm.right, {});
+      const mix = benchMix(m.seconds ?? 10);
+      const t0 = performance.now();
+      await separateSpleeter(nets, ort, mix.left, mix.right, {});
+      return (mix.left.length / STEM_RATE) / ((performance.now() - t0) / 1000);
+    }
+    const sess = await open(m.model);
+    const mix = benchMix(7.8);
+    const t0 = performance.now();
+    await separateDemucs(sess, ort, mix.left, mix.right, {});
+    return (mix.left.length / STEM_RATE) / ((performance.now() - t0) / 1000);
+  } finally {
+    for (const sess of opened) { try { await sess.release(); } catch { /* already gone */ } }
+  }
 }
 
 /** WAV stems folder -> MP3 (meta updated, WAV files removed once the MP3 files are written). */
@@ -63,6 +86,12 @@ process.parentPort.on('message', async (e) => {
   const m = e.data;
   if (m.type === 'convert') {
     try { process.parentPort.postMessage({ id: m.id, quality: m.quality, type: 'done', freed: await convert(m) }); } catch (err) {
+      process.parentPort.postMessage({ id: m.id, quality: m.quality, type: 'error', error: String(err?.message ?? err) });
+    }
+    return;
+  }
+  if (m.type === 'bench') {
+    try { process.parentPort.postMessage({ id: m.id, quality: m.quality, type: 'done', speed: await bench(m) }); } catch (err) {
       process.parentPort.postMessage({ id: m.id, quality: m.quality, type: 'error', error: String(err?.message ?? err) });
     }
     return;

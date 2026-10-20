@@ -102,6 +102,7 @@ contextBridge.exposeInMainWorld('rb', {
     remove: (id, trackPath) => ipcRenderer.invoke('stems:delete', id, trackPath),
     relocate: (id, oldPath, newPath) => ipcRenderer.invoke('stems:relocate', id, oldPath, newPath),
     removeAll: () => ipcRenderer.invoke('stems:deleteAll'),
+    bench: (quality, ep, seconds) => ipcRenderer.invoke('stems:bench', quality, ep, seconds),
     convertToMp3: (tracks, kbps) => ipcRenderer.invoke('stems:convertToMp3', tracks, kbps),
     on: (channel, cb) => {
       const allowed = ['stems:progress', 'stems:download', 'stems:fallback', 'stems:block', 'stems:job', 'stems:convert'];
