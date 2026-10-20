@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from '../library.js';
 import { openRelink } from './relink.js';
 import { pluginsSection } from './plugins.js';
 import { appearanceSection } from './appearance.js';
+import { cleanerSettings } from './clean-names.js';
 
 const FORMAT_LABELS = [['m4a', 'M4A (AAC, original quality, no re-encode)'], ['mp3', 'MP3 320 kbps'], ['flac', 'FLAC'], ['wav', 'WAV']];
 
@@ -169,6 +170,7 @@ async function downloadsSection(app, library) {
     h('label', {}, 'Download folder'), h('div', {}, folder, ' ',
       h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { save({ folder: d }); showFolder(); } } }, 'Change…')),
     h('label', {}, 'Add to the "Downloads" playlist'), h('input', { type: 'checkbox', checked: c.playlist, onchange: (e) => save({ playlist: e.target.checked }) }),
+    ...cleanerSettings(c, save),
     h('label', {}, 'Check new releases at startup'), h('input', { type: 'checkbox', checked: c.checkOnStart, onchange: (e) => save({ checkOnStart: e.target.checked }) }),
     h('label', {}, 'Hide mixes / streams longer than'), h('select', { onchange: (e) => save({ maxMinutes: Number(e.target.value) }) },
       [[0, 'no limit'], [8, '8 min'], [12, '12 min'], [20, '20 min']].map(([v, l]) => h('option', { value: v, selected: c.maxMinutes === v }, l))),

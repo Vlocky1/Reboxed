@@ -1,6 +1,9 @@
 // Batch auto-tagging: a recipe of steps (each one: a service and the fields to take from it) runs
 // on every selected track. Each step searches with the track as the previous steps left it, keeps
 // the result only when artist, title and duration agree, and proposes field changes.
+import { cleanTitle, cleanArtist } from './clean-name.js';
+
+export { cleanTitle };
 
 /** "Song - Extended Mix" / "Song (Extended Mix)" -> {title: 'Song', mixName: 'Extended Mix'}. */
 export function splitMix(name) {
@@ -39,18 +42,11 @@ export function artistSimilarity(a, b) {
  * has no artist (downloads, rips) is split.
  */
 export function queryFor(t) {
-  let artist = t.artist ?? ''; let title = cleanTitle(t.title);
+  let artist = cleanArtist(t.artist); let title = cleanTitle(t.title);
   if (!artist.trim() && / - /.test(title)) { const i = title.indexOf(' - '); artist = title.slice(0, i); title = title.slice(i + 3); }
   return { artist: artist.trim(), title: title.trim() };
 }
 
-/** Title without video decorations: (Official Video), [Clip officiel], (Lyrics), | Audio, HD… */
-export function cleanTitle(s) {
-  return String(s ?? '')
-    .replace(/\s*[([][^)\]]*\b(official|officiel(le)?|clip|lyrics?|paroles|audio|video|vid[ée]o|visuali[sz]er|hd|4k|hq|m\/?v)\b[^)\]]*[)\]]/gi, '')
-    .replace(/\s*\|\s*(official|lyrics?|audio|video|clip).*$/i, '')
-    .replace(/\s{2,}/g, ' ').trim();
-}
 
 /**
  * The candidate that is really this track, or null.

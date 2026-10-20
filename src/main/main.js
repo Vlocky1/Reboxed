@@ -19,7 +19,10 @@ import { MetadataLookup } from './metadata.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
-const smoke = process.argv.includes('--smoke');
+// --shots=<folder>: screenshots of every feature on a demo library (npm run shots), in the same
+// throw-away app folder as the smoke test.
+const shotsDir = process.argv.find((a) => a.startsWith('--shots='))?.slice(8) ?? null;
+const smoke = process.argv.includes('--smoke') || !!shotsDir;
 
 // App folder %APPDATA%/Reboxed (machine-local: location.json, stem models, caches). Versions before
 // 1.2 used %APPDATA%/rbclone: it is moved here once. The smoke test runs in a temporary folder.
@@ -334,11 +337,22 @@ async function createWindow() {
   if (smoke) {
     ipcMain.handle('smoke:dir', () => store.dir);
     ipcMain.handle('smoke:dlTest', () => process.env.REBOXED_DL_TEST === '1');
+    // npm run shots: a freely licensed song for the stems shots, "path|Title|Artist" (copied into the test folder).
+    ipcMain.handle('smoke:demoSong', async () => {
+      const [path, title, artist] = (process.env.REBOXED_DEMO_SONG ?? '').split('|');
+      if (!path) return null;
+      const dest = join(store.dir, 'song', basename(path));
+      await mkdir(dirname(dest), { recursive: true });
+      await copyFile(path, dest);
+      return { path: dest, title: title || basename(path, extname(path)), artist: artist || '' };
+    });
     // Extra screenshot mid-test: <shot>-<name>.png next to the final one.
     ipcMain.handle('smoke:shot', async (_e, name) => {
       const shot = process.argv.find((a) => a.startsWith('--shot='));
-      if (!shot) return null;
-      const file = shot.slice(7).replace(/\.png$/i, `-${String(name).replace(/[^\w-]/g, '')}.png`);
+      if (!shot && !shotsDir) return null;
+      const safe = String(name).replace(/[^\w-]/g, '');
+      const file = shotsDir ? join(shotsDir, `${safe}.png`) : shot.slice(7).replace(/\.png$/i, `-${safe}.png`);
+      if (shotsDir) await mkdir(shotsDir, { recursive: true });
       await writeFile(file, (await win.webContents.capturePage()).toPNG());
       return file;
     });
@@ -360,10 +374,10 @@ async function createWindow() {
       }
       app.exit(errors.length || !report.ok ? 1 : 0);
     });
-    setTimeout(() => { console.log('SMOKE timeout', errors); app.exit(2); }, 360000);
+    setTimeout(() => { console.log('SMOKE timeout', errors); app.exit(2); }, shotsDir ? 1200000 : 360000);
   }
 
-  await win.loadURL(`app://rb/renderer/index.html${smoke ? '?smoke=1' : ''}`);
+  await win.loadURL(`app://rb/renderer/index.html${shotsDir ? '?shots=1' : smoke ? '?smoke=1' : ''}`);
 }
 
 /** The database folder is on a drive that is not plugged in: retry, pick another or use the local one. */

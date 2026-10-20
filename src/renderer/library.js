@@ -37,7 +37,7 @@ export const DEFAULT_SETTINGS = {
   controllerAudioAuto: true,   // use a recognised controller's sound card automatically
   controllerTempoInvert: false,
   // Track downloader (yt-dlp, as used by Stacher): folder '' = <Music>/Reboxed Downloads.
-  downloads: { folder: '', format: 'm4a', platform: 'youtube', toolsDir: '', playlist: true, subs: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
+  downloads: { folder: '', format: 'm4a', platform: 'youtube', cleanNames: true, cleanKeywords: '', toolsDir: '', playlist: true, subs: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
 };
 
 /** Local date YYYY-MM-DD (the "Date Added" day; the exact moment is in addedAt, ms). */

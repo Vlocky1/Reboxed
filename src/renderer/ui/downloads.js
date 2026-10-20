@@ -5,6 +5,7 @@
 import { h, toast, fmtTime } from './dom.js';
 import { icon } from './icons.js';
 import { DEFAULT_SETTINGS } from '../library.js';
+import { cleanTrackName, parseKeywords } from '../../shared/clean-name.js';
 
 const FORMAT_NAMES = { m4a: 'M4A', mp3: 'MP3 320', flac: 'FLAC', wav: 'WAV' };
 const PLATFORMS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
@@ -86,6 +87,12 @@ export class DownloadCenter {
     const lib = this.app.library;
     await this.app.importPaths([file]);
     const id = lib.idForPath(file);
+    // Name cleaner: "(Paroles)", "[Official Video]", "- Topic"… go as the track joins the collection.
+    if (id && this.cfg.cleanNames !== false) {
+      const t = lib.get(id);
+      const clean = cleanTrackName({ title: t.title || item.title, artist: t.artist }, parseKeywords(this.cfg.cleanKeywords));
+      if (clean.title !== t.title || clean.artist !== (t.artist ?? '')) lib.update(id, clean);
+    }
     if (id && this.cfg.playlist) {
       let pl = lib.playlists.find((n) => n.src === 'downloads');
       if (!pl) { pl = lib.createNode('playlist', 'Downloads'); pl.src = 'downloads'; }

@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('rb', {
   smokeDir: () => ipcRenderer.invoke('smoke:dir'),
   smokeShot: (name) => ipcRenderer.invoke('smoke:shot', name),
   smokeDlTest: () => ipcRenderer.invoke('smoke:dlTest'),
+  smokeDemoSong: () => ipcRenderer.invoke('smoke:demoSong'),
   rbMapping: (deviceName) => ipcRenderer.invoke('controller:rbMapping', deviceName),
   dl: {
     tools: (dir) => ipcRenderer.invoke('dl:tools', dir),

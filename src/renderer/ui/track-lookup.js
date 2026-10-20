@@ -81,7 +81,9 @@ export function lookupPanel(t, inputs, pending) {
     applyBtn.hidden = false;
   };
 
+  let searchSeq = 0;
   const search = async () => {
+    const seq = ++searchSeq; // a slower, older search must not replace the newer one
     panel.hidden = false;
     status.textContent = `Searching ${SOURCE[source]}…`;
     table.replaceChildren(); pick.hidden = true; applyBtn.hidden = true;
@@ -91,9 +93,11 @@ export function lookupPanel(t, inputs, pending) {
       const same = q === [t.artist, t.title].filter(Boolean).join(' - ');
       r = await lookupApi.lookup(same ? { title: inputs.title.value || t.title, artist: inputs.artist.value || t.artist } : { query: q }, source);
     } catch (err) {
+      if (seq !== searchSeq) return;
       status.textContent = `✗ ${SOURCE[source]}: ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`;
       return;
     }
+    if (seq !== searchSeq) return;
     results = orderByDuration(r.candidates, t.duration);
     const where = r.sources.join(' + ');
     const problems = r.errors.length ? ` (${r.errors.join('; ')})` : '';
