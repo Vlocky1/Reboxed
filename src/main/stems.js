@@ -221,8 +221,10 @@ export class StemService {
       if (!job) return;
       this.current = null;
       this.busy = false;
-      if (job.ep !== 'cpu') {
-        this.send('stems:fallback', job.id, job.ep); // GPU provider crashed natively: retry on CPU
+      if (job.bench) {
+        job.resolve({ crashed: true, code }); // this engine crashes on this computer: Auto avoids it
+      } else if (job.ep !== 'cpu') {
+        this.send('stems:fallback', job.id, job.ep, job.quality); // GPU provider crashed natively: retry on CPU
         this.queue.unshift({ ...job, ep: 'cpu' });
       } else {
         job.reject(new Error(`Stem process exited (${code})`));
@@ -257,9 +259,30 @@ export class StemService {
     return report;
   }
 
+  /**
+   * Time an engine ('cpu' | 'webgpu' | 'dml') on a model with a test mix, in the stem process.
+   * @returns {Promise<{speed?: number, crashed?: boolean, error?: string}>} speed in x real time
+   */
+  bench(quality, ep, seconds) {
+    return new Promise((resolve) => {
+      this.queue.push({ id: `bench:${quality}:${ep}`, bench: true, quality, ep, seconds, resolve, reject: (err) => resolve({ error: err.message }) });
+      this.pump();
+    });
+  }
+
   async pump() {
     if (this.busy || !this.queue.length) return;
     const job = this.queue.shift();
+    if (job.bench) {
+      if (!(await this.hasModel(job.quality))) { job.resolve({ error: 'model not downloaded' }); this.pump(); return; }
+      this.busy = true;
+      this.current = job;
+      this.ensureChild().postMessage({
+        type: 'bench', id: job.id, quality: job.quality, ep: job.ep, seconds: job.seconds,
+        modelDir: this.overrides.fast ?? join(this.modelDir, 'spleeter'), model: this.overrides.hq ?? join(this.modelDir, MODELS.hq.files[0].name),
+      });
+      return;
+    }
     if (job.convert) {
       this.busy = true;
       this.current = job;
@@ -292,9 +315,10 @@ export class StemService {
     }
     this.current = null;
     this.busy = false;
-    if (m.type === 'done') job.resolve(job.convert ? m : { ...m.meta, dir: job.outDir });
+    if (job.bench) job.resolve(m.type === 'done' ? { speed: m.speed } : { error: m.error });
+    else if (m.type === 'done') job.resolve(job.convert ? m : { ...m.meta, dir: job.outDir });
     else job.reject(new Error(m.error));
-    if (!job.convert) this.send('stems:job', job.id, job.quality, m.type);
+    if (!job.convert && !job.bench) this.send('stems:job', job.id, job.quality, m.type);
     this.pump();
   }
 }

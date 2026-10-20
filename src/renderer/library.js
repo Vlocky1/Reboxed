@@ -30,7 +30,8 @@ export const DEFAULT_SETTINGS = {
   analysisMode: 'normal',      // 'normal' (constant grid) | 'dynamic' (variable tempo)
   autoCues: false,             // create cues from phrases after analysis
   mixPointLink: false,
-  stemsProvider: 'cpu',        // 'cpu' | 'dml' (DirectML GPU, experimental)
+  stemsProvider: 'auto',       // 'auto' (fastest measured) | 'cpu' | 'webgpu' | 'dml' (GPU engines)
+  stemsBench: null,            // {fast: {cpu, webgpu, dml}, hq: {...}, date}: x real time, or 'crash'
   stemsQuality: 'auto',        // 'fast' (Spleeter) | 'hq' (HT-Demucs) | 'auto' (FAST now, HQ upgrade in background)
   stemsOnLoad: false,          // separate stems as soon as a track is loaded
   stemWaveform: 'muted',       // stem-coloured waveform: 'off' | 'muted' (while a part is muted) | 'always'

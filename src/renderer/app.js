@@ -23,6 +23,7 @@ import { toBeatgrid, shiftGrid, doubleGrid, halveGrid, setDownbeatAt, constantGr
 import { createCues } from '../shared/autocues.js';
 import { transposeKey } from '../shared/keys.js';
 import { RELEASE_FX } from './audio/deck.js';
+import { STEM_ENGINES, ENGINE_NAMES, pickEngine } from '../shared/stem-engines.js';
 import { h, toast, fmtTime, contextMenu, modal } from './ui/dom.js';
 import { icon } from './ui/icons.js';
 import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.js';
@@ -686,7 +687,12 @@ class App {
       }
       this.onStemsChange();
     });
-    window.rb.stems.on('stems:fallback', (id, ep) => toast(`Stem separation on ${ep.toUpperCase()} failed — retrying on CPU`, 6000));
+    window.rb.stems.on('stems:fallback', (id, ep, quality) => {
+      toast(`Stem separation on the GPU (${ENGINE_NAMES[ep] ?? ep}) failed — retrying on the CPU`, 6000);
+      // Auto never picks this engine again for this model on this computer.
+      const bench = { ...(this.library.settings.stemsBench ?? {}) };
+      if (quality) { bench[quality] = { ...(bench[quality] ?? {}), [ep]: 'crash' }; this.library.setSetting('stemsBench', bench); }
+    });
   }
 
   /** Refresh every stems indicator (decks, global bar, browser column). */
@@ -704,6 +710,33 @@ class App {
     const env = meta.env?.data?.map((b64) => { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; });
     deck.stemEnvPps = meta.env?.pps ?? 150;
     deck.setStems(pcm, meta.rate, meta.vocals ?? [], { quality: meta.quality ?? 'hq', env });
+  }
+
+  /** Engine for a stem model: the one chosen in Preferences ▸ Stems, or with Auto the fastest measured here. */
+  stemEngine(quality) {
+    const s = this.library.settings;
+    return pickEngine(s.stemsProvider ?? 'auto', s.stemsBench?.[quality]);
+  }
+
+  /**
+   * Time every engine on the installed models (Preferences ▸ Stems ▸ Test). Results are kept and
+   * used by Auto. onResult(quality, ep, result) after each measurement.
+   */
+  async benchStemEngines(onResult, { seconds } = {}) {
+    const status = await window.rb.stems.status();
+    const bench = { ...(this.library.settings.stemsBench ?? {}) };
+    for (const q of ['fast', 'hq']) {
+      if (!status.models[q]) continue;
+      bench[q] = {};
+      for (const ep of STEM_ENGINES) {
+        const r = await window.rb.stems.bench(q, ep, seconds);
+        bench[q][ep] = r.crashed ? 'crash' : r.speed ?? 'error';
+        onResult?.(q, ep, bench[q][ep]);
+      }
+    }
+    bench.date = new Date().toISOString();
+    this.library.setSetting('stemsBench', bench);
+    return bench;
   }
 
   /** Make sure a stem model is installed; FAST (79 MB) downloads on demand. */
@@ -741,7 +774,7 @@ class App {
       const deck = from?.track?.id === trackId ? from : holders.find((d) => d.playing) ?? holders[0];
       const startSample = deck ? Math.floor(deck.position() * 44100) : 0;
       const meta = await window.rb.stems.separate(trackId, r44.getChannelData(0), r44.getChannelData(1),
-        { quality: q, ep: this.library.settings.stemsProvider, startSample, urgent, trackPath: t.path, ...stemsFormat(this.library.settings) });
+        { quality: q, ep: this.stemEngine(q), startSample, urgent, trackPath: t.path, ...stemsFormat(this.library.settings) });
       const stored = (await window.rb.getAnalysis(trackId)) ?? {};
       await window.rb.putAnalysis(trackId, { ...stored, vocals: meta.vocals });
       this.library.update(trackId, { stems: q === 'hq' || t.stems === 'hq' ? 'hq' : 'fast' });
@@ -1621,6 +1654,33 @@ async function smoke(app) {
         step('capture: only the audible stems', only.parts?.join() === 'DRUMS' && diff < 1e-4 && all.parts === null && Math.abs(only.chans[0].length - 2 * 44100) < 2,
           `parts ${only.parts?.join('+')}, max diff vs drum stem ${diff.toExponential(1)}, all parts -> ${all.parts ?? 'track'}`);
       }
+      // GPU engines: each one timed on FAST (a crash is recorded, not fatal), then a real track
+      // separated on the GPU, stems compared with the CPU's.
+      {
+        const speeds = {};
+        for (const ep of STEM_ENGINES) { const r = await window.rb.stems.bench('fast', ep, 4); speeds[ep] = r.crashed ? 'crash' : r.speed ?? r.error; }
+        const gpuOk = typeof speeds.webgpu === 'number' && speeds.webgpu > 0.2;
+        const cpuMeta = await window.rb.stems.meta(id128, lib.get(id128).path);
+        const cpuDrums = await readStem(cpuMeta, 'drums');
+        const buf = await app.analyzer.decode(lib.get(id128).path);
+        const off = new OfflineAudioContext({ numberOfChannels: 2, length: Math.ceil(buf.duration * 44100), sampleRate: 44100 });
+        const src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start();
+        const r44 = await off.startRendering();
+        const t0 = performance.now();
+        const gpuMeta = await window.rb.stems.separate('smoke-gpu', r44.getChannelData(0), r44.getChannelData(1), { quality: 'fast', ep: 'webgpu', format: 'wav' });
+        const gpuSec = (performance.now() - t0) / 1000;
+        const gpuDrums = await readStem(gpuMeta, 'drums');
+        let e = 0; let p = 0;
+        // Compare with the FAST CPU result only if the kept stems are FAST (HQ differs by design).
+        const comparable = cpuMeta.quality === 'fast';
+        for (let i = 0; comparable && i < Math.min(cpuDrums.length, gpuDrums.length); i++) { e += (gpuDrums[i] - cpuDrums[i]) ** 2; p += cpuDrums[i] ** 2; }
+        const snr = comparable ? 10 * Math.log10(p / Math.max(1, e)) : null;
+        step('stems on the GPU (WebGPU)', gpuOk && gpuMeta?.ep === 'webgpu' && gpuMeta.frames === cpuMeta.frames && (snr === null || snr > 8),
+          `speeds FAST: ${Object.entries(speeds).map(([k, v]) => `${k} ${typeof v === 'number' ? `${v.toFixed(1)}x` : v}`).join(', ')} · track on WebGPU in ${gpuSec.toFixed(1)} s, ${gpuMeta?.frames} frames${snr === null ? '' : `, drums vs CPU ${snr.toFixed(1)} dB`}`);
+        lib.setSetting('stemsBench', { fast: speeds });
+        step('stems engine Auto', app.stemEngine('fast') === pickEngine('auto', speeds) && app.stemEngine('hq') === 'cpu', `fast → ${app.stemEngine('fast')}, hq (not tested) → ${app.stemEngine('hq')}`);
+        lib.setSetting('stemsBench', null);
+      }
       lib.setSetting('stemsQuality', 'auto');
     } else {
       report.steps.push({ name: 'stems (skipped: no model)', ok: true, info: '' });
@@ -2018,6 +2078,16 @@ async function smoke(app) {
       const barMoved = Math.abs(document.querySelector('.settings-tabs').getBoundingClientRect().top - barTop);
       const outer = document.querySelector('.dialog:has(.settings) > .dialog-body').scrollTop + document.querySelector('.settings').scrollTop;
       step('preferences: only the tab scrolls', pane.scrollTop > 100 && barMoved < 0.5 && outer === 0, `pane scrolled ${pane.scrollTop}px, category bar moved ${barMoved}px, outer scroll ${outer}`);
+      // Stems: engine choice (Auto / CPU / GPU) and the engine test table.
+      lib.setSetting('stemsBench', { fast: { cpu: 7.0, webgpu: 6.7, dml: 9.8 }, hq: { cpu: 0.44, webgpu: 0.15, dml: 'crash' } });
+      document.querySelector('.settings-tabs button[data-tab="stems"]').click();
+      await wait(400);
+      const engineRows = [...document.querySelectorAll('.engine-row')].map((r) => r.textContent);
+      const usedCells = [...document.querySelectorAll('.engine-cell.used')].map((c) => c.textContent);
+      await window.rb.smokeShot('stems-engines');
+      lib.setSetting('stemsBench', null);
+      step('preferences: stem engines (Auto / CPU / GPU)', engineRows.length === 2 && usedCells.length === 2 && usedCells[0].startsWith('GPU · DirectML') && usedCells[1].startsWith('CPU'),
+        `${engineRows.join(' | ')} · used: ${usedCells.join(', ')}`);
       // About: version, Check for updates (real GitHub check), links.
       document.querySelector('.settings-tabs button[data-tab="about"]').click();
       await wait(400);
