@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   deckCount: 2,                // 2 | 4
   syncMode: 'beat',            // 'beat' (tempo + phase) | 'bpm' (tempo only)
   syncDoubleHalf: true,
+  loadOnPlaying: false,        // allow loading a track onto a playing deck (load lock off)
   related: DEFAULT_RELATED,
   relatedSeed: 'master',       // 'master' | 'deck1'..'deck4' | 'selected'
   colorFx: 'FILTER',

@@ -117,7 +117,9 @@ export class PioneerController {
     if (param && d) {
       if (!press) return;
       const dir = param[1] === 'Left' ? -1 : 1;
-      if (param[2] === 'HotCue') d.callMemoryCue(dir);
+      // CALL ◀ ▶ arrive here when the controller thinks no loop plays (it picks the message from the
+      // GetLoopActive indicator): same handling as LoopHalf / LoopDouble either way.
+      if (param[2] === 'HotCue') this.callOrResize(i, dir);
       else this.turnPage(i, dir);
       return;
     }
@@ -470,6 +472,8 @@ export class PioneerController {
       o('Sync', i, d.sync);
       o('Master', i, this.engine.masterDeck === d);
       o('KeySync', i, d.keySync);
+      // Loop state: the controller sends CALL ◀ ▶ as LOOP 1/2X / 2X only while this says a loop plays.
+      o('GetLoopActive', i, !!d.loop);
       o('LoopIn', i, !!d.loop || d.pendingLoopIn !== undefined);
       o('LoopOut', i, !!d.loop);
       o('Quantize', i, d.quantize);

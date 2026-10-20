@@ -1,7 +1,7 @@
 {
   "name": "reboxed",
   "productName": "Reboxed",
-  "version": "1.13.1",
+  "version": "1.13.2",
   "private": true,
   "type": "module",
   "description": "Comme Rekordbox mais en mieux — free DJ software for Windows (library, 4 decks, stems, DDJ-GRV6).",

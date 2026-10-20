@@ -304,7 +304,8 @@ class App {
     const deck = this.engine.decks[deckIndex];
     const track = this.library.get(trackId);
     if (!deck || !track) return;
-    if (deck.playing) { toast(`Deck ${deckIndex + 1} is playing — pause it first`); return; }
+    // Load lock (Preferences ▸ Decks & Mixer): by default a playing deck cannot be replaced by mistake.
+    if (deck.playing && !this.library.settings.loadOnPlaying) { toast(`Deck ${deckIndex + 1} is playing — pause it first (or allow it in Preferences ▸ Decks & Mixer)`, 3500); return; }
     deck.loading = true;
     try {
       const buffer = await this.analyzer.decode(track.path);
@@ -652,7 +653,7 @@ class App {
   async instantDouble(fromIdx, toIdx) {
     const from = this.engine.decks[fromIdx];
     const to = this.engine.decks[toIdx];
-    if (!from.track || to.playing) return;
+    if (!from.track || (to.playing && !this.library.settings.loadOnPlaying)) return;
     await this.loadTrack(toIdx, from.track.id);
     to.setTempoRange(from.tempoRange);
     to.setTempoPct(from.tempoPct);
@@ -1386,6 +1387,17 @@ async function smoke(app) {
     d3.exitLoop();
     await app.instantDouble(2, 3);
     step('instant double', d4.track?.id === id128 && d4.playing && Math.abs(d4.position() - d3.position()) < 0.1, `${d3.position().toFixed(2)} vs ${d4.position().toFixed(2)}`);
+    // Load lock: a playing deck refuses a new track unless "Load a track onto a playing deck" is on.
+    {
+      const id100b = lib.all().find((t) => t.title === 'Kick 100').id;
+      await app.loadTrack(3, id100b);
+      const refused = d4.track?.id === id128;
+      lib.setSetting('loadOnPlaying', true);
+      await app.loadTrack(3, id100b);
+      const allowed = d4.track?.id === id100b;
+      lib.setSetting('loadOnPlaying', false);
+      step('load lock setting', refused && allowed, `playing deck: refused by default ${refused}, loaded when allowed ${allowed}`);
+    }
     d3.pause(); d4.pause();
 
     await app.toggleRecording();
@@ -1685,11 +1697,12 @@ async function smoke(app) {
       {
         d1.exitLoop(); d1.seek(2); d1.play(); // back from the end of the 24 s test track
         await wait(100);
-        // SHIFT held + platter touched + turned: no scratch, the play head moves forward fast.
+        // SHIFT held + platter touched + turned: no scratch, the play head moves forward fast. With
+        // SHIFT the GRV6 sends the platter on CC 0x29 (JogSearch, commented out in rekordbox's mapping).
         tx([0x90, 0x3f, 0x7f]);              // SHIFT
         tx([0x90, 0x67, 0x7f]);              // JogTouch (with SHIFT)
         const p0 = d1.position();
-        for (let k = 0; k < 20; k++) tx([0xb0, 0x22, 0x45]); // jog +5 x 20
+        for (let k = 0; k < 20; k++) tx([0xb0, 0x29, 0x45]); // JogSearch +5 x 20
         await wait(300);
         const searched = d1.position() - p0;
         const noScratch = !d1.scratching;
@@ -1704,11 +1717,20 @@ async function smoke(app) {
         const longLoop = d1.loop ? { ...d1.loop } : null;
         step('grv6 LOOP IN held: loop from the press', longLoop && Math.abs(longLoop.start - pressedAt) < 1e-6 && longLoop.beats === 1 && d1.pendingLoopIn === undefined,
           `pressed at ${pressedAt?.toFixed(3)} s, loop ${longLoop?.start.toFixed(3)}–${longLoop?.end.toFixed(3)} (${longLoop?.beats} beat)`);
-        // CALL < > with a loop: half, then double.
+        // CALL < > like the hardware: it sends LOOP 1/2X / 2X (0x12 / 0x13) only while Reboxed's
+        // GetLoopActive LED (0x9F 0x04) says a loop plays, else MEMORY CALL (0x51 / 0x53).
+        const loopLed = () => { const m = [...sent].reverse().find(([st, n]) => st === 0x9f && n === 0x04); return !!m && m[2] > 0; };
+        const call = (dir) => press(0x90, loopLed() ? (dir < 0 ? 0x12 : 0x13) : (dir < 0 ? 0x51 : 0x53));
         d1.beatLoop(4);
-        press(0x90, 0x12); const half = d1.currentLoopBeats();
-        press(0x90, 0x13); press(0x90, 0x13); const dbl = d1.currentLoopBeats();
-        step('grv6 CALL < > halve / double the loop', Math.abs(half - 2) < 1e-6 && Math.abs(dbl - 8) < 1e-6, `4 → ${half} → ${dbl} beats`);
+        await wait(120);                     // LEDs are refreshed at 30 Hz
+        const ledOn = loopLed();
+        call(-1); const half = d1.currentLoopBeats();
+        await wait(120);
+        call(1); await wait(60); call(1); const dbl = d1.currentLoopBeats();
+        // Even if the LED were late (memory call message during a loop), the loop is resized.
+        press(0x90, 0x51); const lateLed = d1.currentLoopBeats();
+        step('grv6 CALL < > halve / double the loop', ledOn && Math.abs(half - 2) < 1e-6 && Math.abs(dbl - 8) < 1e-6 && Math.abs(lateLed - 4) < 1e-6,
+          `loop LED ${ledOn} · 4 → ${half} → ${dbl} beats · memory-call message during the loop → ${lateLed}`);
         // MEMORY adds a memory cue; a point hot cue leaves the loop.
         const memBefore = d1.memoryCues().length;
         press(0x90, 0x3d);
@@ -2260,6 +2282,21 @@ async function smoke(app) {
       b.lib.setSetting('columnWidths', {}); b.applyWidths();
       step('browser columns: resize to fit', grips === b.columns.length && after > before && shown && lib.settings.columnWidths.title === undefined,
         `grips=${grips} title ${before}px -> ${after}px, full title visible=${shown}`);
+      // Columns move by drag and drop of their header: BPM dropped on the left half of TITLE.
+      {
+        const orderBefore = lib.settings.columns.slice();
+        const target = document.querySelector('.thead .th.c-title');
+        const dt = new DataTransfer();
+        dt.setData('application/x-rb-column', 'bpm');
+        const r = target.getBoundingClientRect();
+        target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, clientX: r.left + 2, clientY: r.top + 5, bubbles: true, cancelable: true }));
+        await wait(100);
+        const moved = lib.settings.columns;
+        const headOrder = [...document.querySelectorAll('.thead .th')].map((x) => x.className.match(/c-(\w+)/)?.[1]);
+        const ok = moved.indexOf('bpm') === moved.indexOf('title') - 1 && headOrder.indexOf('bpm') === headOrder.indexOf('title') - 1;
+        lib.setSetting('columns', orderBefore);
+        step('browser columns: drag a header to move the column', ok, `${orderBefore.join(',')} → ${moved.join(',')}`);
+      }
 
       const closed = b.editTrack(t.id);
       await wait(300);
