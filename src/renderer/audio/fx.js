@@ -4,7 +4,7 @@
 
 export const BEAT_FX = [
   { id: 'DELAY', kind: 'send', beats: 1 },
-  { id: 'ECHO', kind: 'send', beats: 0.75 },
+  { id: 'ECHO', kind: 'send', beats: 0.5 },
   { id: 'PING PONG', kind: 'send', beats: 0.5 },
   { id: 'REVERB', kind: 'send', beats: 1 },
   { id: 'FLANGER', kind: 'insert', beats: 16 },
@@ -15,11 +15,11 @@ export const BEAT_FX = [
   { id: 'REV ROLL', kind: 'insert', beats: 0.5 },
   { id: 'VINYL BRAKE', kind: 'insert', beats: 2 },
   { id: 'PITCH', kind: 'insert', beats: 1 },
-  { id: 'UP ECHO', kind: 'send', beats: 0.75 },
-  { id: 'DOWN ECHO', kind: 'send', beats: 0.75 },
+  { id: 'UP ECHO', kind: 'send', beats: 0.5 },
+  { id: 'DOWN ECHO', kind: 'send', beats: 0.5 },
   { id: 'PAN', kind: 'insert', beats: 1 },
   { id: 'ROBOT', kind: 'insert', beats: 1 },
-  { id: 'LOW CUT ECHO', kind: 'send', beats: 0.75 },
+  { id: 'LOW CUT ECHO', kind: 'send', beats: 0.5 },
   { id: 'SPIRAL', kind: 'send', beats: 0.5 },
   { id: 'HELIX', kind: 'insert', beats: 1 },
   { id: 'MOBIUS SAW', kind: 'insert', beats: 8 },
@@ -27,7 +27,13 @@ export const BEAT_FX = [
 ];
 
 const fxNode = (ctx) => new AudioWorkletNode(ctx, 'fx-processor', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
-export const FX_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 3 / 4, 1, 2, 4, 8, 16, 32];
+// Beat values the BEAT ◀ ▶ buttons step through (no 3/4: never useful in a mix).
+export const FX_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32];
+/** Next / previous beat value from `beats` (1 beat when it is not in the list). */
+export const stepFxBeats = (beats, dir) => {
+  const i = FX_BEATS.indexOf(beats);
+  return FX_BEATS[Math.max(0, Math.min(FX_BEATS.length - 1, (i < 0 ? FX_BEATS.indexOf(1) : i) + dir))];
+};
 // PAD FX bank (16 slots, momentary): [effect, beats, depth].
 export const PAD_FX = [
   ['ROLL', 1 / 4, 0.8], ['ROLL', 1 / 8, 0.8], ['ROLL', 1 / 16, 0.8], ['ECHO', 1 / 2, 0.6],
@@ -47,6 +53,10 @@ function impulse(ctx, seconds = 2.8, decay = 3) {
 }
 
 /** Builds one effect graph. Returns {input, output, setBeat(sec), setDepth(0..1), dryLevel(depth), stop()}. */
+// LEVEL/DEPTH response: rises faster than linear so the knob's middle already sounds, and the
+// end of its travel is the full effect (as loud as the music or more, long feedback).
+const curve = (d) => Math.max(0, Math.min(1, d)) ** 0.7;
+
 function build(ctx, id) {
   const input = ctx.createGain();
   const output = ctx.createGain();
@@ -77,7 +87,7 @@ function build(ctx, id) {
       input.connect(delay); delay.connect(tone); tone.connect(fb); fb.connect(delay); tone.connect(output);
       nodes.push(delay, fb, tone);
       fx.setBeat = (s) => delay.delayTime.setTargetAtTime(Math.min(8, s), ctx.currentTime, 0.02);
-      fx.setDepth = (d) => { fb.gain.value = id === 'ECHO' ? 0.35 + 0.35 * d : 0.15 * d; output.gain.value = d; };
+      fx.setDepth = (d) => { fb.gain.value = id === 'ECHO' ? 0.35 + 0.5 * d : 0.35 * d; output.gain.value = 1.3 * curve(d); };
       break;
     }
     case 'PING PONG': {
@@ -92,7 +102,7 @@ function build(ctx, id) {
       merge.connect(output);
       nodes.push(split, merge, dl, dr, fl, fr, mono);
       fx.setBeat = (s) => { dl.delayTime.value = Math.min(8, s); dr.delayTime.value = Math.min(8, s); };
-      fx.setDepth = (d) => { fl.gain.value = fr.gain.value = 0.3 + 0.35 * d; output.gain.value = d; };
+      fx.setDepth = (d) => { fl.gain.value = fr.gain.value = 0.3 + 0.5 * d; output.gain.value = 1.3 * curve(d); };
       break;
     }
     case 'REVERB': {
@@ -102,7 +112,8 @@ function build(ctx, id) {
       pre.type = 'highpass'; pre.frequency.value = 250;
       input.connect(pre); pre.connect(conv); conv.connect(output);
       nodes.push(conv, pre);
-      fx.setDepth = (d) => { output.gain.value = d * 1.2; };
+      fx.setDepth = (d) => { output.gain.value = 2 * curve(d); };
+      fx.dryLevel = (d) => 1 - 0.45 * d; // a full reverb washes over the dry sound
       break;
     }
     case 'FLANGER': {
@@ -115,7 +126,7 @@ function build(ctx, id) {
       input.connect(output); input.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(output);
       nodes.push(delay, depth, fb);
       fx.setBeat = (s) => { o.frequency.value = 1 / s; };
-      fx.setDepth = (d) => { fb.gain.value = 0.3 + 0.55 * d; depth.gain.value = 0.001 + 0.003 * d; };
+      fx.setDepth = (d) => { fb.gain.value = 0.35 + 0.6 * d; depth.gain.value = 0.001 + 0.006 * d; };
       fx.dryLevel = () => 0;
       break;
     }
@@ -131,7 +142,7 @@ function build(ctx, id) {
       stages.at(-1).connect(wet); wet.connect(output); input.connect(output);
       nodes.push(...stages, mod, wet);
       fx.setBeat = (s) => { o.frequency.value = 1 / s; };
-      fx.setDepth = (d) => { wet.gain.value = d; mod.gain.value = 200 + 900 * d; };
+      fx.setDepth = (d) => { wet.gain.value = 1.3 * curve(d); mod.gain.value = 200 + 1800 * d; };
       fx.dryLevel = () => 0;
       break;
     }
@@ -145,7 +156,7 @@ function build(ctx, id) {
       input.connect(f); f.connect(wet); wet.connect(output); input.connect(dry); dry.connect(output);
       nodes.push(f, mod, wet, dry);
       fx.setBeat = (s) => { o.frequency.value = 1 / s; };
-      fx.setDepth = (d) => { wet.gain.value = d * 1.5; dry.gain.value = 1 - d; };
+      fx.setDepth = (d) => { wet.gain.value = 2 * curve(d); dry.gain.value = 1 - d; f.Q.value = 2 + 6 * d; mod.gain.value = 400 + 2600 * d; };
       fx.dryLevel = () => 0;
       break;
     }
@@ -197,7 +208,7 @@ function build(ctx, id) {
       input.connect(delay); delay.connect(shifter); shifter.connect(fb); fb.connect(delay); delay.connect(output);
       nodes.push(delay, fb, shifter);
       fx.setBeat = (s) => delay.delayTime.setTargetAtTime(Math.min(8, s), ctx.currentTime, 0.02);
-      fx.setDepth = (d) => { fb.gain.value = 0.4 + 0.4 * d; output.gain.value = d; };
+      fx.setDepth = (d) => { fb.gain.value = 0.4 + 0.5 * d; output.gain.value = 1.3 * curve(d); };
       break;
     }
     case 'PAN': {
@@ -220,7 +231,7 @@ function build(ctx, id) {
       input.connect(comb); comb.connect(fb); fb.connect(comb); comb.connect(wet); wet.connect(output);
       const dry = ctx.createGain(); input.connect(dry); dry.connect(output);
       nodes.push(comb, fb, wet, dry);
-      fx.setDepth = (d) => { wet.gain.value = d * 0.6; dry.gain.value = 1 - d * 0.7; fb.gain.value = 0.6 + 0.3 * d; comb.delayTime.value = 0.004 + 0.01 * (1 - d); };
+      fx.setDepth = (d) => { wet.gain.value = curve(d); dry.gain.value = 1 - d * 0.9; fb.gain.value = 0.6 + 0.35 * d; comb.delayTime.value = 0.004 + 0.01 * (1 - d); };
       fx.dryLevel = () => 0;
       break;
     }
@@ -232,7 +243,7 @@ function build(ctx, id) {
       input.connect(delay); delay.connect(hp); hp.connect(fb); fb.connect(delay); hp.connect(output);
       nodes.push(delay, fb, hp);
       fx.setBeat = (s) => delay.delayTime.setTargetAtTime(Math.min(8, s), ctx.currentTime, 0.02);
-      fx.setDepth = (d) => { hp.frequency.value = 150 + 1200 * d; fb.gain.value = 0.45 + 0.35 * d; output.gain.value = 0.4 + 0.6 * d; };
+      fx.setDepth = (d) => { hp.frequency.value = 150 + 1200 * d; fb.gain.value = 0.45 + 0.45 * d; output.gain.value = 0.4 + 0.9 * curve(d); };
       break;
     }
     case 'SPIRAL': {
@@ -250,7 +261,7 @@ function build(ctx, id) {
       };
       fx.setBeat = (s) => { beatSec = s; sweep(); };
       fx.activate = sweep;
-      fx.setDepth = (d) => { fb.gain.value = 0.5 + 0.4 * d; output.gain.value = d; };
+      fx.setDepth = (d) => { fb.gain.value = 0.5 + 0.45 * d; output.gain.value = 1.3 * curve(d); };
       break;
     }
     case 'HELIX': {
@@ -281,7 +292,7 @@ function build(ctx, id) {
       const taps = [mk(0), mk(0.5)];
       input.connect(output);
       fx.setBeat = (s) => taps.forEach((t) => { t.o.frequency.value = 1 / s; });
-      fx.setDepth = (d) => taps.forEach((t) => { t.depth.gain.value = 0.001 + 0.004 * d; });
+      fx.setDepth = (d) => taps.forEach((t) => { t.depth.gain.value = 0.001 + 0.007 * d; });
       fx.dryLevel = () => 0;
       break;
     }
@@ -302,7 +313,7 @@ export class BeatFxUnit extends EventTarget {
     this.inserts = inserts;
     this.bpmOf = bpmOf;
     this.effectId = 'ECHO';
-    this.beats = 0.75;
+    this.beats = 0.5;
     this.depth = 0.5;
     this.target = 'master';
     this.on = false;

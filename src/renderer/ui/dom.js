@@ -76,6 +76,9 @@ export function knob(o) {
   dial.addEventListener('wheel', (e) => { e.preventDefault(); set(value - Math.sign(e.deltaY) * (o.max - o.min) / 50); }, { passive: false });
   render();
   el.setValue = (v) => set(v, false);
+  el.getValue = () => value;
+  /** New caption (e.g. EQ knobs that become PART ISOLATOR knobs). */
+  el.setLabel = (text) => { const lbl = el.querySelector('.knob-label'); if (lbl) lbl.textContent = text; dial.title = text; };
   return el;
 }
 
