@@ -1,7 +1,8 @@
 // Track downloader: drives yt-dlp to search YouTube or SoundCloud, read links (tracks, videos,
 // playlists, artist pages), read channel feeds for new releases and download audio with ffmpeg.
 // Tools (yt-dlp, ffmpeg, deno for YouTube's JS challenges) are found in a folder chosen in the
-// Preferences, the PATH, or ~/.stacher when Stacher is installed. Nothing is bundled.
+// Preferences, Reboxed's tools folder (installed from the app, see tools.js), ~/.stacher when
+// Stacher is installed, or the PATH. Nothing is bundled.
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -82,13 +83,14 @@ export class Downloader {
   constructor(send) {
     this.send = send;
     this.customDir = '';
+    this.toolsDir = '';
     this.queue = [];
     this.running = new Map(); // key -> child process
     this.max = 2;
   }
 
   async find(name) {
-    const dirs = [this.customDir, join(homedir(), '.stacher'), ...(process.env.PATH ?? '').split(delimiter)].filter(Boolean);
+    const dirs = [this.customDir, this.toolsDir, join(homedir(), '.stacher'), ...(process.env.PATH ?? '').split(delimiter)].filter(Boolean);
     for (const d of dirs) {
       const p = join(d, name + EXE);
       try { await access(p); return p; } catch { /* next */ }

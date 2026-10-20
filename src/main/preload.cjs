@@ -86,6 +86,13 @@ contextBridge.exposeInMainWorld('rb', {
       ipcRenderer.on('dl:progress', listener);
       return () => ipcRenderer.off('dl:progress', listener);
     },
+    installTools: (names) => ipcRenderer.invoke('tools:install', names),
+    updateYtdlp: () => ipcRenderer.invoke('tools:updateYtdlp'),
+    onToolsProgress: (cb) => {
+      const listener = (_e, name, received, total, phase) => cb(name, received, total, phase);
+      ipcRenderer.on('tools:progress', listener);
+      return () => ipcRenderer.off('tools:progress', listener);
+    },
   },
   stems: {
     status: () => ipcRenderer.invoke('stems:status'),

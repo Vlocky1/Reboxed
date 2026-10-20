@@ -60,7 +60,7 @@ export class SamplerView {
       { label: 'Sync to master tempo', checked: s.sync, action: () => this.sampler.update(i, { sync: !s.sync }) },
       { label: 'Gain', submenu: [0.5, 0.75, 1, 1.25, 1.5].map((g) => ({ label: `${Math.round(g * 100)}%`, checked: Math.abs(s.gain - g) < 0.01, action: () => this.sampler.update(i, { gain: g }) })) },
       '-',
-      { label: 'Capture the playing loop here', disabled: !!s.buffer, action: () => this.app.samplerPress(i) },
+      { label: 'Capture the playing loop here (audible stems only)', disabled: !!s.buffer, action: () => this.app.samplerPress(i) },
       { label: 'Save as WAV…', disabled: !s.buffer, action: () => this.app.saveSample(i) },
       { label: 'Edit…', disabled: !s.buffer, action: () => this.app.editSample(i) },
       { label: 'Eject', disabled: !s.buffer, action: () => this.app.ejectSample(i) },

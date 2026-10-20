@@ -11,6 +11,7 @@ import { scanPaths, readTags, findFiles, listAudio, AUDIO_EXTENSIONS } from './s
 import { StemService } from './stems.js';
 import { Storage, migrateLegacyAppDir, hasLibrary, copyDatabase, moveStemsRoot } from './storage.js';
 import { Downloader } from './downloader.js';
+import { ToolInstaller, TOOLS } from './tools.js';
 import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
 import { Spotify } from './spotify.js';
@@ -200,7 +201,15 @@ function registerIpc(win) {
     if (/^https:\/\/(www\.|music\.)?youtube\.com\/|^https:\/\/youtu\.be\//.test(url)) shell.openExternal(url);
   });
   downloader = new Downloader((ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); });
+  // yt-dlp / deno / ffmpeg installed from the app go to Reboxed's own tools folder.
+  downloader.toolsDir = join(appDir, 'tools');
+  const toolInstaller = new ToolInstaller({
+    dir: downloader.toolsDir, fetch: (url, opts) => net.fetch(url, opts), version: app.getVersion(),
+    send: (ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); },
+  });
   ipcMain.handle('dl:tools', (_e, dir) => { downloader.customDir = dir ?? ''; return downloader.tools(); });
+  ipcMain.handle('tools:install', async (_e, names) => { await toolInstaller.install(names.filter((n) => TOOLS[n])); return downloader.tools(); });
+  ipcMain.handle('tools:updateYtdlp', async () => ({ ...(await toolInstaller.updateYtdlp()), tools: await downloader.tools() }));
   ipcMain.handle('dl:search', (_e, q, n, platform) => downloader.search(q, n, platform));
   ipcMain.handle('dl:feed', (_e, url, n) => downloader.feed(url, n));
   ipcMain.handle('dl:resolve', (_e, url) => downloader.resolve(url));
@@ -384,7 +393,8 @@ async function createWindow() {
       }
       app.exit(errors.length || !report.ok ? 1 : 0);
     });
-    setTimeout(() => { console.log('SMOKE timeout', errors); app.exit(2); }, shotsDir ? 1200000 : 360000);
+    // With both stem models the smoke test separates FAST then HQ on the CPU: allow 10 minutes.
+    setTimeout(() => { console.log('SMOKE timeout', errors); app.exit(2); }, shotsDir ? 1200000 : 600000);
   }
 
   await win.loadURL(`app://rb/renderer/index.html${shotsDir ? '?shots=1' : smoke ? '?smoke=1' : ''}`);

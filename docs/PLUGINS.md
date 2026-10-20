@@ -64,7 +64,7 @@ automatically; a plugin makes it work without rekordbox and lets you tune it.
 | `mapping` | yes | `mapping.json` (Reboxed format) or a raw rekordbox `.midi.csv`. |
 | `decks` | no | 2 or 4. |
 | `audio` | no | `device`: part of the sound card name to select when the controller connects; `layout`: `"stereo"` or `"quad"` (master on 1/2, headphones on 3/4). Users can turn this off (Preferences > Audio). |
-| `padModes` | no | For controllers whose pads use generic names (`PADn_PadModeM`, `PadModeM`): what each mode number is. Values: `HOT CUE`, `PAD FX`, `PAD FX2`, `BEAT JUMP`, `BEAT LOOP`, `SAMPLER`, `KEYBOARD`, `KEY SHIFT`, `STEMS`. |
+| `padModes` | no | For controllers whose pads use generic names (`PADn_PadModeM`, `PadModeM`): what each mode number is. Values: `HOT CUE`, `PAD FX`, `PAD FX2`, `SLICER`, `BEAT JUMP`, `BEAT LOOP`, `SAMPLER`, `KEYBOARD`, `KEY SHIFT`, `STEMS`, `MEMORY CUE`. Pressing a mode button opens the matching pad page on screen. |
 | `fxPartPadStatus` | no | MIDI status bytes (per deck) of the FX PART SELECT pads, when the mapping has no deck column for them. |
 
 ## mapping.json

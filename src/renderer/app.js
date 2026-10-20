@@ -16,16 +16,19 @@ import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
 import { Automix } from './automix.js';
 import { DrumSwap } from './audio/groove.js';
-import { BeatFxUnit } from './audio/fx.js';
+import { BeatFxUnit, PAD_FX } from './audio/fx.js';
 import { encodeWav } from '../shared/wav.js';
 import { toBeatgrid, shiftGrid, doubleGrid, halveGrid, setDownbeatAt, constantGridAt, tapBpm } from '../shared/beatgrid.js';
 import { createCues } from '../shared/autocues.js';
+import { transposeKey } from '../shared/keys.js';
 import { h, toast, fmtTime, contextMenu, modal } from './ui/dom.js';
 import { icon } from './ui/icons.js';
 import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.js';
 import { openRekordboxImport } from './ui/rekordbox-import.js';
 import { DownloadCenter } from './ui/downloads.js';
 import { openRelink } from './ui/relink.js';
+
+const fmtLoopBeats = (b) => (b >= 1 ? String(Math.round(b * 100) / 100) : `1/${Math.round(1 / b)}`);
 
 /** One cached stem as interleaved 16-bit stereo: WAV beside the track (skip the 44-byte header) or legacy raw PCM. */
 async function readStem(meta, name) {
@@ -497,39 +500,110 @@ class App {
   }
 
   /**
-   * Save the active loop of a deck as a WAV sample, in `slot` or the first free slot.
+   * What a capture takes from a deck: its active loop, else a loop of the chosen size starting on
+   * the closest beat (what AUTO BEAT LOOP would set). Null when nothing is loaded.
+   */
+  captureRange(d) {
+    if (!d?.loaded) return null;
+    if (d.loop) return { start: d.loop.start, end: d.loop.end, beats: d.loop.beats };
+    const bg = d.bg;
+    const beats = d.beatLoopSize;
+    const pos = d.position();
+    const start = bg ? Math.max(0, bg.snap(pos, Math.min(1, beats))) : pos;
+    const end = Math.min(d.duration, bg ? bg.timeOf(bg.indexAt(start) + beats) : start + beats * (d.period || 0.5));
+    return end - start > 0.01 ? { start, end, beats } : null;
+  }
+
+  /**
+   * Audio of [start, end) on a deck as it is heard: with stems, only the audible parts (at their
+   * level); otherwise the track. Returns {chans, sr, parts} (parts: stem labels or null).
+   */
+  async deckAudio(d, start, end) {
+    const gains = d.stemsReady ? d.stemGains : null;
+    const partial = gains && gains.some((g) => g < 0.999);
+    if (partial && d.stemMeta) {
+      const meta = d.stemMeta;
+      const sr = meta.rate;
+      const a = Math.max(0, Math.round(start * sr)); const n = Math.max(1, Math.round((end - start) * sr));
+      const chans = [new Float32Array(n), new Float32Array(n)];
+      for (let k = 0; k < 4; k++) {
+        if (gains[k] < 1e-3) continue;
+        const pcm = await readStem(meta, meta.stems[k]);
+        const g = gains[k] / 32768;
+        for (let i = 0; i < n && 2 * (a + i) + 1 < pcm.length; i++) { chans[0][i] += pcm[2 * (a + i)] * g; chans[1][i] += pcm[2 * (a + i) + 1] * g; }
+      }
+      const parts = ['DRUMS', 'BASS', 'INST', 'VOCAL'].filter((_, k) => gains[k] >= 1e-3);
+      return { chans, sr, parts };
+    }
+    if (partial) toast('Stems are still being separated: the full mix was captured', 4000);
+    const full = await this.analyzer.decode(d.track.path);
+    const sr = full.sampleRate;
+    const a = Math.round(start * sr); const b = Math.round(end * sr);
+    const chans = Array.from({ length: Math.min(2, full.numberOfChannels) }, (_, c) => full.getChannelData(c).slice(a, b));
+    return { chans, sr, parts: null };
+  }
+
+  /**
+   * Save a deck's loop (see captureRange) as a WAV sample, in `slot` or the first free slot.
+   * With stems, only the audible stems are captured.
    * @param {number} deckIndex
    * @param {number|null} [slot]
    */
   async captureLoop(deckIndex, slot = null) {
     const d = this.engine.decks[deckIndex];
-    if (!d.loop) { toast('Set a loop first'); return null; }
+    const range = this.captureRange(d);
+    if (!range) { toast('Load a track first'); return null; }
     if (slot === null) slot = this.sampler.slots.findIndex((s) => !s.buffer);
     if (slot < 0) { toast('Sampler is full'); return null; }
-    const full = await this.analyzer.decode(d.track.path);
-    const sr = full.sampleRate;
-    const a = Math.round(d.loop.start * sr); const b = Math.round(d.loop.end * sr);
-    const chans = Array.from({ length: Math.min(2, full.numberOfChannels) }, (_, c) => full.getChannelData(c).slice(a, b));
-    const beats = d.loop.beats ? `${Math.round(d.loop.beats * 100) / 100}b` : 'loop';
-    const name = `${d.track.title} ${beats}`;
-    const path = await this.writeSampleFile(name, chans, sr);
-    const buffer = new AudioBuffer({ numberOfChannels: chans.length, length: chans[0].length, sampleRate: sr });
-    chans.forEach((c, i) => buffer.copyToChannel(c, i));
-    this.sampler.setSlot(slot, { name, path, bpm: d.originalBpm, buffer, mode: 'loop' });
-    toast(`Loop captured to sampler slot ${slot + 1}`);
-    return slot;
+    this.capturing ??= new Set();
+    if (this.capturing.has(slot)) return null; // a capture into this slot is already running
+    this.capturing.add(slot);
+    try {
+      const { chans, sr, parts } = await this.deckAudio(d, range.start, range.end);
+      const beats = range.beats ? `${Math.round(range.beats * 100) / 100}b` : 'loop';
+      const name = `${d.track.title} ${beats}${parts ? ` ${parts.join('+')}` : ''}`;
+      const path = await this.writeSampleFile(name, chans, sr);
+      const buffer = new AudioBuffer({ numberOfChannels: chans.length, length: chans[0].length, sampleRate: sr });
+      chans.forEach((c, i) => buffer.copyToChannel(c, i));
+      this.sampler.setSlot(slot, { name, path, bpm: d.originalBpm, buffer, mode: 'loop' });
+      toast(`${d.loop ? 'Loop' : `${fmtLoopBeats(range.beats)} beats`} captured to sampler slot ${slot + 1}${parts ? ` (${parts.join(' + ')})` : ''}`);
+      return slot;
+    } catch (err) {
+      toast(`Capture failed: ${err.message}`, 5000);
+      return null;
+    } finally {
+      this.capturing.delete(slot);
+    }
   }
 
   /**
-   * Sampler slot pressed: a loaded slot plays; an empty one takes the loop playing now (on `deck`,
-   * else the master deck, else any deck with a loop).
+   * Sampler slot pressed: a loaded slot plays; an empty one captures from `deck`, else the deck
+   * with a loop (master first), else the master / a playing deck at the chosen loop size.
    */
   async samplerPress(i, deck = null) {
     if (this.sampler.slots[i].buffer) { this.sampler.trigger(i); return; }
-    const withLoop = (d) => d?.loaded && d.loop;
-    const src = [deck, this.engine.masterDeck, ...this.visibleDecks().filter((d) => d.playing), ...this.visibleDecks()].find(withLoop);
-    if (!src) { toast('Set a loop on a deck, then click an empty sampler slot to capture it (or drop a track on the slot)', 5000); return; }
+    const decks = [deck, this.engine.masterDeck, ...this.visibleDecks().filter((d) => d.playing), ...this.visibleDecks()].filter((d) => d?.loaded);
+    const src = deck?.loaded ? deck : decks.find((d) => d.loop) ?? decks[0];
+    if (!src) { toast('Load a track on a deck, then click an empty sampler slot to capture its loop (or drop a track on the slot)', 5000); return; }
     await this.captureLoop(src.index, i);
+  }
+
+  /** A deck's pad page was changed on screen: connected controllers follow (pads, LEDs). */
+  onPadModeChange(i, mode) {
+    for (const driver of this.midi?.controllers?.values() ?? []) driver.followMode?.(i, mode);
+  }
+
+  /** PAD FX (held): slot of PAD_FX on deck i's channel while pressed. */
+  padFxPress(i, slot, press) {
+    const unit = this.padFx[i];
+    if (!press) { if (unit.held === slot) { unit.setOn(false); unit.held = null; this.deckViews[i]?.renderPads(); } return; }
+    const [effect, beats, depth] = PAD_FX[slot] ?? PAD_FX[0];
+    unit.setEffect(effect);
+    unit.setBeats(beats);
+    unit.setDepth(depth);
+    unit.setOn(true);
+    unit.held = slot;
+    this.deckViews[i]?.renderPads();
   }
 
   /** Export a sampler slot as a WAV file chosen by the user. */
@@ -556,7 +630,7 @@ class App {
     contextMenu(r.left, r.bottom, [
       ...others.map((o) => ({ label: `Instant Double from Deck ${o.index + 1}`, disabled: d.playing, action: () => this.instantDouble(o.index, i) })),
       ...(others.length ? ['-'] : []),
-      { label: 'Capture loop to sampler', disabled: !d.loop, action: () => this.captureLoop(i) },
+      { label: d.loop ? 'Capture loop to sampler' : `Capture ${fmtLoopBeats(d.beatLoopSize)} beats to sampler`, disabled: !d.loaded, action: () => this.captureLoop(i) },
       { label: 'Create cues from phrases', disabled: !d.loaded, action: () => this.createCuesFor(d.track.id) },
       '-',
       { label: 'Set MIX IN at play head', disabled: !d.loaded, action: () => d.setMixPoint('mixin') },
@@ -1067,6 +1141,48 @@ async function smoke(app) {
     await new Promise((r) => setTimeout(r, 1500));
     let ph = d1.phase() - d2.phase(); if (ph > 0.5) ph -= 1; if (ph < -0.5) ph += 1;
     step('sync phase', Math.abs(ph * d2.period) < 0.02, `${(ph * d2.period * 1000).toFixed(1)} ms`);
+    // The tempo fader really changes the speed: +8 % on the master = the play head runs 1.08x.
+    {
+      d1.userTempo(8);
+      await new Promise((r) => setTimeout(r, 200));
+      const [p0, t0] = [d1.position(), ctx.currentTime];
+      await new Promise((r) => setTimeout(r, 1200));
+      const speed = (d1.position() - p0) / (ctx.currentTime - t0);
+      step('tempo fader changes the speed', Math.abs(speed - 1.08) < 0.01 && Math.abs(d1.currentBpm - 124 * 1.08) < 0.05, `speed x${speed.toFixed(4)}, ${d1.currentBpm.toFixed(2)} BPM`);
+      // On a synced deck the fader moves the shared tempo (master and synced decks follow).
+      d2.userTempo((130 / 120 - 1) * 100);
+      step('synced deck fader moves the shared tempo', d2.sync && Math.abs(d1.currentBpm - 130) < 0.05 && Math.abs(d2.currentBpm - 130) < 0.05,
+        `master ${d1.currentBpm.toFixed(2)} BPM, deck 2 ${d2.currentBpm.toFixed(2)} BPM, sync ${d2.sync}`);
+      d1.setTempoPct(0);
+    }
+    // Quantize: AUTO BEAT LOOP starts on the closest beat line, ahead of the play head too.
+    {
+      const bg = d1.bg;
+      const k = Math.ceil(bg.indexAt(d1.position())) + 2;
+      d1.pause();
+      d1.seek(bg.timeOf(k + 0.8)); d1.beatLoop(4);
+      const ahead = d1.loop.start - bg.timeOf(k + 1);
+      d1.exitLoop();
+      d1.seek(bg.timeOf(k + 0.2)); d1.beatLoop(4);
+      const behind = d1.loop.start - bg.timeOf(k);
+      const len = (d1.loop.end - d1.loop.start) / d1.period;
+      d1.exitLoop();
+      d1.play();
+      step('quantized loop on the closest beat', Math.abs(ahead) < 1e-6 && Math.abs(behind) < 1e-6 && Math.abs(len - 4) < 1e-6,
+        `0.8 beat past → starts ${ahead.toExponential(1)} s from the next beat, 0.2 past → ${behind.toExponential(1)} s from the last one, ${len.toFixed(3)} beats`);
+    }
+    // KEY SYNC: deck 2 (made 10A here) shifts to deck 1's key (or its relative); a manual shift turns it off.
+    {
+      const realKey = d2.analysis.key;
+      d2.analysis = { ...d2.analysis, key: '10A' };
+      d2.toggleKeySync();
+      const synced = transposeKey('10A', d2.keyShift);
+      const ok = d2.keySync && synced.slice(0, -1) === d1.key.slice(0, -1) && Math.abs(d2.keyShift) <= 6;
+      d2.setKeyShift(d2.keyShift + 1);
+      step('key sync', ok && !d2.keySync, `deck 1 ${d1.key}, deck 2 10A shifted ${d2.keyShift - 1} → ${synced}; manual shift turns KEY SYNC off: ${!d2.keySync}`);
+      d2.setKeyShift(0);
+      d2.analysis = { ...d2.analysis, key: realKey };
+    }
     d1.beatLoop(1);
     await new Promise((r) => setTimeout(r, 1200));
     const lp = d1.position();
@@ -1391,6 +1507,16 @@ async function smoke(app) {
         const ch = orig.getChannelData(0);
         const b = onset((i) => ch[Math.round(i * orig.sampleRate / 44100)], n);
         step('MP3 stems aligned with the track', drums.length / 2 === kept.frames && Math.abs(a - b) < 64, `frames ${drums.length / 2}/${kept.frames}, drums onset ${a}, track onset ${b}`);
+        // Sampler capture takes what is heard: drums only -> exactly the drum stem; all parts -> the track.
+        d3.stemMeta ??= kept;
+        [1, 2, 3].forEach((k) => d3.setStemOn(k, false));
+        const only = await app.deckAudio(d3, 8, 10);
+        [1, 2, 3].forEach((k) => d3.setStemOn(k, true));
+        const all = await app.deckAudio(d3, 8, 10);
+        let diff = 0;
+        for (let i = 0; i < only.chans[0].length; i++) diff = Math.max(diff, Math.abs(only.chans[0][i] - drums[2 * (8 * 44100 + i)] / 32768));
+        step('capture: only the audible stems', only.parts?.join() === 'DRUMS' && diff < 1e-4 && all.parts === null && Math.abs(only.chans[0].length - 2 * 44100) < 2,
+          `parts ${only.parts?.join('+')}, max diff vs drum stem ${diff.toExponential(1)}, all parts -> ${all.parts ?? 'track'}`);
       }
       lib.setSetting('stemsQuality', 'auto');
     } else {
@@ -1446,6 +1572,24 @@ async function smoke(app) {
       press(0x97, 0x64);
       step('grv6 pads', !!d1.hotCue(1) && d1.loop?.beats === 4, `hotcueB=${!!d1.hotCue(1)} loop=${d1.loop?.beats}`);
       d1.exitLoop();
+      // Pad mode buttons open the matching pad page on screen; a page picked on screen moves the controller.
+      {
+        const v = app.deckViews[0];
+        const pages = [];
+        press(0x90, 107); pages.push(v.padMode); // PAD FX
+        press(0x90, 30); pages.push(v.padMode); // STEMS
+        press(0x90, 34); pages.push(v.padMode); // SAMPLER
+        press(0x90, 27); pages.push(v.padMode); // HOT CUE
+        v.setPadMode('BEAT JUMP');
+        const ctrlMode = grv.decks[0].mode;
+        v.setPadMode('HOT CUE');
+        const ks0 = d1.keySync;
+        press(0x90, 101); // KEY SYNC
+        const ks1 = d1.keySync;
+        press(0x90, 101);
+        step('grv6 pad mode buttons -> pad pages', pages.join() === 'PAD FX,STEMS,SAMPLER,HOT CUE' && ctrlMode === 'BEAT JUMP' && !ks0 && ks1 && !d1.keySync,
+          `pages ${pages.join(' → ')} · screen BEAT JUMP → controller ${ctrlMode} · KEY SYNC ${ks0}→${ks1}→${d1.keySync}`);
+      }
       // Tempo slider with soft takeover: far away -> ignored, centre -> caught, then moves.
       d1.setTempoPct(0);
       hires(0xb0, 0x00, 16383);
@@ -1537,12 +1681,12 @@ async function smoke(app) {
         step('grv6 fx part select: FX gets only the part', inVocal < inDrums * 0.5 && inDrums < inWhole * 0.8 && !d3.fxParts.some(Boolean) && !app.engine.channels[2].partMode,
           `FX input rms: drums ${inDrums.toFixed(4)}, vocal ${inVocal.toFixed(4)}, whole ${inWhole.toFixed(4)}`);
         // On-screen GROOVE pads.
-        app.deckViews[2].padMode = 'GROOVE'; app.deckViews[2].modeSel.value = 'GROOVE'; app.deckViews[2].renderPads();
+        app.deckViews[2].setPadMode('GROOVE');
         const pads = app.deckViews[2].pads.map((x) => x.textContent);
         await wait(200);
         await window.rb.smokeShot('groove');
         step('ui groove pads', pads[0].startsWith('A1') && /^REL/.test(pads[7]) && /BRAKE/.test(pads[7]), JSON.stringify(pads));
-        app.deckViews[2].padMode = 'HOT CUE'; app.deckViews[2].modeSel.value = 'HOT CUE'; app.deckViews[2].renderPads();
+        app.deckViews[2].setPadMode('HOT CUE');
         app.engine.setCrossfader(0);
         d3.pause();
       } else {
@@ -1751,6 +1895,46 @@ async function smoke(app) {
       app.toggleSampler();
       step('sampler: click an empty slot captures the loop; edit, eject', Math.abs(len - k1.period * 2) < 0.02 && actions === 3 && editor && ejected,
         `slot 6: ${len.toFixed(3)} s (2 beats = ${(k1.period * 2).toFixed(3)} s) · ${actions} buttons · editor ${editor} · ejected ${ejected}`);
+      // No loop set: the click still captures, a loop of the chosen size (4 beats) from the closest beat.
+      k1.seek(6); k1.setBeatLoopSize(4); k1.play();
+      await wait(300);
+      app.samplerPress(6);
+      for (let i = 0; i < 50 && !app.sampler.slots[6].buffer; i++) await wait(100);
+      const noLoop = app.sampler.slots[6].buffer?.duration ?? 0;
+      k1.pause();
+      app.sampler.clear(6);
+      step('sampler: capture without a loop takes the chosen loop size', Math.abs(noLoop - k1.period * 4) < 0.02 && !k1.loop,
+        `${noLoop.toFixed(3)} s (4 beats = ${(k1.period * 4).toFixed(3)} s), deck loop untouched: ${!k1.loop}`);
+    }
+
+    // ---- Pad pages (dropdown like rekordbox), page bar, KEY panel, BEAT SYNC / KEY SYNC ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const v = app.deckViews[0];
+      const k1 = app.engine.decks[0];
+      v.modeBtn.click();
+      const items = [...document.querySelectorAll('.menu.root > li')].map((li) => li.textContent.replace('✓', '').trim());
+      const seq = [...document.querySelectorAll('.menu.root > li')].find((li) => li.textContent.includes('SEQ CALL'));
+      [...document.querySelectorAll('.menu.root > li')].find((li) => li.textContent.trim().endsWith('MEMORY CUE')).click();
+      const memPage = v.padMode === 'MEMORY CUE' && !!v.pageBar.querySelector('button[title^="Add a memory cue"]');
+      k1.addMemoryCue();
+      v.setPadMode('PAD FX');
+      v.padDown(0, {});
+      const fxOn = app.padFx[0].held === 0 && v.pads[0].classList.contains('active');
+      v.padUp(0);
+      const fxOff = app.padFx[0].held === null;
+      v.setPadMode('HOT CUE');
+      v.keyBox.click();
+      document.querySelector('.key-pop button[title="One semitone up"]').click();
+      const shifted = k1.keyShift === 1 && document.querySelector('.key-pop-val')?.textContent === '+1';
+      await wait(400); // let the hidden smoke window repaint before the screenshot
+      await window.rb.smokeShot('pad-pages');
+      v.keyBox.click();
+      k1.setKeyShift(0);
+      const head = [...v.el.querySelectorAll('.deck-headbtns .dbtn')].map((b) => b.textContent).filter(Boolean).join(','); // + icon buttons (menu, eject)
+      step('pad pages, page bar, KEY panel', items.length === 12 && seq?.classList.contains('disabled') && memPage && fxOn && fxOff && shifted && !document.querySelector('.key-pop') && head === 'MASTER,BEAT SYNC,KEY SYNC',
+        `${items.length} pages (SEQ CALL disabled ${seq?.classList.contains('disabled')}) · MEMORY CUE page ${memPage} · PAD FX hold ${fxOn}/${fxOff} · KEY +1 ${shifted} · header ${head}`);
+      await wait(50);
     }
 
     // ---- Updates: real check against GitHub (network test only) ----

@@ -161,10 +161,6 @@ async function downloadsSection(app, library) {
   const folder = h('code.path');
   const showFolder = async () => { const f = await app.downloads.folder(); folder.textContent = f; folder.title = f; };
   showFolder();
-  const tools = h('span.dim', {}, 'Looking for yt-dlp…');
-  app.downloads.tools().then((t) => {
-    tools.textContent = t.ytdlp ? `yt-dlp ${t.version ?? ''} · ffmpeg ${t.ffmpeg ? '✓' : '✗'} · deno ${t.deno ? '✓' : '✗'} — ${t.ytdlp}` : 'yt-dlp not found (install yt-dlp and ffmpeg, or choose the folder that holds them)';
-  });
   const c = cfg();
   return h('div.form-grid', {},
     h('label', {}, 'Audio quality'), h('select', { onchange: (e) => save({ format: e.target.value }) },
@@ -176,8 +172,7 @@ async function downloadsSection(app, library) {
     h('label', {}, 'Check new releases at startup'), h('input', { type: 'checkbox', checked: c.checkOnStart, onchange: (e) => save({ checkOnStart: e.target.checked }) }),
     h('label', {}, 'Hide mixes / streams longer than'), h('select', { onchange: (e) => save({ maxMinutes: Number(e.target.value) }) },
       [[0, 'no limit'], [8, '8 min'], [12, '12 min'], [20, '20 min']].map(([v, l]) => h('option', { value: v, selected: c.maxMinutes === v }, l))),
-    h('label', {}, 'Tools'), h('div', {}, tools, ' ',
-      h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { save({ toolsDir: d }); toast('Tools folder set'); } } }, 'yt-dlp folder…')));
+    h('label', {}, 'Tools'), app.downloads.toolsPanel());
 }
 
 /** Preferences, in tabs. Applies changes through `apply(key, value)`. */
