@@ -28,7 +28,7 @@ export const RELEASE_FX = ['BACKSPIN', 'BRAKE', 'ROLL ECHO', 'ECHO', 'FILTER', '
 
 export const TEMPO_RANGES = [6, 10, 16, 100]; // 100 = WIDE
 export const BEAT_LOOP_SIZES = [1 / 64, 1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512];
-export const BEAT_JUMP_SIZES = [1, 2, 4, 8, 16, 32, 64, 128];
+export const BEAT_JUMP_SIZES = [1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32, 64, 128];
 export const HOT_CUE_COUNT = 16; // A–P in two banks of 8
 export const HOT_CUE_COLORS = ['#3fdc5a', '#3fdc5a', '#ffe23a', '#ff9a1f', '#ff4040', '#ff3fa0', '#a24dff', '#3d7dff',
   '#25e6d6', '#3fdc5a', '#ffe23a', '#ff9a1f', '#ff4040', '#ff3fa0', '#a24dff', '#3d7dff'];
@@ -278,6 +278,8 @@ export class Deck extends EventTarget {
     if (cue.end !== undefined) {
       this.setLoop({ start: cue.start, end: cue.end }, true);
     } else {
+      // A point hot cue leaves the loop that plays (rekordbox), then jumps.
+      if (this.loop) this.exitLoop();
       this.jumpTo(cue.start);
     }
     if (!this.playing) this.play();
@@ -392,8 +394,8 @@ export class Deck extends EventTarget {
     }, 16);
   }
 
-  /** Track seconds per jog tick in SHIFT + jog search (about 30x the normal jog). */
-  static SEARCH_SEC_PER_TICK = 0.08;
+  /** Track seconds per jog tick in SHIFT + jog search (a turn ≈ 30 s of track, 16x the normal jog). */
+  static SEARCH_SEC_PER_TICK = 0.04;
 
   jumpToStart() { if (this.loaded) { this.seek(0); this.emit('cue'); } }
 
@@ -607,6 +609,20 @@ export class Deck extends EventTarget {
     // be just ahead of the play head, rather than always on the one already passed.
     const start = this.quantize && bg ? Math.max(0, bg.snap(pos, Math.min(1, beats))) : pos;
     const end = bg ? bg.timeOf(bg.indexAt(start) + beats) : start + beats * (this.period || 0.5); // 120 BPM fallback
+    this.setLoop({ start, end, beats });
+  }
+
+  /**
+   * A loop of `beats` from `start` (already quantized), e.g. where LOOP IN was first pressed before
+   * a long press made it an auto beat loop. The play head may already be past its end: the loop
+   * wraps it back, so the loop plays in time with the beat it was started on.
+   */
+  beatLoopFrom(start, beats = this.beatLoopSize) {
+    if (!this.loaded) return;
+    this.pendingLoopIn = undefined;
+    this.beatLoopSize = beats;
+    const bg = this.bg;
+    const end = bg ? bg.timeOf(bg.indexAt(start) + beats) : start + beats * (this.period || 0.5);
     this.setLoop({ start, end, beats });
   }
 

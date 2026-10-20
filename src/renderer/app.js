@@ -1351,14 +1351,18 @@ async function smoke(app) {
     const label = dv.pads[4].querySelector('.pad-letter').textContent;
     dv.setPadPage(0);
     step('pad key shift (rekordbox table, 2 pages)', k1 === 1 && k2 === -8 && label === '-8', `pad 6 → ${k1}, page 2 pad 5 → ${k2} (label ${label})`);
-    // BEAT JUMP pads: -1 +1 -2 +2 -4 +4 -8 +8, exactly on the grid.
+    // BEAT JUMP pads: -1/4 +1/4 -1/2 +1/2 -1 +1 -2 +2, exactly on the grid.
     dv.setPadMode('BEAT JUMP');
     d1.pause(); d1.seek(d1.beatTime(8) + 0.1);
     const j0 = d1.position(); const b0 = d1.beatIndexAt(j0);
-    dv.padDown(5, {}); // +4
+    dv.padDown(7, {}); // +2
     const jumped = d1.beatIndexAt(d1.position()) - b0;
+    const b1 = d1.beatIndexAt(d1.position());
+    dv.padDown(1, {}); // +1/4
+    const quarter = d1.beatIndexAt(d1.position()) - b1;
     const labels = dv.pads.map((p) => p.querySelector('.pad-letter').textContent).join(' ');
-    step('pad beat jump (rekordbox table, on the grid)', Math.abs(jumped - 4) < 1e-6 && labels === '-1 +1 -2 +2 -4 +4 -8 +8', `pad 6 → ${jumped.toFixed(4)} beats · pads ${labels}`);
+    step('pad beat jump (rekordbox table, on the grid)', Math.abs(jumped - 2) < 1e-6 && Math.abs(quarter - 0.25) < 1e-6 && labels === '-1/4 +1/4 -1/2 +1/2 -1 +1 -2 +2',
+      `pad 8 → ${jumped.toFixed(4)} beats, pad 2 → ${quarter.toFixed(4)} · pads ${labels}`);
     d1.play();
     dv.setPadMode('HOT CUE');
     d1.setKeyShift(0);
@@ -1676,6 +1680,51 @@ async function smoke(app) {
         press(0x90, 101);
         step('grv6 pad mode buttons -> pad pages', pages.join() === 'PAD FX,STEMS,SAMPLER,HOT CUE' && ctrlMode === 'BEAT JUMP' && !ks0 && ks1 && !d1.keySync,
           `pages ${pages.join(' → ')} · screen BEAT JUMP → controller ${ctrlMode} · KEY SYNC ${ks0}→${ks1}→${d1.keySync}`);
+      }
+      // Real-GRV6 feedback (1.13.1): SHIFT + jog, LOOP IN held, CALL < > on a loop, MEMORY, hot cue in a loop.
+      {
+        d1.exitLoop(); d1.seek(2); d1.play(); // back from the end of the 24 s test track
+        await wait(100);
+        // SHIFT held + platter touched + turned: no scratch, the play head moves forward fast.
+        tx([0x90, 0x3f, 0x7f]);              // SHIFT
+        tx([0x90, 0x67, 0x7f]);              // JogTouch (with SHIFT)
+        const p0 = d1.position();
+        for (let k = 0; k < 20; k++) tx([0xb0, 0x22, 0x45]); // jog +5 x 20
+        await wait(300);
+        const searched = d1.position() - p0;
+        const noScratch = !d1.scratching;
+        tx([0x80, 0x67, 0]); tx([0x80, 0x3f, 0]);
+        step('grv6 SHIFT + jog = fast search, no scratch', noScratch && searched > 2, `moved ${searched.toFixed(2)} s, scratching ${!noScratch}`);
+        // LOOP IN held: the loop starts on the beat where it was pressed, not where the long press registers.
+        d1.exitLoop(); d1.setBeatLoopSize(1);
+        tx([0x90, 0x10, 0x7f]);              // LOOP IN pressed
+        const pressedAt = d1.pendingLoopIn;
+        await wait(600);                     // the controller sends the long press later
+        tx([0x90, 0x14, 0x7f]); tx([0x80, 0x14, 0]); tx([0x80, 0x10, 0]);
+        const longLoop = d1.loop ? { ...d1.loop } : null;
+        step('grv6 LOOP IN held: loop from the press', longLoop && Math.abs(longLoop.start - pressedAt) < 1e-6 && longLoop.beats === 1 && d1.pendingLoopIn === undefined,
+          `pressed at ${pressedAt?.toFixed(3)} s, loop ${longLoop?.start.toFixed(3)}–${longLoop?.end.toFixed(3)} (${longLoop?.beats} beat)`);
+        // CALL < > with a loop: half, then double.
+        d1.beatLoop(4);
+        press(0x90, 0x12); const half = d1.currentLoopBeats();
+        press(0x90, 0x13); press(0x90, 0x13); const dbl = d1.currentLoopBeats();
+        step('grv6 CALL < > halve / double the loop', Math.abs(half - 2) < 1e-6 && Math.abs(dbl - 8) < 1e-6, `4 → ${half} → ${dbl} beats`);
+        // MEMORY adds a memory cue; a point hot cue leaves the loop.
+        const memBefore = d1.memoryCues().length;
+        press(0x90, 0x3d);
+        const memAfter = d1.memoryCues().length;
+        d1.setCues((d1.track.cues ?? []).filter((c) => !(c.kind === 'hot' && c.slot === 2)));
+        d1.exitLoop(); d1.seek(2); d1.hotCuePress(2);   // hot cue C at 2 s
+        d1.seek(8); d1.beatLoop(2);
+        d1.hotCuePress(2);
+        const leftLoop = !d1.loop;
+        step('grv6 MEMORY; hot cue leaves the loop', memAfter === memBefore + 1 && leftLoop, `memory cues ${memBefore} → ${memAfter} · loop after hot cue: ${!leftLoop}`);
+        // BEAT JUMP pads as rekordbox: -1/4 +1/4 -1/2 +1/2 -1 +1 -2 +2.
+        app.deckViews[0].setPadMode('BEAT JUMP');
+        const jumpLabels = app.deckViews[0].pads.map((p) => p.querySelector('.pad-letter').textContent).join(' ');
+        app.deckViews[0].setPadMode('HOT CUE');
+        step('beat jump pads start with 1/4 and 1/2', jumpLabels === '-1/4 +1/4 -1/2 +1/2 -1 +1 -2 +2', jumpLabels);
+        d1.setBeatLoopSize(4);
       }
       // Tempo slider with soft takeover: far away -> ignored, centre -> caught, then moves.
       d1.setTempoPct(0);
