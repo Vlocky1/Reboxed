@@ -1,6 +1,7 @@
 import { h, fmtTime, fader, contextMenu, promptText } from './dom.js';
 import { Overview } from './waveform.js';
 import { TEMPO_RANGES, BEAT_LOOP_SIZES, BEAT_JUMP_SIZES, HOT_CUE_COUNT } from '../audio/deck.js';
+import { JogWheel } from './jog.js';
 import { displayKey, transposeKey } from '../../shared/keys.js';
 import { TRACK_COLORS } from '../../shared/rekordbox-xml.js';
 import { icon } from './icons.js';
@@ -116,7 +117,7 @@ export class DeckView {
         h('div.deck-headbtns', {}, this.masterBtn, this.syncBtn)),
       h('div.deck-ovrow', {}, this.timeEl, h('div.canvas-box.ov-box', {}, this.overviewCanvas), this.remainEl),
       h('div.deck-body', {},
-        h('div.deck-transport', {}, this.cueBtn, this.playBtn),
+        h('div.deck-transport', {}, (this.jog = new JogWheel(d)).el, h('div.transport-row', {}, this.cueBtn, this.playBtn)),
         h('div.deck-center', {},
           h('div.row.modes', {}, this.qBtn, this.mtBtn, this.slipBtn, this.revBtn, this.censorBtn, h('span.spacer'), this.modeSel, this.bankBtn),
           h('div.pads', {}, this.pads),
@@ -406,6 +407,7 @@ export class DeckView {
     this.timeEl.textContent = fmtTime(pos, true);
     this.remainEl.textContent = `-${fmtTime(Math.max(0, d.duration - pos), true)}`;
     this.overview.draw(style);
+    this.jog.draw();
     if (d.playing !== this.playBtn.classList.contains('on')) this.refresh();
     // Blink CUE while paused at a point other than cue (CDJ convention)
     this.cueBtn.classList.toggle('blink', d.loaded && !d.playing && Math.abs(pos - d.cuePoint) > 0.01);
