@@ -780,3 +780,43 @@ body.gbar-icons .gbtn .ico { font-size: 14px; }
 .settings-content .form-grid > div > select, .settings-content .form-grid > div > input.text, .settings-content .form-grid > div > textarea { align-self: stretch; }
 .settings-content .form-grid select { width: 100%; }
 .settings-content input[type=checkbox] { align-self: flex-start; }
+
+/* Sampler: capture on empty slots, save / edit / eject on loaded ones */
+.smp-tile { cursor: pointer; }
+.smp-tile:not(.loaded) { cursor: copy; }
+.smp-tile:not(.loaded):hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent); }
+.smp-actions { position: absolute; right: 3px; bottom: 5px; display: none; gap: 2px; z-index: 1; }
+.smp-tile.loaded:hover .smp-actions { display: flex; }
+.smp-act { width: 20px; height: 17px; padding: 0; font-size: 11px; line-height: 1; border-radius: 4px; border: 1px solid var(--line-2); background: rgba(0,0,0,.6); color: var(--text); cursor: pointer; }
+.smp-act:hover { background: var(--accent); border-color: var(--accent); }
+.dialog:has(.sample-editor) { width: min(760px, 94vw); }
+.sample-editor .se-wave { display: block; width: 100%; height: 110px; margin-bottom: 8px; border-radius: 8px; background: var(--bg-0); cursor: ew-resize; }
+.sample-editor .form-grid > div { min-width: 0; }
+.sample-editor .se-times { font-size: 11.5px; color: var(--dim); }
+.sample-editor input[type=range] { width: 220px; }
+
+/* Preferences: fixed size (it only shrinks when the window is smaller), close button pinned */
+.dialog:has(.settings) { width: 1000px; height: 700px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); position: relative; }
+.dialog:has(.settings) > .dialog-buttons { display: none; }
+.dialog:has(.settings) > .dialog-body { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 0; }
+.dialog:has(.settings) .settings { margin: 0; height: 100%; min-height: 0; }
+.dialog:has(.settings) .settings-pane { height: 100%; overflow-y: auto; }
+.dialog:has(.settings) .settings-tabs { border-radius: 12px 0 0 12px; overflow-y: auto; }
+.settings-close { position: absolute; top: 14px; right: 14px; z-index: 5; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text-2); font-size: 14px; cursor: pointer; display: grid; place-items: center; }
+.settings-close:hover { color: #fff; background: var(--panel-3); }
+
+/* Preferences > Keyboard */
+.keymap td:first-child { color: var(--text); }
+.key-bind { min-width: 92px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text); font: 600 12px var(--mono, ui-monospace), monospace; cursor: pointer; }
+.key-bind:hover { border-color: var(--accent); }
+.key-bind.rec { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--panel-2)); animation: keyrec 1s ease-in-out infinite; }
+@keyframes keyrec { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); } }
+.key-fixed { font: 600 12px var(--mono, ui-monospace), monospace; color: var(--dim); padding: 5px 10px; }
+
+/* Updates */
+.update-pill { height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 28%, transparent); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; animation: updpulse 2s ease-in-out infinite; }
+.update-pill:hover { background: var(--accent); }
+@keyframes updpulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); } }
+.dialog.update-dialog { width: min(620px, 92vw); }
+.update-notes { white-space: pre-wrap; max-height: 300px; overflow: auto; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 12px/1.5 var(--font, inherit); color: var(--text-2); }
+.update-body progress { width: 100%; }

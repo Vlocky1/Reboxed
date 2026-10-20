@@ -1,7 +1,8 @@
 import { h, modal, toast } from './dom.js';
 import { icon } from './icons.js';
 import { BPM_RANGES } from '../analysis/analyzer.js';
-import { SHORTCUT_HELP } from './keyboard.js';
+import { keyboardSection } from './keyboard.js';
+import { updateSettings } from './updates.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 import { openRelink } from './relink.js';
 import { pluginsSection } from './plugins.js';
@@ -206,7 +207,9 @@ export async function openSettings(library, engine, apply, midi, app) {
             [['maximized', 'Full screen windowed (maximised)'], ['fullscreen', 'Full screen'], ['window', 'Normal window']].map(([v, l]) => h('option', { value: v }, l)));
           window.rb.fullscreen().then((f) => { sel.value = f.startMode; sel.disabled = false; });
           return h('div', {}, sel, h('span.dim', {}, '  F11 switches full screen on / off at any time'));
-        })()))],
+        })()),
+      h('h4', {}, 'Updates'),
+      h('div.form-grid', {}, ...updateSettings(app)))],
     ['appearance', 'Appearance', () => appearanceSection(library, apply)],
     ['decks', 'Decks & Mixer', () => h('div.form-grid', {},
       h('label', {}, 'Decks'), sel('deckCount', [[2, '2 decks'], [4, '4 decks']], Number),
@@ -226,12 +229,11 @@ export async function openSettings(library, engine, apply, midi, app) {
     ['downloads', 'Downloads', () => downloadsSection(app, library)],
     ['midi', 'MIDI', () => (midi ? midi.renderSettings() : h('p.dim', {}, 'MIDI not initialised'))],
     ['plugins', 'Plugins', () => pluginsSection(app)],
-    ['keyboard', 'Keyboard', () => h('table.shortcuts', {}, h('tr', {}, h('th', {}, 'Function'), h('th', {}, 'Deck 1'), h('th', {}, 'Deck 2')),
-      SHORTCUT_HELP.map(([f, a, b]) => h('tr', {}, h('td', {}, f), h('td', {}, a), h('td', {}, b))))],
+    ['keyboard', 'Keyboard', () => keyboardSection(library)],
   ];
   // Sidebar icon and one-line description of every tab.
   const META = {
-    general: ['gear', 'Analysis, key notation, waveform and window.'],
+    general: ['gear', 'Analysis, key notation, waveform, window and updates.'],
     appearance: ['palette', 'Theme, accent colour, size of the interface.'],
     decks: ['layout2', 'Number of decks, sync, tempo range and mixer curves.'],
     audio: ['headphones', 'Sound cards for the master and the headphones.'],
@@ -240,7 +242,7 @@ export async function openSettings(library, engine, apply, midi, app) {
     downloads: ['download', 'Quality, folder, name cleaner and tools.'],
     midi: ['midi', 'Connected controllers, MIDI monitor and learn.'],
     plugins: ['plug', 'Hardware plugins: install, create, enable.'],
-    keyboard: ['keyboard', 'Keyboard shortcuts.'],
+    keyboard: ['keyboard', 'Keyboard shortcuts: presets for QWERTY and AZERTY, every key can be changed.'],
   };
   const pane = h('div.settings-pane');
   const bar = h('div.settings-tabs', { role: 'tablist' });
@@ -265,6 +267,7 @@ export async function openSettings(library, engine, apply, midi, app) {
   let first = 'general';
   try { first = localStorage.getItem('reboxed.settingsTab') || first; } catch { /* private storage */ }
   await show(first);
-  const body = h('div.settings', {}, bar, pane);
-  await modal(`Preferences — Reboxed ${version}`, body, [{ label: 'Close', primary: true, value: true }]);
+  // Fixed-size window with its close button pinned to the top-right corner (Escape closes too).
+  await modal(`Preferences — Reboxed ${version}`, (close) => h('div.settings', {}, bar, pane,
+    h('button.settings-close', { type: 'button', title: 'Close (Esc)', onclick: () => close(true) }, '✕')), []);
 }

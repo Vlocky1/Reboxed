@@ -10,6 +10,8 @@ import { openSettings } from './ui/settings.js';
 import { MidiController } from './ui/midi.js';
 import { PluginRegistry } from './controller/plugins.js';
 import { applyTheme } from './themes.js';
+import { editSample } from './ui/sample-editor.js';
+import { checkForUpdates, openUpdateDialog } from './ui/updates.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
 import { Automix } from './automix.js';
@@ -123,6 +125,8 @@ class App {
     this.downloads = new DownloadCenter(this);
     this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download tracks: search YouTube or SoundCloud, links, new releases', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'search'));
     this.dlBadge = h('span.dl-badge', { hidden: true });
+    // Shown when GitHub has a newer version.
+    this.updatePill = h('button.update-pill', { hidden: true, title: 'A new version of Reboxed is available', onclick: () => openUpdateDialog(this) });
     this.dlBtn.append(this.dlBadge);
     this.samplerView = new SamplerView(this.sampler, this);
     this.samplerView.el.hidden = !s.showSampler;
@@ -162,7 +166,7 @@ class App {
           h('div.ggroup', { title: 'Panels' }, this.fxBtn, this.mixerBtn, this.samplerBtn),
           h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
           h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.recBtn, this.recTime)),
-        h('div.gbar-right', {}, this.stemStatus, this.midiStatus, this.clock,
+        h('div.gbar-right', {}, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
           h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: 'Appearance: themes, colours, size' }, icon('palette')),
           h('button.lbtn', { onclick: () => this.openSettings(), title: 'Preferences' }, icon('gear')))),
       this.fxPanel,
@@ -185,6 +189,9 @@ class App {
     this.library.addEventListener('change', (e) => this.onLibraryChange(e.detail));
     requestAnimationFrame((t) => this.frame(t));
     // New releases from followed channels, quietly, a few seconds after start.
+    if (!new URLSearchParams(location.search).has('smoke') && !new URLSearchParams(location.search).has('shots') && this.library.settings.checkUpdates !== false) {
+      setTimeout(() => checkForUpdates(this, { silent: true }).then((info) => { if (info?.newer) toast(`Reboxed ${info.latest} is available: click the update button in the top bar`, 7000); }), 5000);
+    }
     if (!new URLSearchParams(location.search).has('smoke') && this.downloads.cfg.checkOnStart && this.downloads.cfg.subs.length) {
       setTimeout(() => this.downloads.checkFeeds().catch(() => {}), 8000);
     }
@@ -481,27 +488,64 @@ class App {
     }
   }
 
-  /** Save the active loop of a deck as a WAV sample and put it in the first free slot. */
-  async captureLoop(deckIndex) {
+  /** A sample as a WAV file in the library's samples folder. */
+  async writeSampleFile(name, chans, sr) {
+    const { userData } = await window.rb.paths();
+    const path = `${userData}\\samples\\${String(name).replace(/[\\/:*?"<>|]/g, '_')}-${Date.now()}.wav`;
+    await window.rb.writeFile(path, encodeWav(chans, sr));
+    return path;
+  }
+
+  /**
+   * Save the active loop of a deck as a WAV sample, in `slot` or the first free slot.
+   * @param {number} deckIndex
+   * @param {number|null} [slot]
+   */
+  async captureLoop(deckIndex, slot = null) {
     const d = this.engine.decks[deckIndex];
     if (!d.loop) { toast('Set a loop first'); return null; }
-    const slot = this.sampler.slots.findIndex((s) => !s.buffer);
+    if (slot === null) slot = this.sampler.slots.findIndex((s) => !s.buffer);
     if (slot < 0) { toast('Sampler is full'); return null; }
     const full = await this.analyzer.decode(d.track.path);
     const sr = full.sampleRate;
     const a = Math.round(d.loop.start * sr); const b = Math.round(d.loop.end * sr);
     const chans = Array.from({ length: Math.min(2, full.numberOfChannels) }, (_, c) => full.getChannelData(c).slice(a, b));
-    const { userData } = await window.rb.paths();
     const beats = d.loop.beats ? `${Math.round(d.loop.beats * 100) / 100}b` : 'loop';
-    const name = `${d.track.title} ${beats}`.replace(/[\\/:*?"<>|]/g, '_');
-    const path = `${userData}\\samples\\${name}-${Date.now()}.wav`;
-    await window.rb.writeFile(path, encodeWav(chans, sr));
+    const name = `${d.track.title} ${beats}`;
+    const path = await this.writeSampleFile(name, chans, sr);
     const buffer = new AudioBuffer({ numberOfChannels: chans.length, length: chans[0].length, sampleRate: sr });
     chans.forEach((c, i) => buffer.copyToChannel(c, i));
     this.sampler.setSlot(slot, { name, path, bpm: d.originalBpm, buffer, mode: 'loop' });
     toast(`Loop captured to sampler slot ${slot + 1}`);
     return slot;
   }
+
+  /**
+   * Sampler slot pressed: a loaded slot plays; an empty one takes the loop playing now (on `deck`,
+   * else the master deck, else any deck with a loop).
+   */
+  async samplerPress(i, deck = null) {
+    if (this.sampler.slots[i].buffer) { this.sampler.trigger(i); return; }
+    const withLoop = (d) => d?.loaded && d.loop;
+    const src = [deck, this.engine.masterDeck, ...this.visibleDecks().filter((d) => d.playing), ...this.visibleDecks()].find(withLoop);
+    if (!src) { toast('Set a loop on a deck, then click an empty sampler slot to capture it (or drop a track on the slot)', 5000); return; }
+    await this.captureLoop(src.index, i);
+  }
+
+  /** Export a sampler slot as a WAV file chosen by the user. */
+  async saveSample(i) {
+    const s = this.sampler.slots[i];
+    if (!s.buffer) return;
+    const file = await window.rb.saveFileDialog(`${s.name || `sample ${i + 1}`}.wav`.replace(/[\\/:*?"<>|]/g, '_'), 'wav');
+    if (!file) return;
+    const chans = Array.from({ length: s.buffer.numberOfChannels }, (_, c) => s.buffer.getChannelData(c));
+    await window.rb.writeFile(file, encodeWav(chans, s.buffer.sampleRate));
+    toast(`Sample saved: ${file}`);
+  }
+
+  async editSample(i) { return editSample(this, i); }
+
+  ejectSample(i) { this.sampler.clear(i); }
 
   // ---- deck menu: instant doubles, eject, capture -------------------------------------------
 
@@ -646,6 +690,12 @@ class App {
   }
 
   /** DOWNLOAD button badge: running downloads (with progress), else new releases to look at. */
+  refreshUpdatePill() {
+    const info = this.updateInfo;
+    this.updatePill.hidden = !info?.newer;
+    if (info?.newer) this.updatePill.textContent = `⬆ Update ${info.latest}`;
+  }
+
   refreshDownloadStatus() {
     if (!this.dlBadge) return;
     const dl = this.downloads;
@@ -1604,7 +1654,7 @@ async function smoke(app) {
       const cards = [...document.querySelectorAll('.plugin-card b')].map((b) => b.textContent);
       const live = [...document.querySelectorAll('.plugin-tag.live')].length;
       await window.rb.smokeShot('plugins');
-      document.querySelector('.dialog:has(.settings) .dialog-buttons button').click();
+      document.querySelector('.settings-close').click();
       await closed;
       step('preferences tabs', tabs.length === 10 && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
         `${tabs.join(' | ')} — active ${active}, library ${libPath}, stems ${info.stemsRoot}`);
@@ -1627,7 +1677,7 @@ async function smoke(app) {
       document.querySelector('.accent-dot[data-accent="#ff4f8b"]').click();
       await wait(100);
       const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
-      document.querySelector('.dialog:has(.settings) .dialog-buttons button').click();
+      document.querySelector('.settings-close').click();
       await closed;
       app.library.setSetting('topbarLabels', 'icons');
       (await import('./themes.js')).applyTheme(app.library.settings);
@@ -1639,6 +1689,75 @@ async function smoke(app) {
       (await import('./themes.js')).applyTheme(app.library.settings);
       step('appearance: themes, accent, top bar', cards >= 8 && before === '#0e0e0f' && midnight === '#0b1020' && accent === '#ff4f8b' && labelHidden
         && groups.join() === 'Panels,Mixing helpers,Tools' && bg() === '#0e0e0f', `${cards} themes · bg ${before} → ${midnight} · accent ${accent} · gbtn ${panelBg} · groups ${groups}`);
+    }
+
+    // ---- Keyboard: rebind a key in Preferences, then use it; AZERTY preset; pinned close button ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const closed = app.openSettings('keyboard');
+      await wait(400);
+      const pinned = !!document.querySelector('.settings-close') && getComputedStyle(document.querySelector('.dialog:has(.settings) .dialog-buttons')).display === 'none';
+      const rows = document.querySelectorAll('.keymap .key-bind').length;
+      document.querySelector('.key-bind[data-key="deck1.play"]').click();
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', key: 'p', bubbles: true }));
+      await wait(100);
+      const bound = lib.settings.keymap?.['deck1.play'];
+      const stolen = lib.settings.keymap?.['deck2.memSet']; // Shift+KeyP stays: only KeyP was taken
+      await window.rb.smokeShot('keyboard');
+      [...document.querySelectorAll('.settings-content .dbtn')].find((b) => /AZERTY/.test(b.textContent)).click();
+      await wait(100);
+      const azertyPlay = lib.settings.keymap?.['deck1.play'];
+      document.querySelector('.key-bind[data-key="deck1.play"]').click();
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', key: 'p', bubbles: true }));
+      await wait(100);
+      document.querySelector('.settings-close').click();
+      await closed;
+      const k1 = app.engine.decks[0];
+      if (!k1.loaded) await app.loadTrack(0, lib.all()[0].id);
+      const before = k1.playing;
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', key: 'p', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyP', key: 'p', bubbles: true }));
+      await wait(150);
+      const toggled = k1.playing !== before;
+      if (k1.playing) k1.pause();
+      lib.setSetting('keymap', null);
+      step('keyboard: rebind, AZERTY preset, pinned close', pinned && rows > 50 && bound === 'KeyP' && stolen === 'Shift+KeyP' && azertyPlay === 'KeyW' && toggled,
+        `pinned ${pinned} · ${rows} keys · play → ${bound} · AZERTY play ${azertyPlay} · P toggles ${toggled}`);
+    }
+
+    // ---- Sampler: an empty slot takes the playing loop; save / edit / eject on loaded slots ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const k1 = app.engine.decks[0];
+      if (!k1.loaded) await app.loadTrack(0, lib.all()[0].id);
+      app.sampler.stopAll();
+      for (let i = 0; i < 16; i++) app.sampler.clear(i);
+      if (app.samplerView.el.hidden) app.toggleSampler();
+      k1.seek(4); k1.beatLoop(2);
+      app.samplerView.tiles[5].tile.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }));
+      for (let i = 0; i < 50 && !app.sampler.slots[5].buffer; i++) await wait(100);
+      const got = app.sampler.slots[5];
+      const len = got.buffer?.duration ?? 0;
+      const actions = app.samplerView.tiles[5].tile.querySelectorAll('.smp-act').length;
+      await window.rb.smokeShot('sampler-capture');
+      const editing = app.editSample(5);
+      await wait(300);
+      const editor = !!document.querySelector('.sample-editor canvas');
+      document.querySelector('.dialog:has(.sample-editor) .dialog-buttons button').click();
+      await editing;
+      app.samplerView.tiles[5].tile.querySelector('.smp-act[title="Eject"]').click();
+      const ejected = !app.sampler.slots[5].buffer;
+      k1.exitLoop();
+      app.toggleSampler();
+      step('sampler: click an empty slot captures the loop; edit, eject', Math.abs(len - k1.period * 2) < 0.02 && actions === 3 && editor && ejected,
+        `slot 6: ${len.toFixed(3)} s (2 beats = ${(k1.period * 2).toFixed(3)} s) · ${actions} buttons · editor ${editor} · ejected ${ejected}`);
+    }
+
+    // ---- Updates: real check against GitHub (network test only) ----
+    if (await window.rb.smokeDlTest()) {
+      const { checkForUpdates } = await import('./ui/updates.js');
+      const info = await checkForUpdates(app, { silent: true });
+      step('updates: GitHub release check', !!info?.latest && typeof info.newer === 'boolean' && app.updatePill.hidden === !info.newer, `current ${info?.current} · latest ${info?.latest} · newer ${info?.newer}`);
     }
 
     // ---- Export to a USB drive for CDJ / XDJ (a folder stands for the drive) ----

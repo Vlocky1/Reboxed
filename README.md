@@ -307,28 +307,18 @@ Reboxed sépare chaque morceau en **VOCAL / INST / BASS / DRUMS**, en deux quali
 | **Pads** | Modes HOT CUE, BEAT LOOP, BEAT JUMP, SLICER, SAMPLER, KEY SHIFT, KEYBOARD. |
 | **Mixer** | Trim, auto-gain, EQ isolateur 3 bandes, Color FX (FILTER, SPACE, DUB ECHO, NOISE, CRUSH), cue casque sur une 2ᵉ carte son, courbes de fader et de crossfader, limiteur, VU-mètres. |
 | **Beat FX** (16) | DELAY, ECHO, PING PONG, REVERB, FLANGER, PHASER, FILTER, TRANS, ROLL, REV ROLL, VINYL BRAKE, PITCH, UP ECHO, DOWN ECHO, PAN, ROBOT. Synchronisés au BPM, sur CH1–4 ou MASTER. |
-| **Sampler** | 16 slots en one-shot ou en boucle, synchro au master, glisser-déposer, capture de la boucle d'un deck |
-| **Automix** | Joue la liste affichée avec préchargement, sync et fondu de 4 à 32 temps ; répétition et lecture aléatoire |
-| **Enregistrement** | WAV 16 bits dans `Musique\Reboxed Recordings\`, ajouté automatiquement à la collection |
+| **Sampler** | 16 slots en one-shot ou en boucle, synchro au master, glisser-déposer. **Un clic sur une case vide y met la boucle qui joue** (deck master d'abord ; depuis les pads SAMPLER d'un deck, la boucle de ce deck). Sur une case remplie : **enregistrer** en WAV, **éditer** (nom, découpe début / fin sur la forme d'onde avec écoute, one-shot ou boucle, sync, BPM, gain) et **éjecter**. |
+| **Automix** | Joue la liste affichée avec préchargement, sync et fondu de 4 à 32 temps ; répétition et lecture aléatoire. |
+| **Enregistrement** | WAV 16 bits dans `Musique\Reboxed Recordings\`, ajouté automatiquement à la collection. |
+| **Contrôle** | **Plugins matériels** (Préférences ▸ Plugins) : un plugin par contrôleur, activable ou non, reconnu automatiquement au branchement. Fournis : **DDJ-GRV6** (mapping complet, LED, jogs, Groove Circuit, carte son 4 canaux, [notice](docs/DDJ-GRV6.md)), **DDJ-FLX2**, **DDJ-FLX4**, **DDJ-FLX6** et **DDJ-FLX10**. N'importe qui peut en créer un pour un autre contrôleur, en un clic depuis un mapping rekordbox `.midi.csv` ou à la main ([guide](docs/PLUGINS.md)), et le partager. Sans plugin, un contrôleur dont le mapping est dans une installation rekordbox est quand même reconnu. **Clavier** : preset « Performance 1 », en QWERTY ou en AZERTY (clavier AZERTY détecté tout seul) ; chaque raccourci se change dans Préférences ▸ Keyboard (clic, puis la nouvelle touche), avec les lettres de ton clavier. MIDI learn. |
 
-### 🎮 Contrôleurs et plugins
-
-- **Plugins matériels** (*Préférences ▸ Plugins*) : un plugin par contrôleur, activable ou non, **reconnu automatiquement au branchement**.
-- **Plugins fournis** :
-  - **DDJ-GRV6** : mapping complet, LED, jogs, Groove Circuit, carte son 4 canaux ([notice](docs/DDJ-GRV6.md)) ;
-  - **DDJ-FLX2**, **DDJ-FLX4**, **DDJ-FLX6** et **DDJ-FLX10**.
-- **Crée le tien** pour un autre contrôleur, en un clic depuis un mapping Rekordbox `.midi.csv` ou à la main ([guide](docs/PLUGINS.md)), puis partage-le.
-- **Sans plugin**, un contrôleur dont le mapping se trouve dans une installation Rekordbox est quand même reconnu.
-- **Clavier** façon preset « Performance 1 », et **MIDI learn**.
-
----
-
-## 🖥️ Interface
+Reboxed reprend la disposition et l'ambiance du mode PERFORMANCE de Rekordbox.
 
 Disposition et ambiance du mode PERFORMANCE de Rekordbox :
 - **Barre globale**, rangée par usage : logo, mode et dispositions (2 decks / 4 decks / navigateur) ; **panneaux** (FX, MIXER, SAMPLER) ; **aides au mix** (MIX POINT LINK, AUTOMIX) ; **outils** (DOWNLOAD, REC) ; puis l'état (stems, MIDI, horloge), le raccourci **Appearance** (palette) et les Préférences.
 - **Thèmes** (Préférences ▸ Appearance) : Reboxed Dark, OLED Black, Midnight, Graphite, Ember, Neon, Forest et Rosé, avec un aperçu de chacun ; couleur d'accent au choix (10 teintes ou n'importe quelle couleur) ; taille de l'interface de 85 % à 125 % ; barre du haut avec icônes et noms ou icônes seules.
-- **Préférences épurées** : une barre latérale avec icônes, un titre et une phrase par section, des réglages en cartes, des interrupteurs à la place des cases à cocher. Onglets General, Appearance, Decks & Mixer, Audio, Library, Stems, Downloads, MIDI, Plugins, Keyboard. La version de Reboxed est affichée dans la barre de titre et en tête des Préférences.
+- **Mises à jour depuis l'appli** : au démarrage, Reboxed regarde sur GitHub si une version plus récente existe ; un bouton « Update » apparaît dans la barre du haut, et un clic télécharge, installe et relance la nouvelle version (bibliothèque conservée). Aussi dans Préférences ▸ General ▸ Updates.
+- **Préférences épurées** (taille fixe, bouton de fermeture en haut à droite) : une barre latérale avec icônes, un titre et une phrase par section, des réglages en cartes, des interrupteurs à la place des cases à cocher. Onglets General, Appearance, Decks & Mixer, Audio, Library, Stems, Downloads, MIDI, Plugins, Keyboard. La version de Reboxed est affichée dans la barre de titre et en tête des Préférences.
 - **Panneau Beat FX** sur sa propre ligne.
 - **Formes d'onde agrandies** et empilées, avec le repère de chaque deck.
 - **Decks** : pochette, KEY, BPM, MASTER/SYNC, vue d'ensemble, gros CUE/PLAY, pads colorés, fader de tempo.

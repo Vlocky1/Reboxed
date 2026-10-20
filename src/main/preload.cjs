@@ -49,6 +49,12 @@ contextBridge.exposeInMainWorld('rb', {
     onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cdj:progress', l); return () => ipcRenderer.off('cdj:progress', l); },
   },
   version: () => ipcRenderer.invoke('app:version'),
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    download: (asset) => ipcRenderer.invoke('update:download', asset),
+    install: (file) => ipcRenderer.invoke('update:install', file),
+    onProgress: (cb) => { const l = (_e, got, total) => cb(got, total); ipcRenderer.on('update:progress', l); return () => ipcRenderer.off('update:progress', l); },
+  },
   fullscreen: () => ipcRenderer.invoke('win:fullscreen'),
   setFullscreen: (opts) => ipcRenderer.invoke('win:setFullscreen', opts),
   storage: {
