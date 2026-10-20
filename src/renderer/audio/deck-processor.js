@@ -1,10 +1,14 @@
 // AudioWorklet deck player: owns the decoded PCM and the play head.
 // - direct mode: resampling read at `rate` (vinyl: tempo changes pitch)
 // - stretch mode (master tempo and/or key shift): two overlapping Hann grains read the source
-//   at `pitch` speed while the play head advances at `rate` (granular time-stretch)
+//   at `pitch` speed while the play head advances at `rate` (granular time-stretch). Each new grain
+//   starts where its waveform best continues the grain still sounding (WSOLA), so the overlaps add
+//   up instead of cancelling: no level wobble, no "robot" voice.
 // - sample-accurate loops, reverse, slip (shadow position that keeps running)
 
 const GRAIN = 2048;
+const WSOLA_SEARCH = 512;   // frames either side of the play head where a grain may start (~12 ms)
+const WSOLA_STEP = 8;       // correlation computed every 8th frame of the overlap (cheap, accurate enough)
 const STEM_BLOCK = 4096; // granularity of the "stems ready" map (stem frames)
 const REPORT_EVERY = 512; // frames between position reports (~86/s at 44.1 kHz)
 
@@ -27,6 +31,7 @@ class DeckProcessor extends AudioWorkletProcessor {
     this.loop = null;      // {start, end} in source frames
     this.grains = [{ start: 0, n: 0 }, { start: 0, n: GRAIN / 2 }];
     this.window = new Float32Array(GRAIN);
+    this.wsRef = new Float32Array(GRAIN / 2 / WSOLA_STEP); // what the sounding grain plays next
     for (let i = 0; i < GRAIN; i++) this.window[i] = Math.sin((Math.PI * i) / GRAIN) ** 2;
     this.sinceReport = 0;
     this.gain = 1;         // de-click ramp
@@ -56,6 +61,9 @@ class DeckProcessor extends AudioWorkletProcessor {
   /** Release FX that read the drum stem at their own position (the others filter it per frame). */
   get relPositional() { const t = this.drum.rel?.type; return t === 'BRAKE' || t === 'BACKSPIN' || t === 'ROLL'; }
 
+  /** ROLL ECHO: rolls the drum slice (read position) and fades it into echoes (per-frame stage). */
+  get relRolls() { const t = this.drum.rel?.type; return t === 'ROLL' || t === 'ROLL ECHO'; }
+
   /** Drum stem sample at stem frame sx (with roll / trans / positional release FX / gain applied). */
   drumSample(ch, sx) {
     const d = this.drum;
@@ -63,7 +71,7 @@ class DeckProcessor extends AudioWorkletProcessor {
     let pos = sx;
     if (d.roll && sx >= d.roll.start) pos = d.roll.start + ((sx - d.roll.start) % d.roll.len);
     if (rel && (rel.type === 'BRAKE' || rel.type === 'BACKSPIN')) pos = rel.pos;
-    if (rel && rel.type === 'ROLL' && sx >= rel.start) pos = rel.start + ((sx - rel.start) % rel.slice);
+    if (rel && this.relRolls && sx >= rel.start) pos = rel.start + ((sx - rel.start) % rel.slice);
     const i = Math.floor(pos);
     const len = this.stems[0].length / 2;
     if (i < 0 || i + 1 >= len) return 0;
@@ -75,7 +83,7 @@ class DeckProcessor extends AudioWorkletProcessor {
     return g * (a + (b - a) * f);
   }
 
-  /** ECHO / FILTER release FX on the drum part, once per output frame (int16 scale in and out). */
+  /** ECHO / ROLL ECHO / FILTER release FX on the drum part, once per output frame (int16 scale in and out). */
   releasePost(ch, v) {
     const rel = this.drum.rel;
     if (rel.type === 'FILTER') {
@@ -83,7 +91,8 @@ class DeckProcessor extends AudioWorkletProcessor {
       rel.lp2[ch] += rel.coef * (rel.lp[ch] - rel.lp2[ch]);
       return rel.lp2[ch] * rel.gain;
     }
-    // ECHO: the dry drums fade out fast, beat-synced echoes keep ringing.
+    // ECHO: the dry drums fade out fast, beat-synced echoes keep ringing. ROLL ECHO: the dry part is
+    // the roll, fading over a beat, so the drums leave as a roll dissolving into echoes.
     const buf = rel.buf[ch];
     const r = (rel.w - rel.delay + buf.length) % buf.length;
     const echo = buf[r];
@@ -152,6 +161,7 @@ class DeckProcessor extends AudioWorkletProcessor {
           break;
         }
         case 'ECHO': rel.dry = Math.max(0, rel.dry - 1 / (0.03 * sampleRate)); rel.w = (rel.w + 1) % rel.buf[0].length; break;
+        case 'ROLL ECHO': rel.dry = Math.max(0, 1 - k) ** 1.5; rel.w = (rel.w + 1) % rel.buf[0].length; break;
         default: break;
       }
     }
@@ -217,7 +227,7 @@ class DeckProcessor extends AudioWorkletProcessor {
             type: x.type, t: 0, len: Math.max(64, x.beat * sampleRate), pos: at, speed: 1, gain: 1,
             start: at, slice: Math.max(64, (x.beatTrack / 8) * this.stemRate),
             lp: [0, 0], lp2: [0, 0], coef: 1, dry: 1,
-            buf: x.type === 'ECHO' ? [new Float32Array(sampleRate * 3), new Float32Array(sampleRate * 3)] : null,
+            buf: x.type === 'ECHO' || x.type === 'ROLL ECHO' ? [new Float32Array(sampleRate * 3), new Float32Array(sampleRate * 3)] : null,
             w: 0, delay: Math.min(sampleRate * 3 - 1, Math.round(0.75 * x.beat * sampleRate)),
           };
         }
@@ -266,6 +276,38 @@ class DeckProcessor extends AudioWorkletProcessor {
       default: break;
     }
     this.report(true);
+  }
+
+  /** Mono mix at source frame x (WSOLA alignment only). */
+  mono(x) {
+    const i = Math.floor(x);
+    if (i < 0 || i + 1 >= this.length) return 0;
+    const f = x - i;
+    let v = 0;
+    for (const d of this.channels) v += d[i] + (d[i + 1] - d[i]) * f;
+    return v;
+  }
+
+  /**
+   * WSOLA: start of a new grain near `target` (the play head) whose first half best matches what
+   * `other`, the grain still sounding, plays during the overlap. Normalised cross-correlation, coarse
+   * search then refined to the frame.
+   */
+  alignedStart(other, target, speed) {
+    const half = GRAIN / 2;
+    const ref = this.wsRef;
+    const base = other.start + other.n * speed;
+    for (let k = 0, j = 0; k < half; k += WSOLA_STEP, j++) ref[j] = this.mono(base + k * speed);
+    const score = (d) => {
+      let c = 0; let e = 1e-9;
+      for (let k = 0, j = 0; k < half; k += WSOLA_STEP, j++) { const v = this.mono(target + d + k * speed); c += ref[j] * v; e += v * v; }
+      return c / Math.sqrt(e);
+    };
+    let best = 0; let bestScore = -Infinity;
+    for (let d = -WSOLA_SEARCH; d <= WSOLA_SEARCH; d += 16) { const sc = score(d); if (sc > bestScore) { bestScore = sc; best = d; } }
+    const coarse = best;
+    for (let d = coarse - 15; d <= coarse + 15; d++) { const sc = score(d); if (sc > bestScore) { bestScore = sc; best = d; } }
+    return Math.max(0, Math.min(this.length - 1, target + best));
   }
 
   beginSlip() { this.slipActive = true; this.slipPos = this.pos; }
@@ -330,7 +372,7 @@ class DeckProcessor extends AudioWorkletProcessor {
           l += a * w; pl += this.lastPart * w;
           if (nch > 1 || this.stems) { r += this.sample(1, x) * w; pr += this.lastPart * w; } else { r += a * w; pr += this.lastPart * w; }
           g.n++;
-          if (g.n >= GRAIN) { g.n = 0; g.start = this.pos; }
+          if (g.n >= GRAIN) { g.n = 0; g.start = this.alignedStart(g === this.grains[0] ? this.grains[1] : this.grains[0], this.pos, grainSpeed); }
         }
         this.curW = 1;
       } else {

@@ -659,9 +659,12 @@ export class Browser {
     this.paintTreeCursor();
   }
 
-  /** BROWSE press: open the item under the tree cursor (folder: expand) and go to its tracks. */
+  /**
+   * BROWSE press: in the tree, open the item under the cursor (folder: expand) and go to its tracks;
+   * in the track list, go back to the playlists (cursor on the current one).
+   */
   browsePress() {
-    if (this.focusArea !== 'tree') return;
+    if (this.focusArea !== 'tree') { this.treeCursor = this.source; this.setFocus('tree'); return; }
     const id = this.treeCursor ?? this.source;
     const node = this.lib.findNode(id)?.node;
     if (node?.type === 'folder') { this.lib.toggleFolder(id); return; }

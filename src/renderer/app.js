@@ -2,7 +2,7 @@ import { Library } from './library.js';
 import { AudioEngine } from './audio/engine.js';
 import { Analyzer, mediaUrl } from './analysis/analyzer.js';
 import { DeckView } from './ui/deck-view.js';
-import { MixerView, FxView } from './ui/mixer-view.js';
+import { MixerView, FxView, deckOrder } from './ui/mixer-view.js';
 import { Browser } from './ui/browser.js';
 import { drawDetail } from './ui/waveform.js';
 import { installKeyboard } from './ui/keyboard.js';
@@ -11,6 +11,7 @@ import { MidiController } from './ui/midi.js';
 import { PluginRegistry } from './controller/plugins.js';
 import { applyTheme } from './themes.js';
 import { editSample } from './ui/sample-editor.js';
+import { openDrumSwapEditor } from './ui/drum-swap-editor.js';
 import { checkForUpdates, openUpdateDialog } from './ui/updates.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
@@ -21,6 +22,7 @@ import { encodeWav } from '../shared/wav.js';
 import { toBeatgrid, shiftGrid, doubleGrid, halveGrid, setDownbeatAt, constantGridAt, tapBpm } from '../shared/beatgrid.js';
 import { createCues } from '../shared/autocues.js';
 import { transposeKey } from '../shared/keys.js';
+import { RELEASE_FX } from './audio/deck.js';
 import { h, toast, fmtTime, contextMenu, modal } from './ui/dom.js';
 import { icon } from './ui/icons.js';
 import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.js';
@@ -103,8 +105,11 @@ class App {
         h('button.dbtn.small.icon-btn', { title: 'Deck menu', onclick: (e) => this.deckMenu(e, i) }, icon('more')));
     });
     this.mixer = new MixerView(this.engine, {
-      colorFx: this.library.settings.colorFx,
-      onColorFx: (type) => this.library.setSetting('colorFx', type),
+      // Color FX starts off (plain FILTER on the COLOR knobs), like the controller; the last type
+      // chosen is remembered for CFX ON.
+      colorFx: 'FILTER',
+      onColorFx: (type) => { if (type !== 'FILTER') this.library.setSetting('colorFx', type); },
+      onPartIso: (i) => this.ensureStems(this.engine.decks[i]),
     });
     this.fxView = new FxView(this.engine.fx, this.engine.decks.length);
     this.browser = new Browser(this);
@@ -265,15 +270,16 @@ class App {
   get deckCount() { return this.library.settings.deckCount === 4 ? 4 : 2; }
   visibleDecks() { return this.engine.decks.slice(0, this.deckCount); }
 
-  /** 2-deck: [1] mixer [2]   4-deck: [1][2] mixer [3][4] */
+  /** 2-deck: [1] mixer [2]   4-deck: [3][1] mixer [2][4], like the channels of a 4-deck controller. */
   applyLayout() {
     const n = this.deckCount;
     this.engine.decks.slice(n).forEach((d) => { if (d.playing) d.pause(); });
-    const views = this.deckViews.slice(0, n).map((v) => v.el);
+    const order = deckOrder(n);
+    const views = order.map((i) => this.deckViews[i].el);
     this.decksEl.classList.toggle('four', n === 4);
     this.wavesEl.classList.toggle('four', n === 4);
     this.decksEl.replaceChildren(...views.slice(0, n / 2), this.mixer.el, ...views.slice(n / 2));
-    this.wavesEl.replaceChildren(...this.waveRows.slice(0, n));
+    this.wavesEl.replaceChildren(...order.map((i) => this.waveRows[i]));
     this.layoutBtns?.forEach((b, k) => b.classList.toggle('on', k === (n === 4 ? 1 : 0)));
     this.mixer.setDeckCount(n);
     this.browser?.renderTree();
@@ -632,6 +638,7 @@ class App {
       ...(others.length ? ['-'] : []),
       { label: d.loop ? 'Capture loop to sampler' : `Capture ${fmtLoopBeats(d.beatLoopSize)} beats to sampler`, disabled: !d.loaded, action: () => this.captureLoop(i) },
       { label: 'Create cues from phrases', disabled: !d.loaded, action: () => this.createCuesFor(d.track.id) },
+      { label: 'DRUM SWAP slots…', action: () => this.openDrumSwapEditor(i) },
       '-',
       { label: 'Set MIX IN at play head', disabled: !d.loaded, action: () => d.setMixPoint('mixin') },
       { label: 'Set MIX OUT at play head', disabled: !d.loaded, action: () => d.setMixPoint('mixout') },
@@ -824,27 +831,58 @@ class App {
         const file = `${userData}/groove/deck${i + 1}-${'AB'[bank]}${slot + 1}.wav`;
         await window.rb.writeFile(file, encodeWav([s.buffer.getChannelData(0), s.buffer.getChannelData(1)], s.buffer.sampleRate));
         const saved = { ...(this.library.settings.grooveCaptures ?? {}) };
-        saved[`${i}:${bank}:${slot}`] = { file, bpm: s.bpm, bars: s.bars, name: s.name };
+        saved[`${i}:${bank}:${slot}`] = { file, bpm: s.bpm, bars: s.bars, name: s.name, gain: s.gain };
         this.library.setSetting('grooveCaptures', saved);
+        // The capture replaces what the editor had put in this slot (built-in loop, file, empty).
+        const slots = { ...(this.library.settings.grooveSlots ?? {}) };
+        delete slots[`${i}:${bank}:${slot}`];
+        this.library.setSetting('grooveSlots', slots);
       } catch (err) { console.warn('drum capture not saved', err); }
     }));
+    const loadFile = (i, bank, slot, m) => fetch(mediaUrl(m.file))
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then((buf) => buf && this.engine.ctx.decodeAudioData(buf))
+      .then((buffer) => { if (buffer) this.groove[i]?.store(bank, slot, { buffer, bpm: m.bpm, bars: m.bars, name: m.name, gain: m.gain, file: m.file }); })
+      .catch(() => { /* file moved or deleted: the built-in loop stays */ });
     for (const [k, m] of Object.entries(this.library.settings.grooveCaptures ?? {})) {
       const [i, bank, slot] = k.split(':').map(Number);
-      fetch(mediaUrl(m.file))
-        .then((r) => (r.ok ? r.arrayBuffer() : null))
-        .then((buf) => buf && this.engine.ctx.decodeAudioData(buf))
-        .then((buffer) => { if (buffer) this.groove[i]?.store(bank, slot, { buffer, bpm: m.bpm, bars: m.bars, name: m.name }); })
-        .catch(() => { /* file moved or deleted: the built-in loop stays */ });
+      loadFile(i, bank, slot, m);
+    }
+    // Slots changed in the DRUM SWAP editor: another built-in loop, an audio file, or empty.
+    for (const [k, m] of Object.entries(this.library.settings.grooveSlots ?? {})) {
+      const [i, bank, slot] = k.split(':').map(Number);
+      const g = this.groove[i];
+      if (!g) continue;
+      if (m.empty) g.eject(bank, slot);
+      else if (m.builtin !== undefined) { g.setBuiltin(bank, slot, m.builtin); if (m.gain !== undefined) g.setSlotGain(bank, slot, m.gain); }
+      else if (m.file) loadFile(i, bank, slot, m);
     }
   }
 
-  /** DRUM CAPTURE: store bars of the deck's drum stem into a DRUM SWAP slot. */
-  async drumCapture(i) {
+  /** DRUM CAPTURE: store bars of the deck's drum stem into a DRUM SWAP slot (default: the next free one). */
+  async drumCapture(i, slot) {
     const d = this.engine.decks[i];
-    if (!d.stemMeta) { toast('Separate stems first'); return -1; }
-    const slot = this.groove[i].capture(await readStem(d.stemMeta, 'drums'), d.stemMeta.rate);
-    toast(slot >= 0 ? `Drums captured to ${'AB'[this.groove[i].bank]}${slot + 1} (${this.groove[i].captureBars} bar)` : 'Nothing to capture here');
-    return slot;
+    if (!d.stemMeta) { toast('Separate stems first (they are needed to capture the drums)'); this.ensureStems(d); return -1; }
+    const got = this.groove[i].capture(await readStem(d.stemMeta, 'drums'), d.stemMeta.rate, slot);
+    toast(got >= 0 ? `Drums captured to ${'AB'[this.groove[i].bank]}${got + 1} (${this.groove[i].captureBars * 4} beats)` : 'Nothing to capture here');
+    return got;
+  }
+
+  /** DRUM SWAP slot editor of deck i. */
+  openDrumSwapEditor(i) { return openDrumSwapEditor(this, i); }
+
+  /** Remember what a DRUM SWAP slot holds (built-in loop, file, capture, empty) across restarts. */
+  saveGrooveSlot(i, bank, slot) {
+    const key = `${i}:${bank}:${slot}`;
+    const s = this.groove[i].slots[bank][slot];
+    const slots = { ...(this.library.settings.grooveSlots ?? {}) };
+    const captures = { ...(this.library.settings.grooveCaptures ?? {}) };
+    if (s === null) { slots[key] = { empty: true }; delete captures[key]; }
+    else if (s.builtin !== undefined) { slots[key] = { builtin: s.builtin, gain: s.gain }; delete captures[key]; }
+    else if (s.file) { slots[key] = { file: s.file, bpm: s.bpm, bars: s.bars, name: s.name, gain: s.gain }; delete captures[key]; }
+    else { delete slots[key]; if (captures[key]) captures[key] = { ...captures[key], gain: s.gain }; } // a capture (its WAV is saved on capture)
+    this.library.setSetting('grooveSlots', slots);
+    this.library.setSetting('grooveCaptures', captures);
   }
 
   /** A controller was (dis)connected: select its sound card if its plugin declares one ("audio"). */
@@ -1048,6 +1086,11 @@ class App {
 
   frame() {
     this.frames = (this.frames ?? 0) + 1;
+    // Optional timing of each part of a frame (smoke test / diagnostics): this.perf = {}.
+    const perf = this.perf;
+    let mark = perf ? performance.now() : 0;
+    const lap = (name) => { if (!perf) return; const t = performance.now(); perf[name] = (perf[name] ?? 0) + t - mark; mark = t; };
+    if (perf) perf.frames = (perf.frames ?? 0) + 1;
     this.engine.tick();
     this.automix.tick();
     this.mixPointTick();
@@ -1060,14 +1103,23 @@ class App {
       this.midiStatus.lastChild.textContent = names.length ? names.join(', ') : 'No controller';
       this.midiStatus.classList.toggle('on', names.length > 0);
     }
-    if (this.midi?.controllers) for (const c of this.midi.controllers.values()) c.updateLeds();
+    lap('ticks');
+    // Controller LEDs at 30 Hz: plenty for lights, and they cost as much as a waveform otherwise.
+    const ledNow = performance.now();
+    if (this.midi?.controllers && !(ledNow - (this.lastLeds ?? 0) < 33)) { this.lastLeds = ledNow; for (const c of this.midi.controllers.values()) c.updateLeds(); }
+    lap('leds');
     if (!this.samplerView.el.hidden) this.samplerView.frame();
     const style = this.library.settings.waveformColor;
     if (!document.body.classList.contains('browse-full')) {
       const stemMode = this.library.settings.stemWaveform;
-      this.visibleDecks().forEach((d, i) => drawDetail(this.waveCanvases[i], d, { style, spanSec: this.zoom, color: DECK_COLORS[i], stemMode }));
+      // The zoom is real (listening) time, like rekordbox: a faster deck shows more of its track,
+      // so decks at the same BPM show beat grids of the same size, lined up when synced.
+      this.visibleDecks().forEach((d, i) => drawDetail(this.waveCanvases[i], d, { style, spanSec: this.zoom * (d.rate || 1), color: DECK_COLORS[i], stemMode }));
+      lap('waveforms');
       this.deckViews.slice(0, this.deckCount).forEach((v) => v.frame(style));
+      lap('decks');
       this.mixer.frame();
+      lap('mixer');
     }
     if (this.engine.recording) this.recTime.textContent = fmtTime((performance.now() - this.engine.recordStarted) / 1000);
     requestAnimationFrame(() => this.frame());
@@ -1089,6 +1141,18 @@ function syntheticTrack(ctx, bpm = 124, seconds = 20) {
     for (let i = 0; i < d.length; i++) d[i] += 0.1 * Math.sin((2 * Math.PI * 220 * i) / sr) + 0.06 * Math.sin((2 * Math.PI * 261.63 * i) / sr) + 0.06 * Math.sin((2 * Math.PI * 329.63 * i) / sr);
   }
   return buf;
+}
+
+/** Frames per second over 2 s, and the average ms of each part of a frame: [ok, info] for step(). */
+async function measureFrames(app) {
+  app.perf = {};
+  const [t0, f0] = [performance.now(), app.frames];
+  await new Promise((r) => setTimeout(r, 2000));
+  const fps = (app.frames - f0) / ((performance.now() - t0) / 1000);
+  const { frames = 1, ...parts } = app.perf;
+  app.perf = null;
+  const ms = Object.entries(parts).map(([k, v]) => `${k} ${(v / frames).toFixed(2)}`).join(', ');
+  return [fps > 40, `${fps.toFixed(1)} fps · ms per frame: ${ms}`];
 }
 
 async function smoke(app) {
@@ -1183,6 +1247,7 @@ async function smoke(app) {
       d2.setKeyShift(0);
       d2.analysis = { ...d2.analysis, key: realKey };
     }
+    step('frame rate (2 decks playing)', ...(await measureFrames(app)));
     d1.beatLoop(1);
     await new Promise((r) => setTimeout(r, 1200));
     const lp = d1.position();
@@ -1229,7 +1294,13 @@ async function smoke(app) {
     app.browser.select('related');
     step('related tracks', app.browser.rows.map((r) => r.track.title).join(',') === 'Kick 140', app.browser.rows.map((r) => r.track.title).join(','));
     lib.setSetting('deckCount', 4); app.applyLayout();
-    step('4-deck layout', app.decksEl.querySelectorAll('.deck').length === 4 && app.mixer.stripsEl.querySelectorAll('.strip').length === 5, '');
+    {
+      const deckOrderShown = [...app.decksEl.querySelectorAll('.deck')].map((el) => Number(el.dataset.deck) + 1).join('');
+      const waveOrder = [...app.wavesEl.querySelectorAll('.wave-badge')].map((el) => el.textContent).join('');
+      step('4-deck layout (order 3-1-2-4)', app.decksEl.querySelectorAll('.deck').length === 4 && app.mixer.stripsEl.querySelectorAll('.strip').length === 5 && deckOrderShown === '3124' && waveOrder === '3124',
+        `decks ${deckOrderShown}, waveforms ${waveOrder}`);
+    }
+    step('frame rate (4 decks)', ...(await measureFrames(app)));
     // Hot cue bank I–P
     const dv = app.deckViews[0];
     dv.bankBtn.click();
@@ -1272,8 +1343,24 @@ async function smoke(app) {
     step('slicer', sliceOk && !d1.loop && !d1.slip, `slice=${sliceOk} after: loop=${!!d1.loop} slip=${d1.slip}`);
     d1.censorDown(); await new Promise((r) => setTimeout(r, 200)); d1.censorUp();
     step('censor', !d1.reverse && !d1.slip, '');
-    dv.padMode = 'KEY SHIFT'; dv.padDown(5, {});
-    step('pad key shift', d1.keyShift === 2, String(d1.keyShift));
+    // rekordbox KEY SHIFT pads: +4 +5 +6 +7 / 0 +1 +2 +3 (page 2: -4 -3 -2 -1 / -8 -7 -6 -5).
+    dv.setPadMode('KEY SHIFT'); dv.padDown(5, {});
+    const k1 = d1.keyShift;
+    dv.setPadPage(1); dv.padDown(4, {});
+    const k2 = d1.keyShift;
+    const label = dv.pads[4].querySelector('.pad-letter').textContent;
+    dv.setPadPage(0);
+    step('pad key shift (rekordbox table, 2 pages)', k1 === 1 && k2 === -8 && label === '-8', `pad 6 → ${k1}, page 2 pad 5 → ${k2} (label ${label})`);
+    // BEAT JUMP pads: -1 +1 -2 +2 -4 +4 -8 +8, exactly on the grid.
+    dv.setPadMode('BEAT JUMP');
+    d1.pause(); d1.seek(d1.beatTime(8) + 0.1);
+    const j0 = d1.position(); const b0 = d1.beatIndexAt(j0);
+    dv.padDown(5, {}); // +4
+    const jumped = d1.beatIndexAt(d1.position()) - b0;
+    const labels = dv.pads.map((p) => p.querySelector('.pad-letter').textContent).join(' ');
+    step('pad beat jump (rekordbox table, on the grid)', Math.abs(jumped - 4) < 1e-6 && labels === '-1 +1 -2 +2 -4 +4 -8 +8', `pad 6 → ${jumped.toFixed(4)} beats · pads ${labels}`);
+    d1.play();
+    dv.setPadMode('HOT CUE');
     d1.setKeyShift(0);
     dv.padMode = 'HOT CUE'; dv.renderPads();
 
@@ -1619,8 +1706,11 @@ async function smoke(app) {
       if (d3.stemsReady) {
         d3.play();
         hires(0xb2, 0x08, 0);   // PART ISOLATOR VOCAL knob fully left
-        step('grv6 part isolator', d3.stemGains[3] === 0, JSON.stringify(d3.stemGains));
+        const labels = [...app.mixer.stripsEl.querySelectorAll('.strip.ch3 .knob .knob-label')].map((l) => l.textContent).join(',');
+        step('grv6 part isolator (HI vocal, MID inst+bass, LOW drums)', d3.stemGains[3] === 0 && d3.partIso && labels.includes('VOCAL,INST,DRUMS'),
+          `${JSON.stringify(d3.stemGains)} · ch3 knobs ${labels}`);
         hires(0xb2, 0x08, 16383);
+        d3.setPartIso(false);
         const g3 = app.groove[2];
         // Built-in loops: bank A slot 2 (Techno) plays at once, at the deck's tempo.
         press(0x92, 0x01);      // DRUM SWAP 2
@@ -1629,27 +1719,75 @@ async function smoke(app) {
         const loopRate = [...g3.playing.values()][0]?.src.playbackRate.value;
         press(0x92, 0x01);
         step('grv6 drum swap built-in loop', builtin && Math.abs(loopRate - 1) < 0.01, `${g3.slot(1).name} rate=${loopRate}`);
-        press(0x92, 0x08);      // DRUM CAPTURE
+        // DRUM CAPTURE (rekordbox): CAPTURE arms it, the slot pressed next receives the drums.
+        press(0x92, 0x08);      // DRUM CAPTURE on
+        const armed = g3.captureArmed;
+        press(0x92, 0x00);      // DRUM SWAP 1 receives the capture (does not play)
         for (let k = 0; k < 30 && !g3.slot(0).captured; k++) await wait(100);
-        press(0x92, 0x00);      // DRUM SWAP 1
+        const capturedNotPlaying = !!g3.slot(0).captured && !g3.isPlaying(0) && !g3.captureArmed;
+        press(0x92, 0x00);      // DRUM SWAP 1 plays it
         await wait(200);
-        step('grv6 drum capture + swap', !!g3.slot(0).captured && g3.isPlaying(0), g3.slot(0).name);
+        step('grv6 drum capture + swap', armed && capturedNotPlaying && g3.isPlaying(0), `armed ${armed}, captured into A1 ${capturedNotPlaying} (${g3.slot(0).name}), then plays ${g3.isPlaying(0)}`);
         press(0x92, 0x00);
-        tx([0x92, 0x04, 0x7f]); await wait(200); tx([0x82, 0x04, 0]); // DRUM ROLL 1/8 hold
-        step('grv6 drum roll', true, '');
+        // DRUM SWAP editor: 8 slots; built-in loop, eject and gain are kept in the settings.
+        {
+          const editing = app.openDrumSwapEditor(2);
+          await wait(300);
+          const cards = document.querySelectorAll('.dse-card').length;
+          const sel = document.querySelectorAll('.dse-source')[5]; // B2
+          sel.value = 'builtin:0'; sel.dispatchEvent(new Event('change'));
+          [...document.querySelectorAll('.dse-card')][7].querySelector('button[title="Empty this slot"]').click(); // B4
+          const gainIn = document.querySelectorAll('.dse-gain')[5];
+          gainIn.value = '1.5'; gainIn.dispatchEvent(new Event('input')); gainIn.dispatchEvent(new Event('change'));
+          await window.rb.smokeShot('drum-swap');
+          document.querySelector('.dialog:has(.dse) .dialog-buttons button').click();
+          await editing;
+          const kept = app.library.settings.grooveSlots ?? {};
+          step('drum swap editor', cards === 8 && g3.slots[1][1].builtin === 0 && g3.slots[1][1].gain === 1.5 && g3.slots[1][3] === null
+            && kept['2:1:1']?.builtin === 0 && kept['2:1:1']?.gain === 1.5 && kept['2:1:3']?.empty,
+          `${cards} slots · B2 ${g3.slots[1][1].name} ${g3.slots[1][1].gain} · B4 ${g3.slots[1][3]} · saved ${JSON.stringify(kept)}`);
+          g3.reset(1, 1); g3.reset(1, 3); app.saveGrooveSlot(2, 1, 1); app.saveGrooveSlot(2, 1, 3);
+        }
+        // DRUM ROLL: 1/8 held, then 1/4 too, then 1/8 released: the same captured drum keeps rolling.
+        tx([0x92, 0x04, 0x7f]); await wait(300);
+        const roll0 = d3.rollStart;
+        tx([0x92, 0x05, 0x7f]); await wait(300);
+        const roll1 = d3.rollStart;
+        tx([0x82, 0x04, 0]); await wait(100);
+        const roll2 = d3.rollStart;
+        tx([0x82, 0x05, 0]);
+        step('grv6 drum roll keeps the captured drum', roll0 != null && roll1 === roll0 && roll2 === roll0 && d3.rollStart == null,
+          `captured at ${roll0?.toFixed(3)} s · with 1/4 too ${roll1?.toFixed(3)} · after releasing 1/8 ${roll2?.toFixed(3)} · released ${d3.rollStart}`);
         // DRUM RELEASE FX: SHIFT cycles the type; held BRAKE takes the kick out of the mix.
         app.engine.setCrossfader(-1);
-        // Peak over a window (an instant reading depends on where the kick falls).
-        const peakOver = async (ms) => { let m = 0; for (let t = 0; t < ms; t += 20) { m = Math.max(m, app.engine.levels().channels[2]); await wait(20); } return m; };
+        // Mean level over a window (an instant reading depends on where the kick falls).
         const meanOver = async (ms) => { let a = 0; let n = 0; for (let t = 0; t < ms; t += 20) { a += app.engine.levels().channels[2]; n++; await wait(20); } return a / n; };
-        await wait(300);
-        const before = await peakOver(600);
-        tx([0x92, 0x24, 0x7f]); await wait(700);
-        const released = await peakOver(600);
-        tx([0x82, 0x24, 0]);
-        press(0x92, 0x26);      // SHIFT + DRUM RELEASE FX
-        step('grv6 drum release fx', released < before * 0.9 && d3.releaseFx === 'BACKSPIN', `brake: ${before.toFixed(3)} -> ${released.toFixed(3)}, next type ${d3.releaseFx}`);
-        for (let k = 0; k < 4; k++) press(0x92, 0x26); // back to BRAKE
+        // Every type takes the drums out while held. Only the drum part plays during this test (the
+        // other parts muted), so the level is the drums' own: from the same place of the track, at
+        // least 60 % of it is gone while the release FX is held.
+        const from = 4;
+        [1, 2, 3].forEach((k) => d3.setStemOn(k, false));
+        d3.seek(from); await wait(300);
+        const withDrums = await meanOver(800);
+        const kills = [];
+        let allKill = true;
+        for (const type of RELEASE_FX) {
+          d3.releaseFx = type;
+          d3.seek(from); await wait(100);
+          tx([0x92, 0x24, 0x7f]); await wait(1200);
+          const released = await meanOver(800);
+          tx([0x82, 0x24, 0]);
+          const kill = 1 - released / Math.max(1e-6, withDrums);
+          kills.push(`${type} ${(kill * 100).toFixed(0)}%`);
+          if (!(kill > 0.6)) allKill = false;
+        }
+        [1, 2, 3].forEach((k) => d3.setStemOn(k, true));
+        kills.unshift(`drums alone ${withDrums.toFixed(3)} ·`);
+        d3.releaseFx = RELEASE_FX[0];
+        press(0x92, 0x26);      // SHIFT + DRUM RELEASE FX: next type
+        const next = d3.releaseFx;
+        step('grv6 drum release fx (every type kills the drums)', allKill && next === RELEASE_FX[1], `${kills.join(' · ')} · SHIFT → ${next}`);
+        d3.releaseFx = RELEASE_FX[0];
         // FX PART SELECT (STEMS pad mode, bottom row): drums only through the Beat FX. With the FX off
         // the channel must sound the same (parts + rest = whole).
         press(0x92, 0x1e);      // STEMS pad mode
@@ -1685,7 +1823,7 @@ async function smoke(app) {
         const pads = app.deckViews[2].pads.map((x) => x.textContent);
         await wait(200);
         await window.rb.smokeShot('groove');
-        step('ui groove pads', pads[0].startsWith('A1') && /^REL/.test(pads[7]) && /BRAKE/.test(pads[7]), JSON.stringify(pads));
+        step('ui groove pads', pads[0].startsWith('A1') && pads[5] === 'CAP4 beats' && pads[7] === `REL${RELEASE_FX[0]}`, JSON.stringify(pads));
         app.deckViews[2].setPadMode('HOT CUE');
         app.engine.setCrossfader(0);
         d3.pause();
@@ -1946,16 +2084,18 @@ async function smoke(app) {
       v.padUp(0);
       const fxOff = app.padFx[0].held === null;
       v.setPadMode('HOT CUE');
+      k1.setKeyShift(0);
       v.keyBox.click();
       document.querySelector('.key-pop button[title="One semitone up"]').click();
       const shifted = k1.keyShift === 1 && document.querySelector('.key-pop-val')?.textContent === '+1';
+      const shiftInfo = `${k1.keyShift} / ${document.querySelector('.key-pop-val')?.textContent}`;
       await wait(400); // let the hidden smoke window repaint before the screenshot
       await window.rb.smokeShot('pad-pages');
       v.keyBox.click();
       k1.setKeyShift(0);
       const head = [...v.el.querySelectorAll('.deck-headbtns .dbtn')].map((b) => b.textContent).filter(Boolean).join(','); // + icon buttons (menu, eject)
       step('pad pages, page bar, KEY panel', items.length === 12 && seq?.classList.contains('disabled') && memPage && fxOn && fxOff && shifted && !document.querySelector('.key-pop') && head === 'MASTER,BEAT SYNC,KEY SYNC',
-        `${items.length} pages (SEQ CALL disabled ${seq?.classList.contains('disabled')}) · MEMORY CUE page ${memPage} · PAD FX hold ${fxOn}/${fxOff} · KEY +1 ${shifted} · header ${head}`);
+        `${items.length} pages (SEQ CALL disabled ${seq?.classList.contains('disabled')}) · MEMORY CUE page ${memPage} · PAD FX hold ${fxOn}/${fxOff} · KEY +1 ${shifted} (${shiftInfo}) · header ${head}`);
       await wait(50);
     }
 

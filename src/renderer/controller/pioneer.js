@@ -2,25 +2,24 @@
 // Built for the DDJ-GRV6 profile; most function names are shared by other Pioneer controllers,
 // so a rekordbox .midi.csv for another model works for the functions it has in common.
 import { ControllerCore } from '../../shared/controllers/core.js';
-import { BEAT_FX, FX_BEATS } from '../audio/fx.js';
+import { BEAT_FX, stepFxBeats } from '../audio/fx.js';
 import { COLOR_FX } from '../ui/mixer-view.js';
 import { constantGridAt, tapBpm } from '../../shared/beatgrid.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 import { toast } from '../ui/dom.js';
+import { padValue } from '../../shared/pad-tables.js';
 
 const FX_SELECT = {
   DELAY: 'DELAY', ECHO: 'ECHO', LOWCUTECHO: 'LOW CUT ECHO', SPIRAL: 'SPIRAL', HELIX: 'HELIX', REVERB: 'REVERB',
   FLANGER: 'FLANGER', PHASER: 'PHASER', FILTER: 'FILTER', TRANS: 'TRANS', PITCH: 'PITCH', ROLL: 'ROLL',
   MOBIUSSAW: 'MOBIUS SAW', MOBIUSTRI: 'MOBIUS TRI',
 };
-// rekordbox pad tables (pad\*.pad.csv): 16 values, 8 pads per page.
-const BEAT_JUMP = [-1, 1, -2, 2, -4, 4, -8, 8, -16, 16, -32, 32, -64, 64, -128, 128];
-const BEAT_LOOP = [1 / 64, 1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512];
-const KEY_TABLE = [4, 5, 6, 7, 0, 1, 2, 3, -4, -3, -2, -1, -8, -7, -6, -5];
+// Beat value list the controller's FX beat display is indexed by (rekordbox's, with 3/4).
+const RB_FX_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 3 / 4, 1, 2, 4, 8, 16, 32];
 const DRUM_ROLL = { DrumRoll1_8: 1 / 8, DrumRoll1_4: 1 / 4, DrumRoll1_2: 1 / 2, DrumRoll1: 1 };
 const DRUM_TRANS = { DrumTrans1_8: 1 / 8, DrumTrans1_4: 1 / 4, DrumTrans1_2: 1 / 2, DrumTrans1: 1 };
-// [stem index] for PART ISOLATOR knobs (3-part layout: VOCAL / INST (+ bass) / DRUMS).
-const PART_KNOBS = { PartIsolatorVocal: [3], PartIsolatorInst: [2, 1], PartIsolatorDrums: [0] };
+// PART ISOLATOR knobs -> isolator band (Deck.ISO_PARTS: 0 HI vocal, 1 MID inst + bass, 2 LOW drums).
+const PART_KNOBS = { PartIsolatorVocal: 0, PartIsolatorInst: 1, PartIsolatorDrums: 2 };
 const ACTIVE_PART = { ActivePartVocal: 3, ActivePartInst: 2, ActivePartBass: 1, ActivePartDrums: 0 };
 // Pad channels per deck (FX PART SELECT rows have no deck column in the mapping). Plugin option.
 const PAD_STATUS = [0x97, 0x99, 0x9b, 0x9d];
@@ -61,7 +60,7 @@ export class PioneerController {
     this.device = profile.device;
     this.core = new ControllerCore(profile, (ev) => this.handle(ev), send);
     this.decks = [0, 1, 2, 3].map(() => ({
-      shift: false, mode: 'HOT CUE', page: 0, partIso: false, taps: [], loadAt: 0, tempoCaught: false,
+      shift: false, mode: 'HOT CUE', taps: [], loadAt: 0, tempoCaught: false,
     }));
     this.fxTaps = [];
     this.lastLed = 0;
@@ -105,7 +104,7 @@ export class PioneerController {
     const gmode = /^PadMode(\d)$/.exec(name);
     if (gmode && d) { if (press && this.padModes[gmode[1]]) this.setMode(i, this.padModes[gmode[1]]); return; }
     const gpage = /^Page(Left|Right)_PadMode\d$/.exec(name);
-    if (gpage && s) { if (press) s.page = Math.max(0, Math.min(1, s.page + (gpage[1] === 'Left' ? -1 : 1))); return; }
+    if (gpage && s) { if (press) this.turnPage(i, gpage[1] === 'Left' ? -1 : 1); return; }
     const cfxN = /^CFX(\d)On$/.exec(name);
     if (cfxN) { if (press) this.setCfx(COLOR_FX[Number(cfxN[1]) - 1] ?? 'FILTER'); return; }
     const xfAssign = /^CrossfaderAssign\.(A|Thru|B)$/.exec(name);
@@ -117,15 +116,26 @@ export class PioneerController {
       if (!press) return;
       const dir = param[1] === 'Left' ? -1 : 1;
       if (param[2] === 'HotCue') d.callMemoryCue(dir);
-      else { s.page = Math.max(0, Math.min(1, s.page + dir)); }
+      else this.turnPage(i, dir);
       return;
     }
     if (FX_SELECT[name.replace('FX1-1Select.', '')] && name.startsWith('FX1-1Select.')) { if (press) fx.setEffect(FX_SELECT[name.slice(12)]); return; }
     if (name.startsWith('FX1Assign.')) { if (press) fx.setTarget(name === 'FX1Assign.MASTER' ? 'master' : name === 'FX1Assign.SAMPLER' ? 'sampler' : `ch${name.slice(-1)}`); return; }
     if (/^CFXParameterCH\d$/.test(name)) { this.ctl(`ch${name.slice(-1)}.color`)?.apply(ev.value01); return; }
-    if (DRUM_ROLL[name] !== undefined && d) { this.requireStems(d) && d.drumRoll(press ? DRUM_ROLL[name] : null); s.roll = press ? name : null; return; }
+    // DRUM ROLL 1/8 1/4 1/2 1: the drum captured by the first button keeps rolling while any of the
+    // four is held; the last one pressed sets the length.
+    if (DRUM_ROLL[name] !== undefined && d) {
+      s.rolls ??= [];
+      s.rolls = s.rolls.filter((n) => n !== name);
+      if (press) s.rolls.push(name);
+      const held = s.rolls.at(-1);
+      if (held) { if (this.requireStems(d)) d.drumRoll(DRUM_ROLL[held], s.rolls.length > 1 || !press); } else d.drumRoll(null);
+      s.roll = held ?? null;
+      return;
+    }
     if (DRUM_TRANS[name] !== undefined && d) { this.requireStems(d) && d.drumTrans(press ? DRUM_TRANS[name] : null); s.trans = press ? name : null; return; }
-    if (PART_KNOBS[name] && d) { const lvl = Math.min(1, ev.value01 * 2); PART_KNOBS[name].forEach((k) => d.setStemLevel(k, lvl)); return; }
+    // PART ISOLATOR knobs (the EQ knobs while the controller's PART ISOLATOR is on): HI vocal, MID inst + bass, LOW drums.
+    if (PART_KNOBS[name] !== undefined && d) { this.requireStems(d); d.setIsoKnob(PART_KNOBS[name], ev.value01); return; }
     if (ACTIVE_PART[name] !== undefined && d) { if (press && this.requireStems(d)) d.setStemOn(ACTIVE_PART[name], d.stemGains[ACTIVE_PART[name]] === 0); return; }
     if (/^FXPartSelect(Vocal|Inst|Bass|Drums)On$/.test(name)) {
       // Beat FX on chosen parts only. Stem index: Vocal 3, Inst 2, Bass 1, Drums 0.
@@ -141,7 +151,15 @@ export class PioneerController {
     if (MODES[name] && d) { if (press) this.setMode(i, MODES[name]); return; }
     const swap = /^DrumSwap([1-4])$/.exec(name);
     // Built-in loops play right away; the track's own drums are replaced as soon as stems exist.
-    if (swap && d) { if (press) { this.requireStems(d); app.groove[i].toggle(Number(swap[1]) - 1); } return; }
+    // With DRUM CAPTURE armed, the slot pressed receives the track's drums instead (rekordbox).
+    if (swap && d) {
+      if (!press) return;
+      const g = app.groove[i];
+      if (g.captureArmed) { g.armCapture(false); app.drumCapture(i, Number(swap[1]) - 1); return; }
+      this.requireStems(d);
+      g.toggle(Number(swap[1]) - 1);
+      return;
+    }
 
     switch (name) {
       // ---- browser
@@ -212,8 +230,9 @@ export class PioneerController {
       case '4BeatLoopLongPress': if (press) d.beatLoop(4); break;
       case 'LoopOut': if (press) d.loopOut(); break;
       case 'ReloopExit': case 'ActiveLoop': if (press) d.reloopExit(); break;
-      case 'LoopHalf': if (press) d.resizeLoop(0.5); break;
-      case 'LoopDouble': if (press) d.resizeLoop(2); break;
+      // CALL ◀ ▶: halve / double the loop that plays; without a loop, call the memory cues (rekordbox).
+      case 'LoopHalf': if (press) { if (d.loop) d.resizeLoop(0.5); else d.callMemoryCue(-1); } break;
+      case 'LoopDouble': if (press) { if (d.loop) d.resizeLoop(2); else d.callMemoryCue(1); } break;
       case 'Memory': if (press) d.addMemoryCue(); break;
       case 'Delete': if (press) d.deleteMemoryCueNear(); break;
       case 'Quantize': if (press) d.toggleQuantize(); break;
@@ -230,8 +249,8 @@ export class PioneerController {
       case 'DrumSwapBankB': if (press) app.groove[i].setBank(1); break;
       case 'DrumSwapSingle': if (press) app.groove[i].setMulti(false); break;
       case 'DrumSwapMulti': if (press) app.groove[i].setMulti(true); break;
-      case 'DrumSwapCapture': if (press && this.requireStems(d)) app.drumCapture(i); break;
-      case 'DrumSwapCaptureLength': if (press) toast(`Drum capture: ${app.groove[i].cycleCaptureLength()} bar(s)`); break;
+      case 'DrumSwapCapture': if (press) { const g = app.groove[i]; g.armCapture(!g.captureArmed); if (g.captureArmed) { this.requireStems(d); toast(`Deck ${i + 1}: press a DRUM SWAP slot to capture ${g.captureBars * 4} beats of drums`, 2500); } } break;
+      case 'DrumSwapCaptureLength': if (press) toast(`Drum capture: ${app.groove[i].cycleCaptureLength() * 4} beats`); break;
       case 'DrumReleaseFx': if (!press || this.requireStems(d)) d.drumRelease(press); s.release = press; break;
       case 'DrumReleaseFxSelect': case 'DrumRelease+Shift': if (press) toast(`Deck ${i + 1} Drum Release FX: ${d.cycleReleaseFx()}`, 1500); break;
 
@@ -244,7 +263,7 @@ export class PioneerController {
       case 'EQMid': this.ctl(`ch${i + 1}.mid`)?.apply(ev.value01); break;
       case 'EQLow': this.ctl(`ch${i + 1}.low`)?.apply(ev.value01); break;
       case 'HeadphoneCue': if (press) this.ctl(`ch${i + 1}.cue`)?.apply(); break;
-      case 'PartIsolator': if (press) s.partIso = !s.partIso; break;
+      case 'PartIsolator': if (press) { d.setPartIso(!d.partIso); if (d.partIso) this.requireStems(d); } break;
       case 'MasterCue': if (press) { this.masterCue = !this.masterCue; this.engine.setPhonesMix(this.masterCue ? 1 : 0); } break;
       case 'CFXOn': if (press) this.toggleCfx(); break;
       case 'CFXSelect': if (press) this.cycleCfx(); break;
@@ -270,10 +289,17 @@ export class PioneerController {
    */
   requireStems(d) { return this.app.ensureStems(d); }
 
+  /** Pad table page of deck i (0/1), shared with the on-screen pads. */
+  page(i) { return this.app.deckViews[i]?.padPage ?? 0; }
+
+  turnPage(i, dir) { this.app.deckViews[i]?.setPadPage(this.page(i) + dir); }
+
+  /** Sampler slot of pad `n` (0-7) on deck i: its side's bank (decks 1 / 3: 1-8, decks 2 / 4: 9-16). */
+  samplerSlot(i, n) { return (this.app.deckViews[i]?.samplerBank ?? i % 2) * 8 + n; }
+
   /** A pad mode button on the controller: the deck's pad page on screen follows. */
   setMode(i, mode) {
     this.decks[i].mode = mode;
-    this.decks[i].page = 0;
     this.app.deckViews[i]?.setPadMode(mode === 'PAD FX2' ? 'PAD FX' : mode, { bank: mode === 'PAD FX2' ? 1 : 0, fromController: true });
   }
 
@@ -281,7 +307,7 @@ export class PioneerController {
   followMode(i, mode) {
     const s = this.decks[i];
     if (!s || s.mode === mode) return;
-    if (Object.values(MODES).includes(mode) || Object.values(this.padModes).includes(mode)) { s.mode = mode; s.page = 0; }
+    if (Object.values(MODES).includes(mode) || Object.values(this.padModes).includes(mode)) s.mode = mode;
   }
 
   padEvent(i, n, kind, shift, press) {
@@ -290,22 +316,22 @@ export class PioneerController {
     const slot = n - 1;
     switch (kind) {
       case 'HotCue': if (press) { if (shift) d.deleteHotCue(slot); else d.hotCuePress(slot); } break;
-      case 'BeatJump': if (press) d.beatJump(BEAT_JUMP[s.page * 8 + slot]); break;
-      case 'BeatLoop': if (press) d.beatLoop(BEAT_LOOP[slot]); break; // PAD5..PAD12 -> 1/4..32
+      case 'BeatJump': if (press) d.beatJump(padValue('BEAT JUMP', this.page(i), slot)); break;
+      case 'BeatLoop': if (press) d.beatLoop(padValue('BEAT LOOP', this.page(i), slot - 4)); break; // PAD5..PAD12 = pads 1-8 (rekordbox values 5-12)
       // An empty slot captures this deck's loop (audible stems only), like a click on the slot.
-      case 'Sampler': if (press) { if (shift) this.app.sampler.stop(slot); else this.app.samplerPress(slot, d); } break;
-      case 'KeyShift': if (press) { const v = KEY_TABLE[s.page * 8 + slot]; d.setKeyShift(d.keyShift === v ? 0 : v); } break;
+      case 'Sampler': { const k = this.samplerSlot(i, slot); if (press) { if (shift) this.app.sampler.stop(k); else this.app.samplerPress(k, d); } break; }
+      case 'KeyShift': if (press) { const v = padValue('KEY SHIFT', this.page(i), slot); d.setKeyShift(d.keyShift === v ? 0 : v); } break;
       case 'Keyboard': if (press) {
         // SHIFT + pad: choose which hot cue the keyboard plays from (A by default).
         if (shift) { s.kbCue = slot; toast(`Deck ${i + 1} keyboard plays hot cue ${String.fromCharCode(65 + slot)}`, 1500); break; }
-        d.setKeyShift(KEY_TABLE[s.page * 8 + slot]);
+        d.setKeyShift(padValue('KEYBOARD', this.page(i), slot));
         const a = d.hotCue(s.kbCue ?? 0) ?? d.hotCue(0);
         d.jumpTo(a ? a.start : d.cuePoint);
         if (!d.playing) d.play();
       } break;
       case 'PadFx1': this.padFx(i, slot, press); break; // PAD9..16 arrive as PADn (shift layer)
       case 'PadFx2': this.padFx(i, (slot + 8) % 16, press); break; // second PAD FX bank
-      case 'BeatLoopPads': if (press) d.beatLoop(BEAT_LOOP[slot + 4]); break; // pads 1-8: 1/4 .. 32 beats
+      case 'BeatLoopPads': if (press) d.beatLoop(padValue('BEAT LOOP', this.page(i), slot)); break; // pads 1-8: 1/4 .. 32 beats (page 2: 4 .. 512)
       case 'Stems': if (press && slot < 4 && this.requireStems(d)) { const stem = [3, 2, 1, 0][slot]; d.setStemOn(stem, d.stemGains[stem] === 0); } break;
       case 'Slicer': if (press) d.slicerDown(slot); else d.slicerUp(); break;
       case 'MemoryCue': if (press) { if (shift) d.deleteMemoryCue(slot); else d.callMemorySlot(slot); } break;
@@ -367,25 +393,28 @@ export class PioneerController {
     }
   }
 
-  fxBeat(dir) {
-    const fx = this.engine.fx;
-    const k = FX_BEATS.indexOf(fx.beats);
-    fx.setBeats(FX_BEATS[Math.max(0, Math.min(FX_BEATS.length - 1, (k < 0 ? 5 : k) + dir))]);
-  }
+  fxBeat(dir) { const fx = this.engine.fx; fx.setBeats(stepFxBeats(fx.beats, dir)); }
 
+  /** Type CFX ON turns on: the last one chosen (SPACE by default). */
+  get cfxType() { const t = this.app.library.settings.colorFx; return t && t !== 'FILTER' ? t : 'SPACE'; }
+
+  /** CFX ON: off = the COLOR knobs are a plain filter; on = they apply the chosen Color FX. */
   toggleCfx() {
-    const cur = this.engine.colorFx ?? 'FILTER';
-    if (cur !== 'FILTER') { this.lastCfx = cur; this.setCfx('FILTER'); } else this.setCfx(this.lastCfx ?? 'SPACE');
+    const on = (this.engine.colorFx ?? 'FILTER') !== 'FILTER';
+    this.setCfx(on ? 'FILTER' : this.cfxType);
   }
 
+  /** SHIFT + CFX ON: next Color FX type; applied at once when CFX is on, else kept for CFX ON. */
   cycleCfx(dir = 1) {
-    const cur = this.engine.colorFx ?? 'FILTER';
-    this.setCfx(COLOR_FX[(COLOR_FX.indexOf(cur) + dir + COLOR_FX.length) % COLOR_FX.length]);
+    const types = COLOR_FX.filter((t) => t !== 'FILTER');
+    const next = types[(types.indexOf(this.cfxType) + dir + types.length) % types.length];
+    if ((this.engine.colorFx ?? 'FILTER') !== 'FILTER') this.setCfx(next);
+    else { this.app.library.setSetting('colorFx', next); toast(`Color FX type: ${next} (CFX ON to use it)`, 1500); }
   }
 
   setCfx(type) {
     this.engine.setColorFx(type);
-    this.app.library.setSetting('colorFx', type);
+    if (type !== 'FILTER') this.app.library.setSetting('colorFx', type);
     const sel = document.querySelector('.cfx-select');
     if (sel) sel.value = type;
     toast(`Color FX: ${type}`, 1500);
@@ -426,7 +455,7 @@ export class PioneerController {
       o('Slip', i, d.slip);
       o('Vinyl', i, d.vinyl);
       o('HeadphoneCue', i, ch.state.cue);
-      o('PartIsolator', i, s.partIso);
+      o('PartIsolator', i, !!d.partIso);
       const db = 20 * Math.log10(levels.channels[i] + 1e-9);
       o('ChannelLevel', i, Math.max(0, Math.min(127, ((db + 48) / 48) * 127)));
       o('LoadedIndicator', i, d.loaded);
@@ -439,7 +468,7 @@ export class PioneerController {
       for (let k = 0; k < 4; k++) o(`DrumSwap${k + 1}`, i, !!g?.isPlaying(k));
       o('DrumSwapBankA', i, g?.bank === 0); o('DrumSwapBankB', i, g?.bank === 1);
       o('DrumSwapSingle', i, g && !g.multi); o('DrumSwapMulti', i, !!g?.multi);
-      o('DrumSwapCapture', i, !!g?.slots[g.bank].some((x) => x?.captured));
+      o('DrumSwapCapture', i, !!g?.captureArmed);
       o('DrumSwapCaptureLength', i, (g?.captureBars ?? 1) > 1);
       for (const n of Object.keys(DRUM_ROLL)) o(n, i, s.roll === n);
       for (const n of Object.keys(DRUM_TRANS)) o(n, i, s.trans === n);
@@ -448,7 +477,7 @@ export class PioneerController {
     const fx = this.engine.fx;
     o('FX1-1On', null, fx.on);
     o('FX1ReleaseFXOn', null, !!fx.releaseFx);
-    o('FX1BeatMultiplier', null, Math.max(0, FX_BEATS.indexOf(fx.beats)));
+    o('FX1BeatMultiplier', null, Math.max(0, RB_FX_BEATS.indexOf(fx.beats)));
     o('CFXOn', null, (this.engine.colorFx ?? 'FILTER') !== 'FILTER');
   }
 
@@ -461,10 +490,10 @@ export class PioneerController {
       o(`PAD${n}_HotCue`, !!d.hotCue(slot));
       o(`PAD${n}_HotCue+Shift`, !!d.hotCue(slot));
       o(`PAD${n}_BeatJump`, d.loaded);
-      o(`PAD${n + 4}_BeatLoop`, d.loop?.beats === BEAT_LOOP[slot + 4]);
-      o(`PAD${n}_Sampler`, this.app.sampler.isPlaying(slot) || !!this.app.sampler.slots[slot].buffer);
-      o(`PAD${n}_KeyShift`, d.keyShift === KEY_TABLE[s.page * 8 + slot]);
-      o(`PAD${n}_Keyboard`, d.keyShift === KEY_TABLE[s.page * 8 + slot]);
+      o(`PAD${n + 4}_BeatLoop`, d.loop?.beats === padValue('BEAT LOOP', this.page(i), slot));
+      o(`PAD${n}_Sampler`, this.app.sampler.isPlaying(this.samplerSlot(i, slot)) || !!this.app.sampler.slots[this.samplerSlot(i, slot)].buffer);
+      o(`PAD${n}_KeyShift`, d.keyShift === padValue('KEY SHIFT', this.page(i), slot));
+      o(`PAD${n}_Keyboard`, d.keyShift === padValue('KEYBOARD', this.page(i), slot));
       o(`PAD${n}_PadFx1`, this.app.padFx[i]?.held === slot);
     }
     o('ActivePartVocal', d.stemsReady && d.stemGains[3] > 0);
@@ -478,8 +507,8 @@ export class PioneerController {
     if (m) {
       for (let n = 1; n <= 8; n++) {
         const slot = n - 1;
-        const on = s.mode === 'HOT CUE' ? !!d.hotCue(slot) : s.mode === 'SAMPLER' ? !!this.app.sampler.slots[slot]?.buffer
-          : s.mode === 'BEAT LOOP' ? d.loop?.beats === BEAT_LOOP[slot + 4] : s.mode === 'KEY SHIFT' || s.mode === 'KEYBOARD' ? d.keyShift === KEY_TABLE[s.page * 8 + slot] : d.loaded;
+        const on = s.mode === 'HOT CUE' ? !!d.hotCue(slot) : s.mode === 'SAMPLER' ? !!this.app.sampler.slots[this.samplerSlot(i, slot)]?.buffer
+          : s.mode === 'BEAT LOOP' ? d.loop?.beats === padValue('BEAT LOOP', this.page(i), slot) : s.mode === 'KEY SHIFT' || s.mode === 'KEYBOARD' ? d.keyShift === padValue(s.mode, this.page(i), slot) : d.loaded;
         o(`PAD${n}_PadMode${m}`, on);
       }
     }

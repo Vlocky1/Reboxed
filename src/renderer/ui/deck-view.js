@@ -2,6 +2,7 @@ import { h, fmtTime, fader, contextMenu, promptText } from './dom.js';
 import { Overview } from './waveform.js';
 import { TEMPO_RANGES, BEAT_LOOP_SIZES, BEAT_JUMP_SIZES } from '../audio/deck.js';
 import { PAD_FX } from '../audio/fx.js';
+import { padValue, padPages } from '../../shared/pad-tables.js';
 import { JogWheel } from './jog.js';
 import { displayKey, transposeKey } from '../../shared/keys.js';
 import { TRACK_COLORS } from '../../shared/rekordbox-xml.js';
@@ -19,10 +20,6 @@ const UNAVAILABLE = new Set(['SEQ CALL']);
 // STEMS pads: 1-4 ACTIVE PART (mute), 5-8 FX PART SELECT; index into [drums, bass, other, vocals].
 const STEM_PADS = [['VOC', 3], ['INST', 2], ['BASS', 1], ['DRUM', 0]];
 const STEM_PAD_COLORS = { 3: '#ff4fa3', 2: '#3ddc84', 1: '#3d8dff', 0: '#ffa91f' };
-const PAD_LOOPS = [1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32];
-const PAD_JUMPS = [-32, -16, -4, -1, 1, 4, 16, 32];
-const PAD_KEYS = [-4, -3, -2, -1, 1, 2, 3, 4];
-const PAD_KEYBOARD = [-3, -2, -1, 0, 1, 2, 3, 4];
 const fmtBeats = (b) => (b >= 1 ? String(b) : `1/${Math.round(1 / b)}`);
 const fmtSigned = (b) => (Math.abs(b) >= 1 ? String(b) : `${b < 0 ? '-' : ''}1/${Math.round(1 / Math.abs(b))}`);
 const HOT_COLORS = TRACK_COLORS.map((c) => c.css);
@@ -68,7 +65,10 @@ export class DeckView {
 
     // 8 performance pads; what they do depends on the pad page.
     this.bank = 0;
+    // Sampler slots of this deck's pads: decks 1 / 3 use 1-8, decks 2 / 4 use 9-16 (each side its own).
+    this.samplerBank = d.index % 2;
     this.padMode = 'HOT CUE';
+    this.padPage = 0; // page of 8 in the 16-value pad tables (shared with the controller)
     this.kbCue = 0; // KEYBOARD plays from this hot cue
     this.pads = Array.from({ length: 8 }, (_, i) => {
       const pad = h('button.pad', {}, h('span.pad-letter'), h('span.pad-time'));
@@ -78,7 +78,7 @@ export class DeckView {
       pad.addEventListener('contextmenu', (e) => { e.preventDefault(); if (this.padMode === 'HOT CUE') this.padMenu(e, this.bank * 8 + i); });
       return pad;
     });
-    this.bankBtn = btn('A–H', 'bank', () => { this.bank = 1 - this.bank; this.refresh(); }, 'Pad bank');
+    this.bankBtn = btn('A–H', 'bank', () => { this.bank = 1 - this.bank; if (this.padMode === 'SAMPLER') this.samplerBank = this.bank; this.refresh(); }, 'Pad bank');
     // Pad page dropdown.
     this.modeLabel = h('span.padmode-label');
     this.modeBtn = h('button.dbtn.padmode', { title: 'Pad mode (a pad mode button on the controller opens its page)', onclick: () => this.modeMenu() }, this.modeLabel, h('span.padmode-caret', {}, '▾'));
@@ -140,12 +140,12 @@ export class DeckView {
           this.stemRow,
           h('div.row.loops', {},
             h('div.seg', {},
-              btn('½', '', () => d.resizeLoop(0.5), 'Loop halve'),
+              btn('1/2X', 'loop-half', () => d.resizeLoop(0.5), 'Loop halve (the loop playing, else the next one)'),
               // Size arrows change the playing loop too, not only the next one.
               btn('◀', 'small', () => { d.setBeatLoopSize(loopStep(d.currentLoopBeats(), -1)); this.refresh(); }, 'Smaller loop (the current one too)'),
               this.loopBtn,
               btn('▶', 'small', () => { d.setBeatLoopSize(loopStep(d.currentLoopBeats(), 1)); this.refresh(); }, 'Bigger loop (the current one too)'),
-              btn('×2', '', () => d.resizeLoop(2), 'Loop double')),
+              btn('2X', 'loop-double', () => d.resizeLoop(2), 'Loop double (the loop playing, else the next one)')),
             h('div.seg', {}, this.inBtn, this.outBtn, this.exitBtn),
             h('span.spacer'),
             h('div.seg', {},
@@ -175,14 +175,22 @@ export class DeckView {
    * Open a pad page. bank: which half of 16 (hot cues I–P, sampler / PAD FX 9–16).
    * fromController: the page follows a controller button, so the controller needs no update.
    */
-  setPadMode(mode, { bank = 0, fromController = false } = {}) {
+  setPadMode(mode, { bank, fromController = false } = {}) {
     if (!PAD_MODES.includes(mode) || UNAVAILABLE.has(mode)) return;
+    bank ??= mode === 'SAMPLER' ? this.samplerBank : 0;
     const changed = mode !== this.padMode || bank !== this.bank;
     this.padMode = mode;
     this.bank = BANKS[mode] ? bank : 0;
+    if (changed) this.padPage = 0;
     if (changed) this.buildPageBar();
     this.refresh();
     if (!fromController) this.app.onPadModeChange?.(this.deck.index, mode);
+  }
+
+  /** Page of the pad table (0 or 1); the controller's PAGE / PARAMETER buttons set it too. */
+  setPadPage(page) {
+    this.padPage = Math.max(0, Math.min(padPages(this.padMode) - 1, page));
+    this.refresh();
   }
 
   modeMenu() {
@@ -201,12 +209,23 @@ export class DeckView {
     const btn = (label, cls, onclick, title) => h(`button.dbtn${cls ? `.${cls}` : ''}`, { onclick, title }, label);
     const hint = (text) => h('span.page-hint', {}, text);
     const parts = [];
+    if (padPages(this.padMode) > 1) {
+      this.pageLabel = h('span.val');
+      parts.push(h('div.seg', {},
+        btn('◀', 'small', () => this.setPadPage(this.padPage - 1), 'Previous pad page'),
+        h('button.dbtn.page-label', { title: 'Pad page (8 of 16 values)', onclick: () => this.setPadPage(1 - this.padPage) }, 'PAGE ', this.pageLabel),
+        btn('▶', 'small', () => this.setPadPage(this.padPage + 1), 'Next pad page')));
+    }
     switch (this.padMode) {
       case 'HOT CUE': parts.push(this.bankBtn, hint('Empty pad: set · Shift+click: delete · right-click: name, colour')); break;
       case 'PAD FX': parts.push(this.bankBtn, hint('Hold a pad: effect on this deck, at its beat')); break;
       case 'SLICER': parts.push(hint('Hold a pad: loops that 8th of the current 2 bars, playback returns (slip)')); break;
-      case 'BEAT JUMP': parts.push(hint('Pad = jump by that many beats (loops move along)')); break;
-      case 'BEAT LOOP': parts.push(hint('Pad = loop of that many beats, on the closest beat · again: exit')); break;
+      case 'BEAT JUMP': parts.push(hint('Pad = jump by that many beats on the grid (loops move along)')); break;
+      case 'BEAT LOOP':
+        parts.push(h('div.seg', {},
+          btn('1/2X', '', () => d.resizeLoop(0.5), 'Loop halve'),
+          btn('2X', '', () => d.resizeLoop(2), 'Loop double')), hint('Pad = loop of that many beats, on the closest beat · again: exit'));
+        break;
       case 'SAMPLER': parts.push(this.bankBtn, hint('Empty pad: captures this deck\'s loop (audible stems only) · loaded: play')); break;
       case 'KEYBOARD':
         this.kbBtn = btn('', 'small', () => { this.kbCue = (this.kbCue + 1) % 8; this.refresh(); }, 'Hot cue the keyboard plays from (click to change)');
@@ -227,7 +246,10 @@ export class DeckView {
           btn('▶', 'small', () => d.callMemoryCue(1), 'Next memory cue'),
           btn('DEL', 'small', () => d.deleteMemoryCueNear(), 'Delete the nearest memory cue')), hint('Pad = go to memory cue · Shift+click: delete'));
         break;
-      case 'GROOVE': parts.push(hint('Drum swap 1–4 · bank · capture · roll · release FX')); break;
+      case 'GROOVE':
+        parts.push(btn('DRUMS…', '', () => this.app.openDrumSwapEditor?.(d.index), 'Choose the drums of the DRUM SWAP slots (built-in loops, files, captures)'),
+          hint('Swap 1–4 · bank · CAP then a slot: capture · roll · release FX'));
+        break;
       default: break;
     }
     this.pageBar.replaceChildren(...parts);
@@ -328,6 +350,7 @@ export class DeckView {
     const semis = `${d.keyShift > 0 ? '+' : ''}${d.keyShift}`;
     this.keyShiftVal.textContent = semis;
     if (this.kbBtn) this.kbBtn.textContent = String.fromCharCode(65 + this.kbCue);
+    if (this.pageLabel) this.pageLabel.textContent = `${this.padPage + 1}/2`;
     if (this.keyPop) {
       this.keyPopVal.textContent = semis;
       this.keyPopKeys.textContent = key ? `${displayKey(key, notation)} → ${displayKey(shifted, notation)}` : 'No key';
@@ -375,17 +398,18 @@ export class DeckView {
   padDown(i, e) {
     const d = this.deck;
     const slot = this.bank * 8 + i;
+    const v = padValue(this.padMode, this.padPage, i); // BEAT JUMP / LOOP, KEY SHIFT, KEYBOARD (rekordbox tables)
     switch (this.padMode) {
       case 'HOT CUE': if (e.shiftKey) d.deleteHotCue(slot); else d.hotCuePress(slot); break;
       case 'PAD FX': this.app.padFxPress?.(d.index, slot, true); this.heldFx = slot; break;
-      case 'BEAT LOOP': d.beatLoop(PAD_LOOPS[i]); break;
-      case 'BEAT JUMP': d.beatJump(PAD_JUMPS[i]); break;
+      case 'BEAT LOOP': d.beatLoop(v); break;
+      case 'BEAT JUMP': d.beatJump(v); break;
       case 'SLICER': d.slicerDown(i); this.heldSlice = true; break;
       case 'SAMPLER': this.app.samplerPress?.(slot, d); break;
-      case 'KEY SHIFT': d.setKeyShift(d.keyShift === PAD_KEYS[i] ? 0 : PAD_KEYS[i]); break;
+      case 'KEY SHIFT': d.setKeyShift(d.keyShift === v ? 0 : v); break;
       case 'KEYBOARD': {
         // Play the chosen hot cue (A by default, else the cue point) transposed by the pad's semitone.
-        d.setKeyShift(PAD_KEYBOARD[i]);
+        d.setKeyShift(v);
         const a = d.hotCue(this.kbCue) ?? d.hotCue(0);
         d.jumpTo(a ? a.start : d.cuePoint);
         if (!d.playing) d.play();
@@ -421,9 +445,13 @@ export class DeckView {
       if (i === 7) d.drumRelease(false);
       return;
     }
-    if (i < 4) { this.app.ensureStems(d); g.toggle(i); return; }
+    if (i < 4) {
+      // DRUM CAPTURE armed: this slot receives the track's drums (rekordbox); else play / stop it.
+      if (g.captureArmed) { g.armCapture(false); this.app.drumCapture(d.index, i); return; }
+      this.app.ensureStems(d); g.toggle(i); return;
+    }
     if (i === 4) { g.setBank(1 - g.bank); return; }
-    if (i === 5) { if (e?.shiftKey) g.cycleCaptureLength(); else if (this.app.ensureStems(d)) this.app.drumCapture(d.index); return; }
+    if (i === 5) { if (e?.shiftKey) g.cycleCaptureLength(); else { g.armCapture(!g.captureArmed); if (g.captureArmed) this.app.ensureStems(d); } return; }
     if (i === 6) { if (this.app.ensureStems(d)) { d.drumRoll(1 / 4); this.heldGroove = i; } return; }
     if (i === 7) {
       if (e?.shiftKey) { d.cycleReleaseFx(); return; }
@@ -443,6 +471,7 @@ export class DeckView {
     const memories = mode === 'MEMORY CUE' ? d.memoryCues() : null;
     this.pads.forEach((pad, i) => {
       const slot = this.bank * 8 + i;
+      const v = padValue(mode, this.padPage, i);
       let letter = ''; let sub = ''; let color = 'transparent'; let set = false; let loopPad = false; let active = false;
       switch (mode) {
         case 'HOT CUE': {
@@ -458,8 +487,8 @@ export class DeckView {
           active = this.app.padFx?.[d.index]?.held === slot;
           break;
         }
-        case 'BEAT LOOP': letter = fmtSigned(PAD_LOOPS[i]); sub = 'beat'; color = '#ff9a1f'; set = true; active = d.loop?.beats === PAD_LOOPS[i] && d.loop.slice === undefined; break;
-        case 'BEAT JUMP': letter = `${PAD_JUMPS[i] > 0 ? '+' : ''}${PAD_JUMPS[i]}`; sub = 'jump'; color = '#3d7dff'; set = true; break;
+        case 'BEAT LOOP': letter = fmtSigned(v); sub = 'beat'; color = '#ff9a1f'; set = true; active = d.loop?.beats === v && d.loop.slice === undefined; break;
+        case 'BEAT JUMP': letter = `${v > 0 ? '+' : ''}${v}`; sub = 'jump'; color = '#3d7dff'; set = true; break;
         case 'SLICER': letter = String(i + 1); sub = 'slice'; color = '#25e6d6'; set = true; active = d.loop?.slice === i; break;
         case 'SAMPLER': {
           const s = this.app.sampler?.slots[slot];
@@ -467,8 +496,8 @@ export class DeckView {
           active = !!this.app.sampler?.isPlaying(slot);
           break;
         }
-        case 'KEY SHIFT': letter = `${PAD_KEYS[i] > 0 ? '+' : ''}${PAD_KEYS[i]}`; sub = 'semi'; color = '#ff3fa0'; set = true; active = d.keyShift === PAD_KEYS[i]; break;
-        case 'KEYBOARD': letter = `${PAD_KEYBOARD[i] > 0 ? '+' : ''}${PAD_KEYBOARD[i]}`; sub = 'key'; color = '#ffe23a'; set = true; active = d.keyShift === PAD_KEYBOARD[i]; break;
+        case 'KEY SHIFT': letter = `${v > 0 ? '+' : ''}${v}`; sub = 'semi'; color = '#ff3fa0'; set = true; active = d.keyShift === v; break;
+        case 'KEYBOARD': letter = `${v > 0 ? '+' : ''}${v}`; sub = 'key'; color = '#ffe23a'; set = true; active = d.keyShift === v; break;
         case 'STEMS': {
           const [label, stem] = STEM_PADS[i % 4];
           letter = label; sub = i < 4 ? 'part' : 'fx part'; color = STEM_PAD_COLORS[stem]; set = true;
@@ -488,9 +517,10 @@ export class DeckView {
           set = true;
           if (i < 4) {
             const s = g.slot(i);
-            letter = `${'AB'[g.bank]}${i + 1}`; sub = s?.name ?? ''; color = s?.captured ? '#25e6d6' : '#ffa91f'; active = g.isPlaying(i);
+            letter = `${'AB'[g.bank]}${i + 1}`; sub = s?.name ?? '(empty)'; color = !s ? 'transparent' : s.captured ? '#25e6d6' : '#ffa91f'; active = g.isPlaying(i);
+            set = !!s;
           } else if (i === 4) { letter = 'A/B'; sub = `bank ${'AB'[g.bank]}`; color = '#3d7dff'; }
-          else if (i === 5) { letter = 'CAP'; sub = `${g.captureBars} bar`; color = '#25e6d6'; active = g.slots[g.bank].some((x) => x?.captured); }
+          else if (i === 5) { letter = 'CAP'; sub = `${g.captureBars * 4} beats`; color = '#25e6d6'; active = g.captureArmed; }
           else if (i === 6) { letter = 'ROLL'; sub = '1/4'; color = '#ff9a1f'; active = this.heldGroove === 6; }
           else { letter = 'REL'; sub = d.releaseFx; color = '#ff4040'; active = this.heldGroove === 7; }
           break;
@@ -505,7 +535,7 @@ export class DeckView {
       pad.classList.toggle('fx', mode === 'PAD FX');
       pad.style.setProperty('--pad', color);
       pad.title = mode === 'HOT CUE' ? 'Hot cue (Shift+click delete, right-click for options)'
-        : mode === 'GROOVE' ? ['DRUM SWAP 1', 'DRUM SWAP 2', 'DRUM SWAP 3', 'DRUM SWAP 4', 'Bank A/B', 'DRUM CAPTURE (Shift+click: 1/2/4 bars)', 'DRUM ROLL 1/4 (hold)', 'DRUM RELEASE FX (hold, Shift+click: type)'][i]
+        : mode === 'GROOVE' ? ['DRUM SWAP 1', 'DRUM SWAP 2', 'DRUM SWAP 3', 'DRUM SWAP 4', 'Bank A/B', 'DRUM CAPTURE: on, then press a slot (Shift+click: 4/8/16/32 beats)', 'DRUM ROLL 1/4 (hold)', 'DRUM RELEASE FX (hold, Shift+click: type)'][i]
           : mode === 'STEMS' ? `${i < 4 ? 'ACTIVE PART' : 'FX PART SELECT'} ${STEM_PADS[i % 4][0]}`
             : mode === 'PAD FX' ? `${(PAD_FX[slot] ?? PAD_FX[0])[0]} (hold)`
               : mode === 'MEMORY CUE' ? 'Memory cue (Shift+click delete)' : mode;

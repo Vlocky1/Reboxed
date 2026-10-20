@@ -20,8 +20,11 @@ export function mergeRange(ranges, [a, b]) {
 
 const STATE_COMMANDS = new Set(['play', 'pause', 'seek', 'load', 'unload', 'loop', 'reverse', 'slip', 'scratch']);
 
-/** DRUM RELEASE FX types, in the order SHIFT + RELEASE FX cycles through them. */
-export const RELEASE_FX = ['BRAKE', 'BACKSPIN', 'ROLL', 'FILTER', 'ECHO'];
+/**
+ * DRUM RELEASE FX types, in the order SHIFT + RELEASE FX cycles through them: the drums leave with a
+ * backspin, a vinyl brake, a roll dissolving into echoes, echoes, a closing filter, or a roll.
+ */
+export const RELEASE_FX = ['BACKSPIN', 'BRAKE', 'ROLL ECHO', 'ECHO', 'FILTER', 'ROLL'];
 
 export const TEMPO_RANGES = [6, 10, 16, 100]; // 100 = WIDE
 export const BEAT_LOOP_SIZES = [1 / 64, 1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512];
@@ -62,7 +65,7 @@ export class Deck extends EventTarget {
     this.sync = false;
     this.keySync = false;
     this.beatJumpSize = 4;
-    this.releaseFx = 'BRAKE';  // DRUM RELEASE FX type
+    this.releaseFx = RELEASE_FX[0]; // DRUM RELEASE FX type
     this.fxParts = [false, false, false, false]; // FX PART SELECT [drums, bass, other, vocals]
     this.vinyl = true;       // jog top touch = scratch (VINYL mode), else pitch bend
     this.beatLoopSize = 4;
@@ -371,8 +374,26 @@ export class Deck extends EventTarget {
     this.bendTimer = setTimeout(() => { this.manualBend = false; this.setBend(1); }, 60);
   }
 
-  /** SHIFT + jog: fast search. */
-  jogSearch(ticks) { if (this.loaded) this.seek(this.position() + ticks * 0.1); }
+  /**
+   * SHIFT + jog: fast search. The jog ticks add up to a distance the play head glides through
+   * (a fraction of what is left every 16 ms), so the waveform scrolls fast but continuously
+   * instead of jumping from tick to tick.
+   */
+  jogSearch(ticks) {
+    if (!this.loaded) return;
+    this.searchLeft = (this.searchLeft ?? 0) + ticks * Deck.SEARCH_SEC_PER_TICK;
+    if (this.searchTimer) return;
+    this.searchTimer = setInterval(() => {
+      const left = this.searchLeft;
+      const step = Math.abs(left) < 0.004 ? left : left * 0.35;
+      this.searchLeft = left - step;
+      this.seek(this.position() + step);
+      if (Math.abs(this.searchLeft) < 1e-4 || !this.loaded) { clearInterval(this.searchTimer); this.searchTimer = null; this.searchLeft = 0; }
+    }, 16);
+  }
+
+  /** Track seconds per jog tick in SHIFT + jog search (about 30x the normal jog). */
+  static SEARCH_SEC_PER_TICK = 0.08;
 
   jumpToStart() { if (this.loaded) { this.seek(0); this.emit('cue'); } }
 
@@ -390,6 +411,7 @@ export class Deck extends EventTarget {
     this.stemGains = [1, 1, 1, 1];
     this.vocals = vocals;
     if (env) this.stemEnv = env;
+    this.applyIso(); // PART ISOLATOR set before the stems were there
     this.emit('stems');
   }
 
@@ -422,7 +444,7 @@ export class Deck extends EventTarget {
     const wasReady = this.stemsReady;
     this.stemsReady = true;
     if (!wasReady && this.fxParts.some(Boolean)) this.applyFxParts();
-    if (!wasReady) this.emit('stems');
+    if (!wasReady) { this.applyIso(); this.emit('stems'); }
   }
 
   /** Fraction (0..1) of the track whose stems are available. */
@@ -458,12 +480,16 @@ export class Deck extends EventTarget {
   /** Drum part gain (0 = drums replaced, e.g. by DRUM SWAP). */
   setDrumGain(g) { this.post({ type: 'drum', gain: g }); }
 
-  /** DRUM ROLL: repeat `beats` of the drum part from the current beat (null = off). */
-  drumRoll(beats) {
-    if (!beats) { this.post({ type: 'drum', roll: null }); return; }
-    const start = this.bg ? this.floorBeat(this.position(), Math.min(1, beats)) : this.position();
+  /**
+   * DRUM ROLL: repeat `beats` of the drum part (null = off). The first roll captures the drum from
+   * the current beat; with `keep` (another roll button still held) the same drum keeps rolling and
+   * only the length changes.
+   */
+  drumRoll(beats, keep = false) {
+    if (!beats) { this.rollStart = null; this.post({ type: 'drum', roll: null }); return; }
+    if (!keep || this.rollStart == null) this.rollStart = this.bg ? this.floorBeat(this.position(), Math.min(1, beats)) : this.position();
     // Roll length is measured in track time (stem frames), so it is simply beats x beat length.
-    this.post({ type: 'drum', roll: { start, len: beats * (this.period || 0.5) } });
+    this.post({ type: 'drum', roll: { start: this.rollStart, len: beats * (this.period || 0.5) } });
   }
 
   /** DRUM TRANS: gate the drum part every `beats` (null = off). */
@@ -500,6 +526,39 @@ export class Deck extends EventTarget {
     const active = this.stemsReady && this.fxParts.some(Boolean);
     this.post({ type: 'fxParts', mask: active ? this.fxParts : [false, false, false, false] });
     this.engine.channels[this.index]?.setPartMode(active);
+    this.emit('stems');
+  }
+
+  // ---- PART ISOLATOR: the EQ knobs control parts (HI vocal, MID inst + bass, LOW drums) ----------
+
+  /** Parts under the HI / MID / LOW isolator knobs (indices into [drums, bass, other, vocals]). */
+  static ISO_PARTS = [[3], [2, 1], [0]];
+
+  /** PART ISOLATOR on / off. Off brings every part back to full level. */
+  setPartIso(on) {
+    this.partIso = on;
+    this.isoKnobs ??= [0.5, 0.5, 0.5];
+    if (on) this.applyIso();
+    else if (this.stemsReady) { this.stemGains = [1, 1, 1, 1]; this.post({ type: 'stemGains', gains: this.stemGains }); }
+    this.emit('iso');
+  }
+
+  /** A part isolator knob moved (band 0 = HI / vocal, 1 = MID / inst + bass, 2 = LOW / drums). */
+  setIsoKnob(band, v01) {
+    this.isoKnobs ??= [0.5, 0.5, 0.5];
+    this.isoKnobs[band] = Math.max(0, Math.min(1, v01));
+    if (!this.partIso) { this.setPartIso(true); return; }
+    this.applyIso();
+    this.emit('iso');
+  }
+
+  /** Part levels from the isolator knobs: left = cut, centre and right = full. */
+  applyIso() {
+    if (!this.partIso || !this.stemsReady) return;
+    const gains = [1, 1, 1, 1];
+    Deck.ISO_PARTS.forEach((parts, band) => parts.forEach((s) => { gains[s] = Math.min(1, (this.isoKnobs?.[band] ?? 0.5) * 2); }));
+    this.stemGains = gains;
+    this.post({ type: 'stemGains', gains });
     this.emit('stems');
   }
 
@@ -607,11 +666,17 @@ export class Deck extends EventTarget {
     return this.beatLoopSize;
   }
 
+  /**
+   * Jump by `beats` beat lines of the grid (exact on dynamic grids too): the play head lands at the
+   * same place inside the beat, `beats` lines further; a loop moves along by the same beats.
+   */
   beatJump(beats) {
     if (!this.loaded) return;
-    const delta = beats * (this.period || 0.5);
-    if (this.loop) this.setLoop({ ...this.loop, start: this.loop.start + delta, end: this.loop.end + delta });
-    this.seek(this.position() + delta);
+    const bg = this.bg;
+    const pos = this.position();
+    const along = (t) => (bg ? bg.timeOf(bg.indexAt(t) + beats) : t + beats * (this.period || 0.5));
+    if (this.loop) this.setLoop({ ...this.loop, start: along(this.loop.start), end: along(this.loop.end) });
+    this.seek(along(pos));
   }
 
   // ---- slicer & censor (hold actions that return via slip) -------------------------------------

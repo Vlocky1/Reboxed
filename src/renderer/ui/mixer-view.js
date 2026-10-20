@@ -1,9 +1,12 @@
 import { h, knob, fader } from './dom.js';
-import { BEAT_FX, FX_BEATS } from '../audio/fx.js';
+import { BEAT_FX, stepFxBeats } from '../audio/fx.js';
+
+/** On-screen order of the decks (indices): 2 decks 1 2, 4 decks 3 1 2 4 (like a 4-deck controller's mixer). */
+export const deckOrder = (n) => (n === 4 ? [2, 0, 1, 3] : [0, 1].slice(0, n));
 import { icon } from './icons.js';
 
 const dbFmt = (v) => (v <= -40 ? 'KILL' : `${v > 0 ? '+' : ''}${v.toFixed(0)}`);
-const fmtBeats = (b) => (b >= 1 ? String(b) : b === 0.75 ? '3/4' : `1/${Math.round(1 / b)}`);
+const fmtBeats = (b) => (b >= 1 ? String(b) : `1/${Math.round(1 / b)}`);
 
 /** Meter bar (0..1 peak, logarithmic display) with peak-hold. */
 function meter() {
@@ -67,12 +70,31 @@ export class MixerView {
       // Vertical range: top = 0, so the input value is inverted (up = louder).
       const chFader = fader({ min: 0, max: 1, value: 0.2, vertical: true, cls: 'chfader', onInput: (v) => engine.setFader(i, 1 - v) });
       reg(`ch${n}.fader`, `CH${n} Fader`, 0, 1, (v) => { chFader.value = String(1 - v); }, (v) => engine.setFader(i, v));
+      // EQ knobs, or PART ISOLATOR knobs (HI vocal, MID inst + bass, LOW drums) when ISO is on.
+      const deck = engine.decks[i];
+      const eqPos = [0.5, 0.5, 0.5];
+      const bandKnob = (band, key, eqLabel) => mk(`ch${n}.${key}`, `CH${n} EQ ${eqLabel}`, {
+        label: eqLabel.toUpperCase(), min: 0, max: 1, value: 0.5, reset: 0.5, size: 'sm',
+        format: (p) => (deck?.partIso ? (p < 0.03 ? 'CUT' : `${Math.round(Math.min(1, p * 2) * 100)}%`) : dbFmt(eqDb(p))),
+        onInput: (p) => { if (deck?.partIso) deck.setIsoKnob(band, p); else { eqPos[band] = p; ch.setEq(['high', 'mid', 'low'][band], eqDb(p)); } },
+      });
+      const eqKnobs = [bandKnob(0, 'hi', 'Hi'), bandKnob(1, 'mid', 'Mid'), bandKnob(2, 'low', 'Low')];
+      const isoBtn = h('button.dbtn.small.iso', { title: 'PART ISOLATOR: the EQ knobs control the parts (HI vocal, MID inst + bass, LOW drums)' }, 'ISO');
+      isoBtn.onclick = () => { deck.setPartIso(!deck.partIso); if (deck.partIso) opts.onPartIso?.(i); };
+      this.controls.set(`ch${n}.iso`, { label: `CH${n} Part Isolator`, button: true, apply: () => isoBtn.click() });
+      const syncIso = () => {
+        const on = !!deck?.partIso;
+        isoBtn.classList.toggle('on', on);
+        ['VOCAL', 'INST', 'DRUMS'].forEach((label, b) => {
+          eqKnobs[b].setLabel(on ? label : ['HI', 'MID', 'LOW'][b]);
+          eqKnobs[b].setValue(on ? deck.isoKnobs?.[b] ?? 0.5 : eqPos[b]);
+        });
+      };
+      deck?.addEventListener('change', (e) => { if (e.detail === 'iso') syncIso(); });
       return h(`div.strip.ch${n}`, {},
         h('div.strip-num', {}, String(n)),
         mk(`ch${n}.trim`, `CH${n} Trim`, { label: 'TRIM', min: -12, max: 12, value: 0, reset: 0, size: 'sm', format: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`, onInput: (v) => ch.setTrim(v) }),
-        mk(`ch${n}.hi`, `CH${n} EQ Hi`, { label: 'HI', min: 0, max: 1, value: 0.5, reset: 0.5, size: 'sm', format: (p) => dbFmt(eqDb(p)), onInput: (p) => ch.setEq('high', eqDb(p)) }),
-        mk(`ch${n}.mid`, `CH${n} EQ Mid`, { label: 'MID', min: 0, max: 1, value: 0.5, reset: 0.5, size: 'sm', format: (p) => dbFmt(eqDb(p)), onInput: (p) => ch.setEq('mid', eqDb(p)) }),
-        mk(`ch${n}.low`, `CH${n} EQ Low`, { label: 'LOW', min: 0, max: 1, value: 0.5, reset: 0.5, size: 'sm', format: (p) => dbFmt(eqDb(p)), onInput: (p) => ch.setEq('low', eqDb(p)) }),
+        ...eqKnobs, isoBtn,
         mk(`ch${n}.color`, `CH${n} Color FX`, { label: 'COLOR', min: -1, max: 1, value: 0, reset: 0, size: 'sm', onInput: (v) => ch.setFilter(v), format: (v) => (Math.abs(v) < 0.04 ? 'OFF' : v < 0 ? 'L' : 'R') }),
         cueBtn,
         h('div.fader-row', {}, m, chFader),
@@ -98,10 +120,10 @@ export class MixerView {
     this.setDeckCount(2);
   }
 
-  /** 2 channels: 1 M 2 — 4 channels: 1 2 M 3 4 */
+  /** 2 channels: 1 M 2 — 4 channels: 3 1 M 2 4 (a 4-deck controller's channel order) */
   setDeckCount(n) {
     this.deckCount = n;
-    const s = this.strips.slice(0, n);
+    const s = deckOrder(n).map((i) => this.strips[i]);
     this.stripsEl.replaceChildren(...s.slice(0, n / 2), this.master, ...s.slice(n / 2));
   }
 
@@ -120,10 +142,7 @@ export class FxView {
       BEAT_FX.map((f) => h('option', { value: f.id }, f.id)));
     this.select = select;
     this.beatVal = h('span.val');
-    const step = (dir) => {
-      const i = FX_BEATS.indexOf(unit.beats);
-      unit.setBeats(FX_BEATS[Math.max(0, Math.min(FX_BEATS.length - 1, (i < 0 ? 5 : i) + dir))]);
-    };
+    const step = (dir) => unit.setBeats(stepFxBeats(unit.beats, dir));
     this.target = h('select.fx-target', { onchange: (e) => unit.setTarget(e.target.value) },
       [...Array.from({ length: deckCount }, (_, i) => h('option', { value: `ch${i + 1}` }, `CH${i + 1}`)),
         h('option', { value: 'master', selected: true }, 'MASTER'), h('option', { value: 'sampler' }, 'SAMPLER')]);

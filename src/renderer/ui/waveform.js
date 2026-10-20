@@ -88,40 +88,15 @@ function drawWave(g, style, x, cy, hh, up, down, lo, mi, hi, colW) {
 }
 
 /**
- * Detail waveform. Called every animation frame.
- * @param {HTMLCanvasElement} canvas
- * @param {import('../audio/deck.js').Deck} deck
- * @param {{style: string, spanSec: number, color: string}} opts
+ * Waveform body for columns [0, w) starting at time t0: band columns zoomed out, the real wave
+ * zoomed in, stem colours when parts are muted. Static in time, so it is drawn once into a strip.
  */
-export function drawDetail(canvas, deck, opts) {
-  const { w, h, dpr } = fitCanvas(canvas);
-  const g = canvas.getContext('2d');
+function paintWave(g, deck, wf, opts, t0, secPerPx, w, h, dpr) {
   g.fillStyle = themeColor.bg;
   g.fillRect(0, 0, w, h);
-  const wf = waveformArrays(deck.analysis);
-  const cx = Math.round(w / 2);
-  if (!deck.loaded) {
-    g.fillStyle = themeColor.text; g.font = `${12 * dpr}px system-ui`; g.textAlign = 'center';
-    g.fillText(deck.loading ? 'Loading…' : `Deck ${deck.index + 1} — drop a track`, cx, h / 2 + 4 * dpr);
-    return;
-  }
-  const pos = deck.position();
-  const span = opts.spanSec;
-  const secPerPx = span / w;
-  const t0 = pos - cx * secPerPx;
   const cy = h / 2;
   const hh = h / 2 - 2 * dpr;
-
-  // Loop region
-  if (deck.loop) {
-    const a = (deck.loop.start - t0) / secPerPx; const b = (deck.loop.end - t0) / secPerPx;
-    g.fillStyle = 'rgba(255,170,0,0.16)';
-    g.fillRect(a, 0, b - a, h);
-  }
-
-  // Stem-coloured waveform: shows what each part does and which parts are muted.
-  const stemMode = opts.stemMode ?? 'muted';
-  const showStems = deck.stemEnv && stemMode !== 'off' && (stemMode === 'always' || deck.stemGains.some((x) => x < 1));
+  const showStems = stemsShown(deck, opts);
   if (wf) {
     const step = Math.max(1, Math.round(dpr));
     if (showStems) g.globalAlpha = 0.22;
@@ -157,10 +132,10 @@ export function drawDetail(canvas, deck, opts) {
     const pps = deck.stemEnvPps ?? 150;
     const step = Math.max(1, Math.round(dpr));
     // Draw loud parts first so quieter ones stay visible on top: drums, bass, other, vocals.
-    for (const s of [0, 1, 2, 3]) {
-      const env = deck.stemEnv[s];
-      const gain = deck.stemGains[s];
-      g.fillStyle = gain === 0 ? 'rgba(90,90,96,0.55)' : STEM_COLORS[s];
+    for (const st of [0, 1, 2, 3]) {
+      const env = deck.stemEnv[st];
+      const gain = deck.stemGains[st];
+      g.fillStyle = gain === 0 ? 'rgba(90,90,96,0.55)' : STEM_COLORS[st];
       g.globalAlpha = gain === 0 ? 1 : 0.35 + 0.55 * gain;
       for (let x = 0; x < w; x += step) {
         const ta = t0 + x * secPerPx;
@@ -172,6 +147,69 @@ export function drawDetail(canvas, deck, opts) {
       }
     }
     g.globalAlpha = 1;
+  }
+}
+
+/** Stem-coloured waveform: shows what each part does and which parts are muted. */
+function stemsShown(deck, opts) {
+  const mode = opts.stemMode ?? 'muted';
+  return !!deck.stemEnv && mode !== 'off' && (mode === 'always' || deck.stemGains.some((x) => x < 1));
+}
+
+/**
+ * The waveform body is cached in a strip three screens wide (one either side of the view). Each
+ * frame copies the visible part; the strip is redrawn only when the view leaves it or something it
+ * shows changes (track, zoom / tempo, size, colours, stems). Saves most of the drawing per frame.
+ */
+function stripFor(canvas, deck, wf, opts, t0, secPerPx, w, h, dpr) {
+  const st = canvas._strip ?? (canvas._strip = { el: document.createElement('canvas'), key: '' });
+  const showStems = stemsShown(deck, opts);
+  const key = [deck.track?.id, deck.duration, w, h, dpr, secPerPx.toPrecision(9), opts.style, themeColor.version, !!wf, !!deck.fine,
+    showStems ? `${deck.stemGains.join()}|${(deck.stemRanges ?? []).length}|${deck.stemCoverage?.().toFixed(4)}` : '-'].join('|');
+  const sw = w * 3;
+  const inside = st.key === key && t0 >= st.t0 && t0 + w * secPerPx <= st.t0 + sw * secPerPx;
+  if (!inside || st.wf !== wf || st.fine !== deck.fine || st.env !== deck.stemEnv) {
+    if (st.el.width !== sw || st.el.height !== h) { st.el.width = sw; st.el.height = h; }
+    st.t0 = t0 - w * secPerPx;
+    st.key = key; st.wf = wf; st.fine = deck.fine; st.env = deck.stemEnv;
+    paintWave(st.el.getContext('2d'), deck, wf, opts, st.t0, secPerPx, sw, h, dpr);
+  }
+  return st;
+}
+
+/**
+ * Detail waveform. Called every animation frame.
+ * @param {HTMLCanvasElement} canvas
+ * @param {import('../audio/deck.js').Deck} deck
+ * @param {{style: string, spanSec: number, color: string}} opts
+ */
+export function drawDetail(canvas, deck, opts) {
+  const { w, h, dpr } = fitCanvas(canvas);
+  const g = canvas.getContext('2d');
+  const wf = waveformArrays(deck.analysis);
+  const cx = Math.round(w / 2);
+  if (!deck.loaded) {
+    g.fillStyle = themeColor.bg;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = themeColor.text; g.font = `${12 * dpr}px system-ui`; g.textAlign = 'center';
+    g.fillText(deck.loading ? 'Loading…' : `Deck ${deck.index + 1} — drop a track`, cx, h / 2 + 4 * dpr);
+    return;
+  }
+  const pos = deck.position();
+  const span = opts.spanSec;
+  const secPerPx = span / w;
+  // Whole device pixels: the strip copy stays sharp (no resampling) and the view moves smoothly.
+  const t0 = Math.round((pos - cx * secPerPx) / secPerPx) * secPerPx;
+
+  // Waveform body from the cached strip.
+  const strip = stripFor(canvas, deck, wf, opts, t0, secPerPx, w, h, dpr);
+  g.drawImage(strip.el, Math.round((t0 - strip.t0) / secPerPx), 0, w, h, 0, 0, w, h);
+
+  // Loop region
+  if (deck.loop) {
+    const a = (deck.loop.start - t0) / secPerPx; const b = (deck.loop.end - t0) / secPerPx;
+    g.fillStyle = 'rgba(255,170,0,0.16)';
+    g.fillRect(a, 0, b - a, h);
   }
   if (!wf) {
     g.fillStyle = themeColor.text; g.font = `${11 * dpr}px system-ui`; g.textAlign = 'center';

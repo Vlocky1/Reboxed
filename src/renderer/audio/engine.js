@@ -112,13 +112,22 @@ class ChannelStrip {
     return t;
   }
 
-  /** FX PART SELECT on: the Beat FX gets only the parts, the rest of the channel bypasses it. */
+  /**
+   * FX PART SELECT on: the Beat FX and the Color FX get only the selected parts (twin chain), the
+   * rest of the channel bypasses both.
+   */
   setPartMode(on) {
+    if (this.partMode === on) return;
     this.partMode = on;
     const now = this.ctx.currentTime;
     this.mainToFx.gain.setTargetAtTime(on ? 0 : 1, now, 0.005);
     this.restBypass.gain.setTargetAtTime(on ? 1 : 0, now, 0.005);
+    if (this.cfx) { this.cfx.dispose(); this.cfx = null; } // rebuilt on the chain that now gets the effects
+    this.setFilter(this.state.filter);
   }
+
+  /** The chain the COLOR knob works on: the selected parts with FX PART SELECT, else the channel. */
+  get colorChain() { return this.partMode && this.twin ? this.twin : this; }
 
   setAutoGainDb(db) {
     for (const c of [this, this.twin]) c.autoGain.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.05);
@@ -145,11 +154,12 @@ class ChannelStrip {
     const q = filterOn && amt > 0 ? 1 + amt * 4 : 0.7;
     for (const c of [this, this.twin]) {
       if (!c) continue;
-      if (filterOn && v < -dead) c.lpf.frequency.setTargetAtTime(20000 * 2 ** (-amt * 10), t, 0.01);
+      const on = filterOn && c === this.colorChain; // with FX PART SELECT only the selected parts are filtered
+      if (on && v < -dead) c.lpf.frequency.setTargetAtTime(20000 * 2 ** (-amt * 10), t, 0.01);
       else c.lpf.frequency.setTargetAtTime(22000, t, 0.01);
-      if (filterOn && v > dead) c.hpf.frequency.setTargetAtTime(20 * 2 ** (amt * 9.5), t, 0.01);
+      if (on && v > dead) c.hpf.frequency.setTargetAtTime(20 * 2 ** (amt * 9.5), t, 0.01);
       else c.hpf.frequency.setTargetAtTime(10, t, 0.01);
-      c.lpf.Q.value = q; c.hpf.Q.value = q;
+      c.lpf.Q.value = on ? q : 0.7; c.hpf.Q.value = on ? q : 0.7;
     }
     if (filterOn) { this.cfx?.set(0, 0); return; }
     this.ensureCfx(type).set(amt, Math.sign(v));
@@ -161,10 +171,11 @@ class ChannelStrip {
     this.setFilter(this.state.filter);
   }
 
-  /** Lazily build the colour-effect graph: a wet path from post-filter back into the fader. */
+  /** Lazily build the colour-effect graph: a wet path from post-filter back into the fader (of colorChain). */
   ensureCfx(type) {
     if (this.cfx?.type === type) return this.cfx;
     const ctx = this.ctx;
+    const chain = this.colorChain;
     const wet = ctx.createGain(); wet.gain.value = 0;
     const tone = ctx.createBiquadFilter();
     const nodes = [wet, tone];
@@ -176,7 +187,7 @@ class ChannelStrip {
         const ir = ctx.createBuffer(2, len, ctx.sampleRate);
         for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2.5; }
         conv.buffer = ir;
-        this.hpf.connect(conv); conv.connect(tone); tone.connect(wet); wet.connect(this.fader);
+        chain.hpf.connect(conv); conv.connect(tone); tone.connect(wet); wet.connect(chain.fader);
         nodes.push(conv);
         set = (a, side) => { tone.type = side < 0 ? 'lowpass' : 'highpass'; tone.frequency.value = side < 0 ? 6000 - a * 5000 : 200 + a * 2500; wet.gain.setTargetAtTime(a * 1.4, ctx.currentTime, 0.02); };
         break;
@@ -184,7 +195,7 @@ class ChannelStrip {
       case 'DUB ECHO': {
         const delay = ctx.createDelay(2); delay.delayTime.value = 0.375;
         const fb = ctx.createGain(); fb.gain.value = 0.62;
-        this.hpf.connect(delay); delay.connect(tone); tone.connect(fb); fb.connect(delay); tone.connect(wet); wet.connect(this.fader);
+        chain.hpf.connect(delay); delay.connect(tone); tone.connect(fb); fb.connect(delay); tone.connect(wet); wet.connect(chain.fader);
         tone.type = 'bandpass'; tone.Q.value = 0.8;
         nodes.push(delay, fb);
         set = (a, side) => { tone.frequency.value = side < 0 ? 900 - a * 600 : 900 + a * 2500; wet.gain.setTargetAtTime(a * 1.2, ctx.currentTime, 0.02); };
@@ -194,7 +205,7 @@ class ChannelStrip {
         const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
         const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
         const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.start();
-        src.connect(tone); tone.connect(wet); wet.connect(this.fader);
+        src.connect(tone); tone.connect(wet); wet.connect(chain.fader);
         tone.Q.value = 1.2;
         nodes.push(src);
         set = (a, side) => { tone.type = side < 0 ? 'lowpass' : 'highpass'; tone.frequency.value = side < 0 ? 200 + a * 4000 : 8000 - a * 6000; wet.gain.setTargetAtTime(a * 0.25, ctx.currentTime, 0.02); };
@@ -203,7 +214,7 @@ class ChannelStrip {
       case 'CRUSH': {
         const shaper = ctx.createWaveShaper();
         const steps = (a) => { const n = 4096; const curve = new Float32Array(n); const lv = 2 ** Math.round(10 - a * 8); for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = Math.round(x * lv) / lv; } return curve; };
-        this.hpf.connect(shaper); shaper.connect(tone); tone.connect(wet); wet.connect(this.fader);
+        chain.hpf.connect(shaper); shaper.connect(tone); tone.connect(wet); wet.connect(chain.fader);
         tone.type = 'allpass';
         nodes.push(shaper);
         let lastStep = -1;
@@ -222,8 +233,8 @@ class ChannelStrip {
       type, set,
       dispose: () => {
         for (const n of nodes) { try { n.disconnect(); } catch { /* already */ } if (n.stop) try { n.stop(); } catch { /* not started */ } }
-        try { this.hpf.disconnect(); } catch { /* none */ }
-        this.hpf.connect(this.fader); this.hpf.connect(this.cueSend);
+        try { chain.hpf.disconnect(); } catch { /* none */ }
+        chain.hpf.connect(chain.fader); chain.hpf.connect(this.cueSend);
       },
     };
     return this.cfx;
