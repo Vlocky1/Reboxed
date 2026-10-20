@@ -27,7 +27,7 @@ const PAD_STATUS = [0x97, 0x99, 0x9b, 0x9d];
 // Controllers with generic pad functions (PadMode1..8, PADn_PadModeN): what each mode is. Plugin
 // option "padModes"; this default is the DDJ-FLX10 layout (from its rekordbox mapping comments).
 export const DEFAULT_PAD_MODES = { 1: 'HOT CUE', 2: 'PAD FX', 3: 'BEAT JUMP', 4: 'SAMPLER', 5: 'KEYBOARD', 6: 'PAD FX2', 7: 'BEAT LOOP', 8: 'KEY SHIFT' };
-const MODE_KIND = { 'HOT CUE': 'HotCue', 'PAD FX': 'PadFx1', 'PAD FX2': 'PadFx2', 'BEAT JUMP': 'BeatJump', 'BEAT LOOP': 'BeatLoopPads', SAMPLER: 'Sampler', KEYBOARD: 'Keyboard', 'KEY SHIFT': 'KeyShift', STEMS: 'Stems' };
+const MODE_KIND = { 'HOT CUE': 'HotCue', 'PAD FX': 'PadFx1', 'PAD FX2': 'PadFx2', 'BEAT JUMP': 'BeatJump', 'BEAT LOOP': 'BeatLoopPads', SAMPLER: 'Sampler', KEYBOARD: 'Keyboard', 'KEY SHIFT': 'KeyShift', STEMS: 'Stems', SLICER: 'Slicer', 'MEMORY CUE': 'MemoryCue' };
 // Same function under another name on some models.
 const ALIAS = {
   'FX1-1BeatDown': 'FX1BeatDown', 'FX1-1BeatUp': 'FX1BeatUp', '4BeatLoop': '4BeatLoopToggle',
@@ -43,14 +43,8 @@ export function normalizeFunction(name) {
 }
 // Controller-side preferences and timing parameters: nothing to do in Reboxed.
 const IGNORED = /Setting$|^(JogIndicatorInterval|JogRatency|MidiOutInterval|FailSafeState|DemoModeSetting|AutoStandbySetting|InputSelect\.|PeerUsbPortName\.|ShiftFuncDisp|MicFX|DDJFXOn|DrumsPartInstDoubles|VocalPartInstDoubles|InstPartInstDoubles|JogCutterMode|JogJogCutterScratch|SamplerRoutingSwitch|MFX)/;
-const MODES = { HotCue: 'HOT CUE', Keyboard: 'KEYBOARD', Stems: 'STEMS', PadFx1: 'PAD FX', BeatJump: 'BEAT JUMP', BeatLoop: 'BEAT LOOP', Sampler: 'SAMPLER', KeyShift: 'KEY SHIFT' };
-// PAD FX bank (16 slots, momentary): [effect, beats, depth].
-export const PAD_FX = [
-  ['ROLL', 1 / 4, 0.8], ['ROLL', 1 / 8, 0.8], ['ROLL', 1 / 16, 0.8], ['ECHO', 1 / 2, 0.6],
-  ['TRANS', 1 / 4, 0.9], ['FILTER', 4, 0.8], ['REVERB', 1, 0.7], ['VINYL BRAKE', 2, 1],
-  ['REV ROLL', 1 / 4, 0.8], ['PING PONG', 1 / 2, 0.6], ['FLANGER', 8, 0.7], ['PHASER', 4, 0.7],
-  ['PITCH', 1, 0.8], ['DOWN ECHO', 1 / 2, 0.7], ['SPIRAL', 1 / 2, 0.7], ['HELIX', 1, 0.8],
-];
+// Pad mode buttons (rekordbox function names) -> the pad page they open in Reboxed.
+const MODES = { HotCue: 'HOT CUE', Keyboard: 'KEYBOARD', Stems: 'STEMS', PadFx1: 'PAD FX', PadFx2: 'PAD FX2', BeatJump: 'BEAT JUMP', BeatLoop: 'BEAT LOOP', Sampler: 'SAMPLER', KeyShift: 'KEY SHIFT', Slicer: 'SLICER', SequenceCall: 'SEQ CALL', MemoryCue: 'MEMORY CUE' };
 
 export class PioneerController {
   /**
@@ -103,7 +97,7 @@ export class PioneerController {
     const fx = this.engine.fx;
 
     // Pads: PADn_<Mode>[+Shift]
-    const pad = /^PAD(\d+)_(HotCue|BeatJump|Sampler|Keyboard|PadFx1|PadFx2|BeatLoop|KeyShift)(\+Shift)?$/.exec(name);
+    const pad = /^PAD(\d+)_(HotCue|BeatJump|Sampler|Keyboard|PadFx1|PadFx2|BeatLoop|KeyShift|Slicer|MemoryCue)(\+Shift)?$/.exec(name);
     if (pad && d) { this.padEvent(i, Number(pad[1]), pad[2], !!pad[3], press); return; }
     // Generic pads: PADn_PadModeM, their meaning comes from the plugin's padModes.
     const gpad = /^PAD(\d+)_PadMode(\d)(\+Shift)?$/.exec(name);
@@ -211,7 +205,7 @@ export class PioneerController {
       case 'TempoRange': if (press) { const r = [6, 10, 16, 100]; d.setTempoRange(r[(r.indexOf(d.tempoRange) + 1) % r.length]); s.tempoCaught = false; } break;
       case 'Sync': if (press) d.toggleSync(); break;
       case 'Master': if (press) this.engine.setMasterDeck(i); break;
-      case 'KeySync': if (press) app.deckViews[i].keySync(); break;
+      case 'KeySync': if (press) d.toggleKeySync(); break;
       case 'KeyReset': if (press) d.setKeyShift(0); break;
       case 'Shift': s.shift = press; break;
       case 'LoopIn': if (press) d.loopIn(); break;
@@ -276,12 +270,18 @@ export class PioneerController {
    */
   requireStems(d) { return this.app.ensureStems(d); }
 
+  /** A pad mode button on the controller: the deck's pad page on screen follows. */
   setMode(i, mode) {
     this.decks[i].mode = mode;
     this.decks[i].page = 0;
-    const view = this.app.deckViews[i];
-    const map = { 'HOT CUE': 'HOT CUE', KEYBOARD: 'KEYBOARD', 'BEAT JUMP': 'BEAT JUMP', 'BEAT LOOP': 'BEAT LOOP', SAMPLER: 'SAMPLER', 'KEY SHIFT': 'KEY SHIFT', STEMS: 'STEMS' };
-    if (map[mode]) { view.padMode = map[mode]; view.modeSel.value = map[mode]; view.renderPads(); }
+    this.app.deckViews[i]?.setPadMode(mode === 'PAD FX2' ? 'PAD FX' : mode, { bank: mode === 'PAD FX2' ? 1 : 0, fromController: true });
+  }
+
+  /** The page was changed on screen: pads and their LEDs follow when this controller has that mode. */
+  followMode(i, mode) {
+    const s = this.decks[i];
+    if (!s || s.mode === mode) return;
+    if (Object.values(MODES).includes(mode) || Object.values(this.padModes).includes(mode)) { s.mode = mode; s.page = 0; }
   }
 
   padEvent(i, n, kind, shift, press) {
@@ -292,7 +292,8 @@ export class PioneerController {
       case 'HotCue': if (press) { if (shift) d.deleteHotCue(slot); else d.hotCuePress(slot); } break;
       case 'BeatJump': if (press) d.beatJump(BEAT_JUMP[s.page * 8 + slot]); break;
       case 'BeatLoop': if (press) d.beatLoop(BEAT_LOOP[slot]); break; // PAD5..PAD12 -> 1/4..32
-      case 'Sampler': if (press) { if (shift) this.app.sampler.stop(slot); else this.app.sampler.trigger(slot); } break;
+      // An empty slot captures this deck's loop (audible stems only), like a click on the slot.
+      case 'Sampler': if (press) { if (shift) this.app.sampler.stop(slot); else this.app.samplerPress(slot, d); } break;
       case 'KeyShift': if (press) { const v = KEY_TABLE[s.page * 8 + slot]; d.setKeyShift(d.keyShift === v ? 0 : v); } break;
       case 'Keyboard': if (press) {
         // SHIFT + pad: choose which hot cue the keyboard plays from (A by default).
@@ -306,20 +307,13 @@ export class PioneerController {
       case 'PadFx2': this.padFx(i, (slot + 8) % 16, press); break; // second PAD FX bank
       case 'BeatLoopPads': if (press) d.beatLoop(BEAT_LOOP[slot + 4]); break; // pads 1-8: 1/4 .. 32 beats
       case 'Stems': if (press && slot < 4 && this.requireStems(d)) { const stem = [3, 2, 1, 0][slot]; d.setStemOn(stem, d.stemGains[stem] === 0); } break;
+      case 'Slicer': if (press) d.slicerDown(slot); else d.slicerUp(); break;
+      case 'MemoryCue': if (press) { if (shift) d.deleteMemoryCue(slot); else d.callMemorySlot(slot); } break;
       default: break;
     }
   }
 
-  padFx(i, slot, press) {
-    const unit = this.app.padFx[i];
-    if (!press) { if (unit.held === slot) { unit.setOn(false); unit.held = null; } return; }
-    const [effect, beats, depth] = PAD_FX[slot] ?? PAD_FX[0];
-    unit.setEffect(effect);
-    unit.setBeats(beats);
-    unit.setDepth(depth);
-    unit.setOn(true);
-    unit.held = slot;
-  }
+  padFx(i, slot, press) { this.app.padFxPress(i, slot, press); }
 
   load(i) {
     const now = performance.now();
@@ -347,11 +341,16 @@ export class PioneerController {
       const prev = s.lastTempo;
       s.lastTempo = pct;
       const crossed = prev !== undefined && (prev - d.tempoPct) * (pct - d.tempoPct) <= 0;
-      if (Math.abs(pct - d.tempoPct) > d.tempoRange * 0.03 && !crossed) return;
+      if (Math.abs(pct - d.tempoPct) > d.tempoRange * 0.03 && !crossed) {
+        // Say why the fader does nothing yet (once per pick-up).
+        if (!s.takeoverHint) { s.takeoverHint = true; toast(`Deck ${i + 1}: bring the tempo fader to ${d.tempoPct >= 0 ? '+' : ''}${d.tempoPct.toFixed(1)}% to take over`, 3000); }
+        return;
+      }
       s.tempoCaught = true;
+      s.takeoverHint = false;
     }
-    if (d.sync) d.toggleSync(); // moving the slider takes the deck out of sync, like rekordbox
-    d.setTempoPct(pct);
+    d.userTempo(pct); // on a synced deck this moves the shared tempo
+    s.lastTempo = pct;
   }
 
   tapGrid(i) {
@@ -420,7 +419,7 @@ export class PioneerController {
       o('MasterTempo', i, d.keyLock);
       o('Sync', i, d.sync);
       o('Master', i, this.engine.masterDeck === d);
-      o('KeySync', i, d.keyShift !== 0);
+      o('KeySync', i, d.keySync);
       o('LoopIn', i, !!d.loop || d.pendingLoopIn !== undefined);
       o('LoopOut', i, !!d.loop);
       o('Quantize', i, d.quantize);

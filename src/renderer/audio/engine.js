@@ -337,7 +337,7 @@ export class AudioEngine extends EventTarget {
   }
 
   tick() {
-    for (const d of this.decks) d.syncTick();
+    for (const d of this.decks) { d.syncTick(); d.keySyncTick(); }
   }
 
   // ---- mixer ---------------------------------------------------------------------------------

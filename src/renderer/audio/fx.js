@@ -28,6 +28,13 @@ export const BEAT_FX = [
 
 const fxNode = (ctx) => new AudioWorkletNode(ctx, 'fx-processor', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
 export const FX_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 3 / 4, 1, 2, 4, 8, 16, 32];
+// PAD FX bank (16 slots, momentary): [effect, beats, depth].
+export const PAD_FX = [
+  ['ROLL', 1 / 4, 0.8], ['ROLL', 1 / 8, 0.8], ['ROLL', 1 / 16, 0.8], ['ECHO', 1 / 2, 0.6],
+  ['TRANS', 1 / 4, 0.9], ['FILTER', 4, 0.8], ['REVERB', 1, 0.7], ['VINYL BRAKE', 2, 1],
+  ['REV ROLL', 1 / 4, 0.8], ['PING PONG', 1 / 2, 0.6], ['FLANGER', 8, 0.7], ['PHASER', 4, 0.7],
+  ['PITCH', 1, 0.8], ['DOWN ECHO', 1 / 2, 0.7], ['SPIRAL', 1 / 2, 0.7], ['HELIX', 1, 0.8],
+];
 
 function impulse(ctx, seconds = 2.8, decay = 3) {
   const len = Math.round(ctx.sampleRate * seconds);

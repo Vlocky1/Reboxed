@@ -60,22 +60,50 @@ export function openUpdateDialog(app, info = app.updateInfo) {
   });
 }
 
-/** Preferences > General rows: check at startup, check now. */
-export function updateSettings(app) {
+export const LINKS = {
+  github: 'https://github.com/Vlocky1/Reboxed',
+  releases: 'https://github.com/Vlocky1/Reboxed/releases',
+  issues: 'https://github.com/Vlocky1/Reboxed/issues',
+  website: 'https://vlocky1.github.io/',
+  instagram: 'https://www.instagram.com/rebox.ed/',
+};
+
+/** Preferences > About: version, Check for updates (and install), links, credits. */
+export function aboutSection(app, version) {
   const s = app.library.settings;
-  const status = h('span.dim', {}, app.updateInfo ? (app.updateInfo.newer ? `Reboxed ${app.updateInfo.latest} is available.` : `Up to date (${app.updateInfo.current}).`) : '');
-  const now = h('button.dbtn.small', { type: 'button' }, 'Check now');
-  now.onclick = async () => {
-    now.disabled = true; status.textContent = 'Checking GitHub…';
-    const info = await checkForUpdates(app, { silent: true });
-    now.disabled = false;
-    if (!info) { status.textContent = 'Could not reach GitHub.'; return; }
+  const status = h('div.about-status');
+  const showInfo = (info) => {
+    if (!info) { status.replaceChildren(h('span.rbi-error', {}, 'Could not reach GitHub. Check the connection and try again.')); return; }
     status.replaceChildren(info.newer
-      ? h('span', {}, `Reboxed ${info.latest} is available. `, h('button.dbtn.small', { type: 'button', onclick: () => openUpdateDialog(app, info) }, 'Install…'))
-      : document.createTextNode(`Up to date (${info.current}).`));
+      ? h('div.about-new', {}, h('span', {}, `Reboxed ${info.latest} is available (you have ${info.current}).`),
+        h('button.dbtn.primary', { type: 'button', onclick: () => openUpdateDialog(app, info) }, `Install ${info.latest}…`))
+      : h('span.about-ok', {}, !info.latest ? 'No release found on GitHub.'
+        : info.latest === info.current ? `✓ Reboxed ${info.current} is the latest version.`
+          : `✓ Up to date (you have ${info.current}, the latest release is ${info.latest}).`));
   };
-  return [
-    h('label', {}, 'Check for updates at startup'), h('div', {}, h('input', { type: 'checkbox', checked: s.checkUpdates !== false, onchange: (e) => app.library.setSetting('checkUpdates', e.target.checked) })),
-    h('label', {}, 'Updates'), h('div', {}, h('div.frow', {}, now, status)),
-  ];
+  const check = h('button.dbtn.primary.about-check', { type: 'button' }, 'Check for updates');
+  check.onclick = async () => {
+    check.disabled = true;
+    status.replaceChildren(h('span.dim', {}, 'Checking GitHub…'));
+    showInfo(await checkForUpdates(app, { silent: true }));
+    check.disabled = false;
+  };
+  if (app.updateInfo) showInfo(app.updateInfo);
+  const link = (label, url) => h('button.dbtn', { type: 'button', title: url, onclick: () => window.rb.openExternal(url) }, label);
+  return h('div', {},
+    h('div.about-card', {},
+      h('img.about-logo', { src: 'assets/logo.svg', alt: '' }),
+      h('div', {},
+        h('div.about-name', {}, 're', h('b', {}, 'box'), 'ed'),
+        h('div.about-version', {}, `Version ${version}`),
+        h('div.dim', {}, 'Free and open-source DJ software (MIT licence).'))),
+    h('h4', {}, 'Updates'),
+    h('div.form-grid', {},
+      h('label', {}, 'New version'), h('div', {}, h('div.frow', {}, check), status),
+      h('label', {}, 'Check at startup'), h('input', { type: 'checkbox', checked: s.checkUpdates !== false, onchange: (e) => app.library.setSetting('checkUpdates', e.target.checked) })),
+    h('h4', {}, 'Links'),
+    h('div.about-links', {}, link('Website', LINKS.website), link('GitHub', LINKS.github), link('Release notes', LINKS.releases), link('Report a bug', LINKS.issues), link('Instagram @rebox.ed', LINKS.instagram)),
+    h('h4', {}, 'Credits'),
+    h('p.dim', {}, 'Stems: Spleeter (Deezer) and HT-Demucs (Meta) models, run with ONNX Runtime. Downloads: yt-dlp, ffmpeg and deno, fetched from their own releases. ',
+      'Not affiliated with AlphaTheta / Pioneer DJ; rekordbox and CDJ are their trademarks.'));
 }

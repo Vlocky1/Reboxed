@@ -32,7 +32,7 @@ export function buildTargets(app) {
     add(`deck${n}.jumpFwd`, `Deck ${n} Beat Jump Forward`, 'button', pressOnly(() => d.beatJump(d.beatJumpSize)));
     add(`deck${n}.load`, `Deck ${n} Load Selected Track`, 'button', pressOnly(() => { const id = app.browser.currentTrackId(); if (id) app.loadTrack(i, id); }));
     // Tempo slider: top = slower like a CDJ (value 0 -> -range).
-    add(`deck${n}.tempo`, `Deck ${n} Tempo Slider`, 'abs', (m) => d.setTempoPct((m.value01 * 2 - 1) * d.tempoRange));
+    add(`deck${n}.tempo`, `Deck ${n} Tempo Slider`, 'abs', (m) => d.userTempo((m.value01 * 2 - 1) * d.tempoRange));
     add(`deck${n}.jog`, `Deck ${n} Jog (relative)`, 'rel', (m) => {
       if (d.playing) { d.setBend(1 + Math.max(-0.1, Math.min(0.1, m.delta * 0.01))); clearTimeout(d.jogTimer); d.jogTimer = setTimeout(() => d.setBend(1), 60); }
       else d.seek(d.position() + m.delta * 0.01);

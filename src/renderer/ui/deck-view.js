@@ -1,6 +1,7 @@
 import { h, fmtTime, fader, contextMenu, promptText } from './dom.js';
 import { Overview } from './waveform.js';
-import { TEMPO_RANGES, BEAT_LOOP_SIZES, BEAT_JUMP_SIZES, HOT_CUE_COUNT } from '../audio/deck.js';
+import { TEMPO_RANGES, BEAT_LOOP_SIZES, BEAT_JUMP_SIZES } from '../audio/deck.js';
+import { PAD_FX } from '../audio/fx.js';
 import { JogWheel } from './jog.js';
 import { displayKey, transposeKey } from '../../shared/keys.js';
 import { TRACK_COLORS } from '../../shared/rekordbox-xml.js';
@@ -8,7 +9,13 @@ import { icon } from './icons.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 
 const STEM_BUTTONS = [['VOCAL', 3], ['INST', 2], ['BASS', 1], ['DRUMS', 0]];
-export const PAD_MODES = ['HOT CUE', 'BEAT LOOP', 'BEAT JUMP', 'SLICER', 'SAMPLER', 'KEY SHIFT', 'KEYBOARD', 'STEMS', 'GROOVE'];
+/**
+ * Pad pages, in rekordbox's order. The dropdown above the pads picks one; a controller's pad mode
+ * buttons (HOT CUE, PAD FX, STEMS...) open the matching page. SEQ CALL needs the sequencer, which
+ * Reboxed does not have yet: listed, not selectable.
+ */
+export const PAD_MODES = ['HOT CUE', 'PAD FX', 'SLICER', 'BEAT JUMP', 'BEAT LOOP', 'SAMPLER', 'KEYBOARD', 'KEY SHIFT', 'SEQ CALL', 'STEMS', 'MEMORY CUE', 'GROOVE'];
+const UNAVAILABLE = new Set(['SEQ CALL']);
 // STEMS pads: 1-4 ACTIVE PART (mute), 5-8 FX PART SELECT; index into [drums, bass, other, vocals].
 const STEM_PADS = [['VOC', 3], ['INST', 2], ['BASS', 1], ['DRUM', 0]];
 const STEM_PAD_COLORS = { 3: '#ff4fa3', 2: '#3ddc84', 1: '#3d8dff', 0: '#ffa91f' };
@@ -17,7 +24,10 @@ const PAD_JUMPS = [-32, -16, -4, -1, 1, 4, 16, 32];
 const PAD_KEYS = [-4, -3, -2, -1, 1, 2, 3, 4];
 const PAD_KEYBOARD = [-3, -2, -1, 0, 1, 2, 3, 4];
 const fmtBeats = (b) => (b >= 1 ? String(b) : `1/${Math.round(1 / b)}`);
+const fmtSigned = (b) => (Math.abs(b) >= 1 ? String(b) : `${b < 0 ? '-' : ''}1/${Math.round(1 / Math.abs(b))}`);
 const HOT_COLORS = TRACK_COLORS.map((c) => c.css);
+// Pages whose 8 pads show one of two banks (hot cues A–H / I–P, sampler and PAD FX 1–8 / 9–16).
+const BANKS = { 'HOT CUE': ['A–H', 'I–P'], SAMPLER: ['1–8', '9–16'], 'PAD FX': ['1–8', '9–16'] };
 
 export class DeckView {
   /**
@@ -48,16 +58,18 @@ export class DeckView {
     this.cueBtn.addEventListener('pointerleave', () => d.cueUp());
     this.playBtn = h('button.transport.play', { onclick: () => d.playPause(), title: 'PLAY/PAUSE' }, '▶❚❚');
 
-    this.syncBtn = btn('SYNC', 'sync', () => d.toggleSync(), 'Beat sync to master');
+    // BEAT SYNC and KEY SYNC side by side, like rekordbox.
+    this.syncBtn = btn('BEAT SYNC', 'sync', () => d.toggleSync(), 'Beat sync: tempo (and beats) follow the master deck');
+    this.keySyncBtn = btn('KEY SYNC', 'keysync', () => d.toggleKeySync(), 'Key sync: shift the key to match the master deck (or its relative key)');
     this.qBtn = btn('Q', 'q', () => d.toggleQuantize(), 'Quantize');
     this.mtBtn = btn('MT', 'mt', () => d.toggleKeyLock(), 'Master Tempo (key lock)');
     this.slipBtn = btn('SLIP', 'slip', () => d.toggleSlip(), 'Slip mode');
     this.revBtn = btn('REV', 'rev', () => d.setReverse(!d.reverse), 'Reverse');
 
-    // 8 performance pads; what they do depends on the pad mode. The bank button pages
-    // hot cues A–H / I–P and sampler slots 1–8 / 9–16.
+    // 8 performance pads; what they do depends on the pad page.
     this.bank = 0;
     this.padMode = 'HOT CUE';
+    this.kbCue = 0; // KEYBOARD plays from this hot cue
     this.pads = Array.from({ length: 8 }, (_, i) => {
       const pad = h('button.pad', {}, h('span.pad-letter'), h('span.pad-time'));
       pad.addEventListener('pointerdown', (e) => { if (e.button === 0) { pad.setPointerCapture(e.pointerId); this.padDown(i, e); } });
@@ -66,9 +78,11 @@ export class DeckView {
       pad.addEventListener('contextmenu', (e) => { e.preventDefault(); if (this.padMode === 'HOT CUE') this.padMenu(e, this.bank * 8 + i); });
       return pad;
     });
-    this.bankBtn = btn('A–H', 'bank', () => { this.bank = (this.bank + 1) % (HOT_CUE_COUNT / 8); this.refresh(); }, 'Pad bank');
-    this.modeSel = h('select.padmode', { title: 'Pad mode', onchange: (e) => { this.padMode = e.target.value; this.refresh(); } },
-      PAD_MODES.map((m) => h('option', { value: m }, m)));
+    this.bankBtn = btn('A–H', 'bank', () => { this.bank = 1 - this.bank; this.refresh(); }, 'Pad bank');
+    // Pad page dropdown.
+    this.modeLabel = h('span.padmode-label');
+    this.modeBtn = h('button.dbtn.padmode', { title: 'Pad mode (a pad mode button on the controller opens its page)', onclick: () => this.modeMenu() }, this.modeLabel, h('span.padmode-caret', {}, '▾'));
+    this.pageBar = h('div.row.page');
     // Stems: VOCAL / INST / BASS / DRUMS (indices into [drums, bass, other, vocals]).
     this.stemBtns = STEM_BUTTONS.map(([label, idx]) => {
       const b = h(`button.dbtn.small.stem.stem-${label.toLowerCase()}`, { title: `${label}: click = mute/unmute, Shift+click = solo` }, label);
@@ -86,7 +100,7 @@ export class DeckView {
     this.censorBtn.addEventListener('pointerleave', () => d.censorUp());
 
     this.loopSize = h('span.val');
-    this.loopBtn = btn('', 'loop-size', () => d.beatLoop(d.beatLoopSize), 'Auto beat loop');
+    this.loopBtn = btn('', 'loop-size', () => d.beatLoop(d.beatLoopSize), 'Auto beat loop (starts on the closest beat with Quantize)');
     this.loopBtn.append(this.loopSize);
     this.inBtn = btn('IN', '', () => d.loopIn(), 'Loop in');
     this.outBtn = btn('OUT', '', () => d.loopOut(), 'Loop out');
@@ -99,28 +113,30 @@ export class DeckView {
     this.keyShiftVal = h('span.val');
     this.tempoFader = fader({ min: -1, max: 1, step: 0.0005, value: 0, vertical: true, cls: 'tempo', reset: 0,
       // Vertical range: top = min. Like a CDJ, pulling the fader down (towards you) speeds up.
-      onInput: (v) => d.setTempoPct(v * d.tempoRange) });
+      onInput: (v) => d.userTempo(v * d.tempoRange) });
     this.rangeBtn = btn('', 'range', () => d.setTempoRange(TEMPO_RANGES[(TEMPO_RANGES.indexOf(d.tempoRange) + 1) % TEMPO_RANGES.length]), 'Tempo range');
 
     // Layout after rekordbox's PERFORMANCE deck: header (number, artwork, title, key, BPM,
-    // MASTER/SYNC), time + overview, then [CUE/PLAY] [pads & controls] [tempo slider].
+    // MASTER / BEAT SYNC / KEY SYNC), time + overview, then [jog, CUE/PLAY] [pads] [tempo slider].
     this.art = h('div.deck-art');
     this.playBtn.innerHTML = '';
     this.playBtn.append(icon('playpause'));
+    this.keyBox = h('button.deck-keybox', { title: 'Key: click to shift it (semitones) or sync it', onclick: () => this.keyPanel() }, h('div.deck-label', {}, 'KEY'), this.keyEl);
     this.el = h(`section.deck.deck${d.index + 1}`, { dataset: { deck: d.index } },
       h('div.deck-head', {},
         h('div.deck-num', {}, String(d.index + 1)),
         this.art,
         h('div.deck-info', {}, this.title, this.artist),
-        h('div.deck-keybox', {}, h('div.deck-label', {}, 'KEY'), this.keyEl),
+        this.keyBox,
         h('div.deck-bpmbox', {}, h('div.deck-label', {}, 'BPM'), this.bpm, this.bpmSub),
-        h('div.deck-headbtns', {}, this.masterBtn, this.syncBtn)),
+        h('div.deck-headbtns', {}, this.masterBtn, this.syncBtn, this.keySyncBtn)),
       h('div.deck-ovrow', {}, this.timeEl, h('div.canvas-box.ov-box', {}, this.overviewCanvas), this.remainEl),
       h('div.deck-body', {},
         h('div.deck-transport', {}, (this.jog = new JogWheel(d)).el, h('div.transport-row', {}, this.cueBtn, this.playBtn)),
         h('div.deck-center', {},
-          h('div.row.modes', {}, this.qBtn, this.mtBtn, this.slipBtn, this.revBtn, this.censorBtn, h('span.spacer'), this.modeSel, this.bankBtn),
+          h('div.row.modes', {}, this.qBtn, this.mtBtn, this.slipBtn, this.revBtn, this.censorBtn, h('span.spacer'), this.modeBtn),
           h('div.pads', {}, this.pads),
+          this.pageBar,
           this.stemRow,
           h('div.row.loops', {},
             h('div.seg', {},
@@ -135,20 +151,7 @@ export class DeckView {
             h('div.seg', {},
               btn('◀', 'small', () => d.beatJump(-d.beatJumpSize), 'Beat jump back'),
               h('button.dbtn.jump-label', { title: 'Beat jump size (click to change)', onclick: () => { d.beatJumpSize = BEAT_JUMP_SIZES[(BEAT_JUMP_SIZES.indexOf(d.beatJumpSize) + 1) % BEAT_JUMP_SIZES.length]; this.refresh(); } }, 'JUMP ', this.jumpSize),
-              btn('▶', 'small', () => d.beatJump(d.beatJumpSize), 'Beat jump forward'))),
-          h('div.row.jumps', {},
-            h('div.seg', {},
-              btn('MEMORY', '', () => d.addMemoryCue(), 'Add memory cue'),
-              btn('◀', 'small', () => d.callMemoryCue(-1), 'Previous memory cue'),
-              btn('▶', 'small', () => d.callMemoryCue(1), 'Next memory cue'),
-              btn('DEL', 'small', () => d.deleteMemoryCueNear(), 'Delete nearest memory cue')),
-            h('span.spacer'),
-            h('div.seg.keyshift', {}, h('span.seg-label', {}, 'KEY'),
-              btn('−', 'small', () => d.setKeyShift(d.keyShift - 1), 'Key shift down'),
-              this.keyShiftVal,
-              btn('+', 'small', () => d.setKeyShift(d.keyShift + 1), 'Key shift up'),
-              btn('SYNC', 'small', () => this.keySync(), 'Key sync to the other deck'),
-              btn('RESET', 'small', () => d.setKeyShift(0), 'Key reset')))),
+              btn('▶', 'small', () => d.beatJump(d.beatJumpSize), 'Beat jump forward')))),
         h('div.deck-tempo-col', {}, this.rangeBtn, this.tempoEl, this.tempoFader, btn('RESET', 'small', () => { d.setTempoPct(0); }, 'Tempo reset'))));
 
     // Drop tracks onto the deck
@@ -162,23 +165,109 @@ export class DeckView {
 
     d.addEventListener('change', () => this.refresh());
     app.engine.addEventListener('master', () => this.refresh());
+    this.buildPageBar();
     this.refresh();
   }
 
-  keySync() {
-    const other = this.app.engine.decks.find((x) => x !== this.deck && x.loaded);
-    const mine = this.deck.analysis?.key || this.deck.track?.key;
-    const theirs = other && (other.analysis?.key || other.track?.key);
-    if (!mine || !theirs) return;
-    // Smallest shift (−6..+6) that makes this deck's key equal to, or the relative of, the other.
-    let best = 0; let bestDist = Infinity;
-    for (let s = -6; s <= 6; s++) {
-      const k = transposeKey(mine, s);
-      const theirsShifted = transposeKey(theirs, other.keyShift);
-      const same = k === theirsShifted || k.slice(0, -1) === theirsShifted.slice(0, -1);
-      if (same && Math.abs(s) < bestDist) { best = s; bestDist = Math.abs(s); }
+  // ---- pad pages -------------------------------------------------------------------------------
+
+  /**
+   * Open a pad page. bank: which half of 16 (hot cues I–P, sampler / PAD FX 9–16).
+   * fromController: the page follows a controller button, so the controller needs no update.
+   */
+  setPadMode(mode, { bank = 0, fromController = false } = {}) {
+    if (!PAD_MODES.includes(mode) || UNAVAILABLE.has(mode)) return;
+    const changed = mode !== this.padMode || bank !== this.bank;
+    this.padMode = mode;
+    this.bank = BANKS[mode] ? bank : 0;
+    if (changed) this.buildPageBar();
+    this.refresh();
+    if (!fromController) this.app.onPadModeChange?.(this.deck.index, mode);
+  }
+
+  modeMenu() {
+    const r = this.modeBtn.getBoundingClientRect();
+    contextMenu(r.left, r.bottom + 2, PAD_MODES.map((m) => ({
+      label: UNAVAILABLE.has(m) ? `${m} (not available yet)` : m,
+      checked: m === this.padMode,
+      disabled: UNAVAILABLE.has(m),
+      action: () => this.setPadMode(m),
+    })));
+  }
+
+  /** The row under the pads: what the current page needs (bank, sizes, memory, key...). */
+  buildPageBar() {
+    const d = this.deck;
+    const btn = (label, cls, onclick, title) => h(`button.dbtn${cls ? `.${cls}` : ''}`, { onclick, title }, label);
+    const hint = (text) => h('span.page-hint', {}, text);
+    const parts = [];
+    switch (this.padMode) {
+      case 'HOT CUE': parts.push(this.bankBtn, hint('Empty pad: set · Shift+click: delete · right-click: name, colour')); break;
+      case 'PAD FX': parts.push(this.bankBtn, hint('Hold a pad: effect on this deck, at its beat')); break;
+      case 'SLICER': parts.push(hint('Hold a pad: loops that 8th of the current 2 bars, playback returns (slip)')); break;
+      case 'BEAT JUMP': parts.push(hint('Pad = jump by that many beats (loops move along)')); break;
+      case 'BEAT LOOP': parts.push(hint('Pad = loop of that many beats, on the closest beat · again: exit')); break;
+      case 'SAMPLER': parts.push(this.bankBtn, hint('Empty pad: captures this deck\'s loop (audible stems only) · loaded: play')); break;
+      case 'KEYBOARD':
+        this.kbBtn = btn('', 'small', () => { this.kbCue = (this.kbCue + 1) % 8; this.refresh(); }, 'Hot cue the keyboard plays from (click to change)');
+        parts.push(h('span.seg-label', {}, 'FROM'), this.kbBtn, hint('Pad = play the hot cue transposed'));
+        break;
+      case 'KEY SHIFT':
+        parts.push(h('div.seg.keyshift', {}, h('span.seg-label', {}, 'KEY'),
+          btn('−', 'small', () => d.setKeyShift(d.keyShift - 1), 'Key shift down (semitone)'),
+          this.keyShiftVal,
+          btn('+', 'small', () => d.setKeyShift(d.keyShift + 1), 'Key shift up (semitone)'),
+          btn('RESET', 'small', () => d.setKeyShift(0), 'Key reset')), hint('Pad = shift by that many semitones'));
+        break;
+      case 'STEMS': parts.push(hint('Pads 1–4: mute / unmute a part · 5–8: Beat FX on that part only')); break;
+      case 'MEMORY CUE':
+        parts.push(h('div.seg', {},
+          btn('MEMORY', '', () => d.addMemoryCue(), 'Add a memory cue at the play head (or the loop)'),
+          btn('◀', 'small', () => d.callMemoryCue(-1), 'Previous memory cue'),
+          btn('▶', 'small', () => d.callMemoryCue(1), 'Next memory cue'),
+          btn('DEL', 'small', () => d.deleteMemoryCueNear(), 'Delete the nearest memory cue')), hint('Pad = go to memory cue · Shift+click: delete'));
+        break;
+      case 'GROOVE': parts.push(hint('Drum swap 1–4 · bank · capture · roll · release FX')); break;
+      default: break;
     }
-    this.deck.setKeyShift(best);
+    this.pageBar.replaceChildren(...parts);
+  }
+
+  // ---- key -------------------------------------------------------------------------------------
+
+  /** KEY button: a small panel to shift the key by semitones, reset it, or turn KEY SYNC on. */
+  keyPanel() {
+    const d = this.deck;
+    if (this.keyPop) { this.closeKeyPanel(); return; }
+    const btn = (label, cls, onclick, title) => h(`button.dbtn${cls ? `.${cls}` : ''}`, { onclick, title }, label);
+    this.keyPopVal = h('span.key-pop-val');
+    this.keyPopKeys = h('div.key-pop-keys');
+    this.keyPopSync = btn('KEY SYNC', 'keysync', () => d.toggleKeySync(), 'Match the master deck\'s key');
+    const pop = h('div.key-pop', {},
+      h('div.key-pop-title', {}, 'KEY SHIFT'),
+      this.keyPopKeys,
+      h('div.key-pop-row', {},
+        btn('▼', '', () => d.setKeyShift(d.keyShift - 1), 'One semitone down'),
+        this.keyPopVal,
+        btn('▲', '', () => d.setKeyShift(d.keyShift + 1), 'One semitone up')),
+      h('div.key-pop-row', {}, btn('RESET', 'small', () => d.setKeyShift(0), 'Original key'), this.keyPopSync));
+    document.body.append(pop);
+    const r = this.keyBox.getBoundingClientRect();
+    pop.style.left = `${Math.max(4, Math.min(r.left, innerWidth - pop.offsetWidth - 4))}px`;
+    pop.style.top = `${r.bottom + 4}px`;
+    this.keyPop = pop;
+    this.keyPopOff = (e) => { if (!pop.contains(e.target) && !this.keyBox.contains(e.target)) this.closeKeyPanel(); };
+    this.keyPopEsc = (e) => { if (e.key === 'Escape') this.closeKeyPanel(); };
+    document.addEventListener('pointerdown', this.keyPopOff, true);
+    document.addEventListener('keydown', this.keyPopEsc);
+    this.refresh();
+  }
+
+  closeKeyPanel() {
+    this.keyPop?.remove();
+    this.keyPop = null;
+    document.removeEventListener('pointerdown', this.keyPopOff, true);
+    document.removeEventListener('keydown', this.keyPopEsc);
   }
 
   padMenu(e, slot) {
@@ -203,7 +292,7 @@ export class DeckView {
     const notation = this.app.library.settings.keyNotation;
     this.title.textContent = t ? t.title || '(untitled)' : 'No track';
     this.artist.textContent = t ? t.artist || '' : '';
-    const key = d.analysis?.key || t?.key || '';
+    const key = d.key;
     const shifted = d.keyShift ? transposeKey(key, d.keyShift) : key;
     this.keyEl.textContent = key ? displayKey(shifted, notation) : '—';
     this.keyEl.classList.toggle('shifted', !!d.keyShift);
@@ -225,6 +314,7 @@ export class DeckView {
     this.tempoFader.value = String(d.tempoPct / d.tempoRange);
     this.masterBtn.classList.toggle('on', this.app.engine.masterDeck === d);
     this.syncBtn.classList.toggle('on', d.sync);
+    this.keySyncBtn.classList.toggle('on', d.keySync);
     this.qBtn.classList.toggle('on', d.quantize);
     this.mtBtn.classList.toggle('on', d.keyLock);
     this.slipBtn.classList.toggle('on', d.slip);
@@ -235,7 +325,14 @@ export class DeckView {
     this.exitBtn.textContent = d.loop ? 'EXIT' : 'RELOOP';
     this.inBtn.classList.toggle('on', d.pendingLoopIn !== undefined);
     this.jumpSize.textContent = String(d.beatJumpSize);
-    this.keyShiftVal.textContent = `${d.keyShift > 0 ? '+' : ''}${d.keyShift}`;
+    const semis = `${d.keyShift > 0 ? '+' : ''}${d.keyShift}`;
+    this.keyShiftVal.textContent = semis;
+    if (this.kbBtn) this.kbBtn.textContent = String.fromCharCode(65 + this.kbCue);
+    if (this.keyPop) {
+      this.keyPopVal.textContent = semis;
+      this.keyPopKeys.textContent = key ? `${displayKey(key, notation)} → ${displayKey(shifted, notation)}` : 'No key';
+      this.keyPopSync.classList.toggle('on', d.keySync);
+    }
     this.renderPads();
     this.renderStems();
   }
@@ -280,15 +377,16 @@ export class DeckView {
     const slot = this.bank * 8 + i;
     switch (this.padMode) {
       case 'HOT CUE': if (e.shiftKey) d.deleteHotCue(slot); else d.hotCuePress(slot); break;
+      case 'PAD FX': this.app.padFxPress?.(d.index, slot, true); this.heldFx = slot; break;
       case 'BEAT LOOP': d.beatLoop(PAD_LOOPS[i]); break;
       case 'BEAT JUMP': d.beatJump(PAD_JUMPS[i]); break;
       case 'SLICER': d.slicerDown(i); this.heldSlice = true; break;
       case 'SAMPLER': this.app.samplerPress?.(slot, d); break;
       case 'KEY SHIFT': d.setKeyShift(d.keyShift === PAD_KEYS[i] ? 0 : PAD_KEYS[i]); break;
       case 'KEYBOARD': {
-        // Play hot cue A (or the cue point) transposed by the pad's semitone.
+        // Play the chosen hot cue (A by default, else the cue point) transposed by the pad's semitone.
         d.setKeyShift(PAD_KEYBOARD[i]);
-        const a = d.hotCue(0);
+        const a = d.hotCue(this.kbCue) ?? d.hotCue(0);
         d.jumpTo(a ? a.start : d.cuePoint);
         if (!d.playing) d.play();
         break;
@@ -300,6 +398,7 @@ export class DeckView {
         else d.setFxPart(stem, !d.fxParts[stem]);
         break;
       }
+      case 'MEMORY CUE': if (e.shiftKey) d.deleteMemoryCue(i); else d.callMemorySlot(i); break;
       case 'GROOVE': this.groovePad(i, e, true); break;
       default: break;
     }
@@ -308,6 +407,7 @@ export class DeckView {
 
   padUp(i) {
     if (this.padMode === 'SLICER' && this.heldSlice) { this.heldSlice = false; this.deck.slicerUp(); this.renderPads(); }
+    if (this.padMode === 'PAD FX' && this.heldFx === this.bank * 8 + i) { this.heldFx = null; this.app.padFxPress?.(this.deck.index, this.bank * 8 + i, false); }
     if (this.padMode === 'GROOVE' && this.heldGroove === i) { this.heldGroove = null; this.groovePad(i, null, false); this.renderPads(); }
   }
 
@@ -334,17 +434,13 @@ export class DeckView {
   renderPads() {
     const d = this.deck;
     const mode = this.padMode;
-    const usesBank = mode === 'HOT CUE' || mode === 'SAMPLER';
-    this.bankBtn.hidden = !usesBank;
-    if (mode === 'HOT CUE') {
-      const hotSet = (b) => Array.from({ length: 8 }, (_, i) => d.hotCue(b * 8 + i)).some(Boolean);
-      this.bankBtn.textContent = this.bank === 0 ? 'A–H' : 'I–P';
-      this.bankBtn.classList.toggle('on', hotSet(1 - this.bank)); // lit when the hidden bank holds cues
-    } else if (mode === 'SAMPLER') {
-      this.bankBtn.textContent = this.bank === 0 ? '1–8' : '9–16';
-      this.bankBtn.classList.remove('on');
+    this.modeLabel.textContent = mode;
+    if (BANKS[mode]) {
+      this.bankBtn.textContent = BANKS[mode][this.bank];
+      const used = (b) => Array.from({ length: 8 }, (_, i) => b * 8 + i).some((s) => (mode === 'HOT CUE' ? d.hotCue(s) : mode === 'SAMPLER' ? this.app.sampler?.slots[s]?.buffer : false));
+      this.bankBtn.classList.toggle('on', used(1 - this.bank)); // lit when the hidden bank holds something
     }
-    const fmtB = (b) => (Math.abs(b) >= 1 ? String(b) : `${b < 0 ? '-' : ''}1/${Math.round(1 / Math.abs(b))}`);
+    const memories = mode === 'MEMORY CUE' ? d.memoryCues() : null;
     this.pads.forEach((pad, i) => {
       const slot = this.bank * 8 + i;
       let letter = ''; let sub = ''; let color = 'transparent'; let set = false; let loopPad = false; let active = false;
@@ -356,12 +452,18 @@ export class DeckView {
           color = cue?.color ?? 'transparent'; set = !!cue; loopPad = cue?.end !== undefined;
           break;
         }
-        case 'BEAT LOOP': letter = fmtB(PAD_LOOPS[i]); sub = 'beat'; color = '#ff9a1f'; set = true; active = d.loop?.beats === PAD_LOOPS[i] && d.loop.slice === undefined; break;
+        case 'PAD FX': {
+          const [fx, beats] = PAD_FX[slot] ?? PAD_FX[0];
+          letter = fx; sub = `${fmtBeats(beats)} beat`; color = '#a24dff'; set = true;
+          active = this.app.padFx?.[d.index]?.held === slot;
+          break;
+        }
+        case 'BEAT LOOP': letter = fmtSigned(PAD_LOOPS[i]); sub = 'beat'; color = '#ff9a1f'; set = true; active = d.loop?.beats === PAD_LOOPS[i] && d.loop.slice === undefined; break;
         case 'BEAT JUMP': letter = `${PAD_JUMPS[i] > 0 ? '+' : ''}${PAD_JUMPS[i]}`; sub = 'jump'; color = '#3d7dff'; set = true; break;
         case 'SLICER': letter = String(i + 1); sub = 'slice'; color = '#25e6d6'; set = true; active = d.loop?.slice === i; break;
         case 'SAMPLER': {
           const s = this.app.sampler?.slots[slot];
-          letter = String(slot + 1); sub = s?.name || '—'; color = s?.buffer ? '#a24dff' : 'transparent'; set = !!s?.buffer;
+          letter = String(slot + 1); sub = s?.name || 'capture'; color = s?.buffer ? '#a24dff' : 'transparent'; set = !!s?.buffer;
           active = !!this.app.sampler?.isPlaying(slot);
           break;
         }
@@ -371,6 +473,13 @@ export class DeckView {
           const [label, stem] = STEM_PADS[i % 4];
           letter = label; sub = i < 4 ? 'part' : 'fx part'; color = STEM_PAD_COLORS[stem]; set = true;
           active = i < 4 ? d.stemsReady && d.stemGains[stem] > 0 : !!d.fxParts?.[stem];
+          break;
+        }
+        case 'MEMORY CUE': {
+          const cue = memories[i];
+          letter = String(i + 1); sub = cue ? (cue.name || fmtTime(cue.start)) : '';
+          color = cue ? '#ff4040' : 'transparent'; set = !!cue; loopPad = cue?.end !== undefined;
+          active = !!cue && Math.abs(d.cuePoint - cue.start) < 0.01;
           break;
         }
         case 'GROOVE': {
@@ -393,10 +502,13 @@ export class DeckView {
       pad.classList.toggle('set', set);
       pad.classList.toggle('looppad', loopPad);
       pad.classList.toggle('active', active);
+      pad.classList.toggle('fx', mode === 'PAD FX');
       pad.style.setProperty('--pad', color);
       pad.title = mode === 'HOT CUE' ? 'Hot cue (Shift+click delete, right-click for options)'
         : mode === 'GROOVE' ? ['DRUM SWAP 1', 'DRUM SWAP 2', 'DRUM SWAP 3', 'DRUM SWAP 4', 'Bank A/B', 'DRUM CAPTURE (Shift+click: 1/2/4 bars)', 'DRUM ROLL 1/4 (hold)', 'DRUM RELEASE FX (hold, Shift+click: type)'][i]
-          : mode === 'STEMS' ? `${i < 4 ? 'ACTIVE PART' : 'FX PART SELECT'} ${STEM_PADS[i % 4][0]}` : mode;
+          : mode === 'STEMS' ? `${i < 4 ? 'ACTIVE PART' : 'FX PART SELECT'} ${STEM_PADS[i % 4][0]}`
+            : mode === 'PAD FX' ? `${(PAD_FX[slot] ?? PAD_FX[0])[0]} (hold)`
+              : mode === 'MEMORY CUE' ? 'Memory cue (Shift+click delete)' : mode;
     });
   }
 

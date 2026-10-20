@@ -146,7 +146,15 @@ body.no-mixer .decks.four { grid-template-columns: repeat(4, 1fr); }
 .deck-artist { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
 .deck-label { font-size: 8px; font-weight: 700; letter-spacing: .12em; color: var(--dim); }
 .deck-keybox, .deck-bpmbox { flex: none; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; height: 44px; padding: 0 8px; background: var(--bg-0); border: 1px solid #000; border-radius: 3px; }
-.deck-keybox { align-items: center; min-width: 46px; }
+.deck-keybox { align-items: center; min-width: 46px; font: inherit; color: inherit; cursor: pointer; }
+.deck-keybox:hover { border-color: var(--line-2); }
+/* KEY panel: semitone shift, reset, KEY SYNC. */
+.key-pop { position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 6px; padding: 10px; min-width: 150px; border-radius: 8px; background: var(--panel); border: 1px solid #000; box-shadow: 0 0 0 1px var(--line-2), 0 12px 30px rgba(0,0,0,.6); }
+.key-pop-title { font-size: 9px; font-weight: 800; letter-spacing: .12em; color: var(--dim); }
+.key-pop-keys { font-size: 13px; font-weight: 800; color: var(--green); }
+.key-pop-row { display: flex; align-items: center; gap: 6px; }
+.key-pop-row .dbtn { flex: 1; }
+.key-pop-val { min-width: 34px; text-align: center; font-size: 15px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
 .deck-key { font-size: 16px; font-weight: 800; color: var(--green); line-height: 1.05; }
 .deck-key.shifted { color: var(--on); }
 .deck-bpmbox { min-width: 86px; }
@@ -154,7 +162,8 @@ body.no-mixer .decks.four { grid-template-columns: repeat(4, 1fr); }
 .deck-bpm-sub { color: var(--text-2); font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 600; }
 .deck-headbtns { flex: none; display: flex; gap: 3px; align-items: center; }
 .deck-headbtns .dbtn { min-width: 0; height: 26px; }
-.deck-headbtns .dbtn.master, .deck-headbtns .dbtn.sync { min-width: 56px; }
+.deck-headbtns .dbtn.master, .deck-headbtns .dbtn.sync, .deck-headbtns .dbtn.keysync { min-width: 56px; }
+.dbtn.keysync.on { background: linear-gradient(#3d1530, #2c0f22); border-color: #200616; color: #ff7dc4; }
 
 .deck-ovrow { display: flex; align-items: center; gap: 6px; }
 .deck-time, .deck-remain { flex: none; min-width: 52px; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; }
@@ -187,8 +196,15 @@ canvas.overview { display: block; cursor: pointer; }
 
 .deck-center { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-select.padmode { font-size: 10px; font-weight: 700; padding: 1px 2px; max-width: 96px; height: 22px; }
+/* Pad page dropdown (rekordbox: HOT CUE, PAD FX, SLICER...). */
+.dbtn.padmode { min-width: 112px; justify-content: space-between; gap: 6px; padding: 0 8px; color: #fff; }
+.padmode-label { font-weight: 800; letter-spacing: .04em; }
+.padmode-caret { color: var(--dim); font-size: 9px; }
 .dbtn.bank { min-width: 40px; }
+/* Row under the pads: what the current page needs. */
+.row.page { flex-wrap: nowrap; min-height: 22px; overflow: hidden; }
+.page-hint { color: var(--dim); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pad.fx .pad-letter { font-size: 10px; letter-spacing: .02em; }
 
 /* Pads grow with the free height of the deck (big performance pads), within limits. */
 .pads { flex: 1 1 auto; display: grid; grid-template-columns: repeat(8, 1fr); grid-auto-rows: minmax(36px, 92px); gap: 4px; align-content: start; min-height: 36px; }
@@ -203,7 +219,7 @@ select.padmode { font-size: 10px; font-weight: 700; padding: 1px 2px; max-width:
 .pad.active .pad-letter, .pad.active .pad-time { color: var(--bg) !important; }
 .pad:active { transform: translateY(1px); }
 
-.row.loops, .row.jumps { flex-wrap: nowrap; }
+.row.loops { flex-wrap: nowrap; }
 .loop-size { min-width: 44px; }
 .jump-label { min-width: 64px; }
 .keyshift .val { min-width: 22px; text-align: center; color: #fff; font-weight: 700; font-size: 11px; }
@@ -246,7 +262,9 @@ select.padmode { font-size: 10px; font-weight: 700; padding: 1px 2px; max-width:
 .decks.four .deck-art { width: 32px; height: 32px; font-size: 14px; }
 .decks.four .deck-info { order: 10; flex: 1 1 60%; }
 .decks.four .deck-headbtns { order: 11; }
-.decks.four .deck-headbtns .dbtn.master, .decks.four .deck-headbtns .dbtn.sync { min-width: 0; height: 22px; }
+.decks.four .deck-headbtns .dbtn.master, .decks.four .deck-headbtns .dbtn.sync, .decks.four .deck-headbtns .dbtn.keysync { min-width: 0; height: 22px; }
+.decks.four .page-hint { display: none; }
+.decks.four .dbtn.padmode { min-width: 0; }
 .decks.four .deck-headbtns .dbtn { height: 22px; }
 .decks.four .dbtn.stem { min-width: 0; padding: 0 4px; font-size: 9px; }
 .decks.four .row.stems { flex-wrap: nowrap; }
@@ -254,7 +272,6 @@ select.padmode { font-size: 10px; font-weight: 700; padding: 1px 2px; max-width:
 .decks.four .deck-keybox, .decks.four .deck-bpmbox { height: 32px; }
 .decks.four .deck-bpm { font-size: 16px; }
 .decks.four .deck-bpmbox { min-width: 68px; }
-.decks.four .row.jumps, .decks.four .keyshift { display: none; }
 .decks.four .transport { width: 44px; height: 44px; font-size: 11px; }
 .decks.four .transport.play .ico { font-size: 18px; }
 .decks.four .pad { min-height: 28px; }
@@ -490,6 +507,10 @@ textarea.text { min-height: 54px; resize: vertical; }
 .dlc-x:hover { color: #fff; }
 .dlc-tabs { padding: 10px 16px 0; display: flex; }
 .dlc-tools { padding: 6px 16px 0; font-size: 11px; }
+/* yt-dlp / ffmpeg / deno: status + install / update / folder. */
+.tools-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; }
+.tools-panel.busy .dbtn { pointer-events: none; opacity: .5; }
+.tools-panel .dbtn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .dlc-body { flex: 1; overflow-y: auto; padding: 10px 16px; }
 .dlc-bar { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
 .dlc-bar input.text { flex: 1; min-width: 200px; height: 28px; }
@@ -798,10 +819,24 @@ body.gbar-icons .gbtn .ico { font-size: 14px; }
 /* Preferences: fixed size (it only shrinks when the window is smaller), close button pinned */
 .dialog:has(.settings) { width: 1000px; height: 700px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); position: relative; }
 .dialog:has(.settings) > .dialog-buttons { display: none; }
-.dialog:has(.settings) > .dialog-body { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 0; }
-.dialog:has(.settings) .settings { margin: 0; height: 100%; min-height: 0; }
-.dialog:has(.settings) .settings-pane { height: 100%; overflow-y: auto; }
+/* Only the right pane scrolls. "clip" (not "hidden"): a hidden box can still be scrolled by the browser
+   when something inside gets the focus, which used to drag the category bar along with the tab. */
+.dialog:has(.settings) > .dialog-body { flex: 1 1 auto; min-height: 0; overflow: clip; padding: 0; }
+.dialog:has(.settings) .settings { margin: 0; height: 100%; min-height: 0; overflow: clip; }
+/* flex sizes (not height: 100%) so the pane also fits under the tabs in the narrow, stacked layout */
+.dialog:has(.settings) .settings-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .dialog:has(.settings) .settings-tabs { border-radius: 12px 0 0 12px; overflow-y: auto; }
+/* Preferences > About */
+.about-card { display: flex; align-items: center; gap: 18px; padding: 18px 20px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; }
+.about-logo { width: 64px; height: 64px; }
+.about-name { font-size: 26px; font-weight: 800; letter-spacing: -.02em; color: #fff; }
+.about-name b { color: var(--accent-2); }
+.about-version { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
+.settings-content .dbtn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.about-status { font-size: 12px; margin-top: 6px; }
+.about-ok { color: var(--green); font-weight: 600; }
+.about-new { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #fff; font-weight: 600; }
+.about-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-close { position: absolute; top: 14px; right: 14px; z-index: 5; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text-2); font-size: 14px; cursor: pointer; display: grid; place-items: center; }
 .settings-close:hover { color: #fff; background: var(--panel-3); }
 

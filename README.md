@@ -196,7 +196,7 @@ Le bouton **DOWNLOAD** de la barre du haut ouvre trois onglets.
 - **Tags** « Artiste - Titre » nettoyés et **pochette intégrée**.
 - Les morceaux arrivent dans la collection **et** dans la playlist « Downloads ».
 - Les morceaux SoundCloud réservés aux abonnés Go+ ne donnent qu'un extrait de 30 s. Ils sont signalés « 30 s preview ».
-- **Moteur** : yt-dlp, ffmpeg et deno. Reboxed les cherche dans le PATH, dans un dossier choisi dans les Préférences, ou dans l'installation de Stacher si elle existe.
+- **Moteur** : yt-dlp, ffmpeg et deno. S'il en manque, le bouton **Install** (fenêtre de téléchargement ou Préférences ▸ Downloads) les télécharge depuis leurs sources officielles dans le dossier `tools` de Reboxed, et **Update yt-dlp** met yt-dlp à jour. Sinon, Reboxed les cherche dans un dossier choisi dans les Préférences, dans l'installation de Stacher si elle existe, ou dans le PATH.
 
 > [!NOTE]
 > Télécharge uniquement des contenus que tu as le droit d'utiliser, et respecte les droits d'auteur ainsi que les conditions des plateformes.
@@ -304,10 +304,10 @@ Reboxed sépare chaque morceau en **VOCAL / INST / BASS / DRUMS**, en deux quali
 | **Stems** | VOCAL / INST / BASS / DRUMS par IA, en deux qualités. **FAST** (Spleeter, environ 7× le temps réel) est progressif : la séparation commence à la tête de lecture et le deck utilise les stems dès que le premier bloc est prêt. **HQ** (HT-Demucs) prend le relais en arrière-plan en mode *auto*. Avancement visible dans la pastille de la barre du haut, sur le bouton STEMS, sur la barre de couverture de la vue d'ensemble et dans la colonne « Stems ». La forme d'onde est colorée par stem. Coupure et solo par deck. Stems rangés en **MP3** (256 ou 320 kbps, environ 9 Mo par stem pour 5 min au lieu de 53 Mo en WAV) ou en WAV, au choix ; un bouton convertit les anciens stems WAV. |
 | **Préparation** | Éditeur de grille (tap tempo, verrouillage…), cues créés depuis les phrases, MIX IN / MIX OUT et Mix Point Link, Track Suggestion (morceaux qui sonnent pareil). |
 | **Decks** (2 ou 4) | **Jog** façon CDJ par deck : le plateau tourne à 33⅓ tours avec son trait indicateur, l'anneau montre la position dans le morceau (rouge clignotant dans les 30 dernières secondes) et le centre affiche le BPM, la variation de tempo et les calibres ±6 / ±10 / ±16 / WIDE (cliquables). On scratche en glissant sur le plateau, la molette fait un pitch bend, Maj + glisser cherche vite. CUE façon CDJ, 16 hot cues (A–P), memory cues, boucles de 1/64 à 512 temps (les flèches de taille redimensionnent aussi la boucle en cours, depuis son début), beat jump, quantize, tempo ±6/10/16/WIDE, Master Tempo, Key Shift et Key Sync, Slip, Reverse, Censor, Beat Sync ou BPM Sync, Instant Doubles, édition de grille. |
-| **Pads** | Modes HOT CUE, BEAT LOOP, BEAT JUMP, SLICER, SAMPLER, KEY SHIFT, KEYBOARD. |
+| **Pads** | Un menu déroulant comme rekordbox : HOT CUE, PAD FX, SLICER, BEAT JUMP, BEAT LOOP, SAMPLER, KEYBOARD, KEY SHIFT, STEMS, MEMORY CUE (SEQ CALL : pas encore). Chaque page a sa barre sous les pads. Les boutons de mode de la platine ouvrent la page correspondante, et l'inverse. Avec Quantize, les boucles démarrent sur le temps le plus proche. |
 | **Mixer** | Trim, auto-gain, EQ isolateur 3 bandes, Color FX (FILTER, SPACE, DUB ECHO, NOISE, CRUSH), cue casque sur une 2ᵉ carte son, courbes de fader et de crossfader, limiteur, VU-mètres. |
 | **Beat FX** (16) | DELAY, ECHO, PING PONG, REVERB, FLANGER, PHASER, FILTER, TRANS, ROLL, REV ROLL, VINYL BRAKE, PITCH, UP ECHO, DOWN ECHO, PAN, ROBOT. Synchronisés au BPM, sur CH1–4 ou MASTER. |
-| **Sampler** | 16 slots en one-shot ou en boucle, synchro au master, glisser-déposer. **Un clic sur une case vide y met la boucle qui joue** (deck master d'abord ; depuis les pads SAMPLER d'un deck, la boucle de ce deck). Sur une case remplie : **enregistrer** en WAV, **éditer** (nom, découpe début / fin sur la forme d'onde avec écoute, one-shot ou boucle, sync, BPM, gain) et **éjecter**. |
+| **Sampler** | 16 slots en one-shot ou en boucle, synchro au master, glisser-déposer. **Un clic sur une case vide y met la boucle qui joue** (deck master d'abord ; depuis les pads SAMPLER d'un deck, la boucle de ce deck ; sans boucle posée, la taille de boucle choisie à partir du temps le plus proche). Avec les stems, **seuls les stems audibles sont capturés** (batterie seule → le sample n'a que la batterie). Sur une case remplie : **enregistrer** en WAV, **éditer** (nom, découpe début / fin sur la forme d'onde avec écoute, one-shot ou boucle, sync, BPM, gain) et **éjecter**. |
 | **Automix** | Joue la liste affichée avec préchargement, sync et fondu de 4 à 32 temps ; répétition et lecture aléatoire. |
 | **Enregistrement** | WAV 16 bits dans `Musique\Reboxed Recordings\`, ajouté automatiquement à la collection. |
 | **Contrôle** | **Plugins matériels** (Préférences ▸ Plugins) : un plugin par contrôleur, activable ou non, reconnu automatiquement au branchement. Fournis : **DDJ-GRV6** (mapping complet, LED, jogs, Groove Circuit, carte son 4 canaux, [notice](docs/DDJ-GRV6.md)), **DDJ-FLX2**, **DDJ-FLX4**, **DDJ-FLX6** et **DDJ-FLX10**. N'importe qui peut en créer un pour un autre contrôleur, en un clic depuis un mapping rekordbox `.midi.csv` ou à la main ([guide](docs/PLUGINS.md)), et le partager. Sans plugin, un contrôleur dont le mapping est dans une installation rekordbox est quand même reconnu. **Clavier** : preset « Performance 1 », en QWERTY ou en AZERTY (clavier AZERTY détecté tout seul) ; chaque raccourci se change dans Préférences ▸ Keyboard (clic, puis la nouvelle touche), avec les lettres de ton clavier. MIDI learn. |
@@ -321,7 +321,7 @@ Disposition et ambiance du mode PERFORMANCE de Rekordbox :
 - **Préférences épurées** (taille fixe, bouton de fermeture en haut à droite) : une barre latérale avec icônes, un titre et une phrase par section, des réglages en cartes, des interrupteurs à la place des cases à cocher. Onglets General, Appearance, Decks & Mixer, Audio, Library, Stems, Downloads, MIDI, Plugins, Keyboard. La version de Reboxed est affichée dans la barre de titre et en tête des Préférences.
 - **Panneau Beat FX** sur sa propre ligne.
 - **Formes d'onde agrandies** et empilées, avec le repère de chaque deck.
-- **Decks** : pochette, KEY, BPM, MASTER/SYNC, vue d'ensemble, gros CUE/PLAY, pads colorés, fader de tempo.
+- **Decks** : pochette, bouton KEY (décalage en demi-tons), BPM, MASTER / BEAT SYNC / KEY SYNC, vue d'ensemble, gros CUE/PLAY, pads colorés, fader de tempo (sur un deck synchronisé, il déplace le tempo commun).
 - **Mixer** : potards à arc de valeur, VU-mètres segmentés.
 - **Navigateur** : icônes, recherche, colonne pochette.
 
@@ -438,7 +438,7 @@ Reboxed est distribué sous **licence MIT** ([LICENSE](LICENSE)). Tout le monde 
 - **Modèles de stems**, téléchargés au premier usage et absents du dépôt :
   - Spleeter 4 stems : poids de Deezer sous MIT, export ONNX sous Apache-2.0 ;
   - HT-Demucs v4 : MIT.
-- **yt-dlp**, **ffmpeg** et **deno** : utilisés s'ils sont installés sur la machine. Ils ne sont pas fournis avec Reboxed.
+- **yt-dlp**, **ffmpeg** et **deno** : ils ne sont pas fournis avec Reboxed. L'appli peut les télécharger à la demande depuis leurs releases officielles (yt-dlp, denoland/deno, yt-dlp/FFmpeg-Builds), ou utiliser ceux déjà installés.
 
 </details>
 

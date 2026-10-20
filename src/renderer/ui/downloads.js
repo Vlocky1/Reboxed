@@ -9,6 +9,8 @@ import { cleanTrackName, parseKeywords } from '../../shared/clean-name.js';
 
 const FORMAT_NAMES = { m4a: 'M4A', mp3: 'MP3 320', flac: 'FLAC', wav: 'WAV' };
 const PLATFORMS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
+// Download sizes of the tools (MB, see src/main/tools.js), shown on the install button.
+const TOOL_MB = { 'yt-dlp': 17, ffmpeg: 87, deno: 41 };
 
 /** Platform of a pasted link: 'youtube', 'soundcloud' or null (same rule as the main process). */
 export function platformOf(url) {
@@ -54,6 +56,40 @@ export class DownloadCenter {
   }
 
   tools() { return window.rb.dl.tools(this.cfg.toolsDir); }
+
+  /**
+   * Tools status with actions: install the missing tools from their official releases, update
+   * yt-dlp, or choose a folder. Used by the download window and Preferences > Downloads.
+   * @param {() => void} [onChange] called after tools were installed or a folder chosen
+   */
+  toolsPanel(onChange) {
+    const el = h('div.tools-panel');
+    const status = h('span.dim');
+    const busy = (text) => { el.classList.add('busy'); status.textContent = text; };
+    const run = async (task) => {
+      const off = window.rb.dl.onToolsProgress((name, rec, total, phase) => {
+        busy(phase === 'extract' ? `${name}: unpacking…` : phase === 'done' ? `${name} ✓` : total ? `${name}: ${Math.round((rec / total) * 100)}% of ${Math.round(total / 1048576)} MB` : `${name}: starting…`);
+      });
+      try { await task(); onChange?.(); } catch (err) { toast(`Tools: ${err.message}`, 6000); } finally { off(); el.classList.remove('busy'); render(); }
+    };
+    const render = async () => {
+      const t = await this.tools();
+      const missing = [!t.ytdlp && 'yt-dlp', !t.ffmpeg && 'ffmpeg', !t.deno && 'deno'].filter(Boolean);
+      const mb = missing.reduce((a, n) => a + TOOL_MB[n], 0);
+      status.textContent = t.ytdlp
+        ? `yt-dlp ${t.version ?? ''} · ffmpeg ${t.ffmpeg ? '✓' : '✗ (needed for MP3/FLAC/WAV and covers)'} · deno ${t.deno ? '✓' : '✗ (YouTube may refuse some videos)'}`
+        : `Missing: ${missing.join(', ')}`;
+      status.className = t.ytdlp ? 'dim' : 'rbi-error';
+      el.replaceChildren(status,
+        missing.length ? h('button.dbtn.small.primary', { title: 'Downloads them from their official releases into Reboxed\'s tools folder',
+          onclick: () => run(() => window.rb.dl.installTools(missing)) }, `Install ${missing.join(' + ')} (${mb} MB)`) : '',
+        t.ytdlp ? h('button.dbtn.small', { title: 'YouTube changes often: a newer yt-dlp fixes most download errors',
+          onclick: () => run(async () => { busy('yt-dlp: updating…'); const r = await window.rb.dl.updateYtdlp(); toast(r.installed ? `yt-dlp ${r.tools.version ?? ''} installed in Reboxed's tools folder` : (r.output || 'yt-dlp is up to date'), 5000); }) }, 'Update yt-dlp') : '',
+        h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { this.save({ toolsDir: d }); render(); onChange?.(); } } }, 'Choose folder…'));
+    };
+    render();
+    return el;
+  }
 
   isDone(id) { return !!this.cfg.done[id]; }
 
@@ -168,17 +204,12 @@ export class DownloadCenter {
         h('div.dlc-tabs.seg', {}, [...this.tabBtns.values()]),
         this.toolsLine, this.body, footer,
         h('p.dlc-legal', {}, 'Only download music you have the right to use (free downloads, your own or licensed releases). ',
-          'Uses yt-dlp, ffmpeg and deno installed on this computer.')));
+          'Uses yt-dlp, ffmpeg and deno (installed from here, or already on this computer).')));
     this.overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); e.stopPropagation(); });
     document.body.append(this.overlay);
     this.rerender = (full) => this.renderTab(!full);
     this.listeners.add(this.rerender);
-    this.tools().then((t) => {
-      this.toolsLine.replaceChildren(t.ytdlp
-        ? h('span.dim', {}, `yt-dlp ${t.version ?? ''} · ffmpeg ${t.ffmpeg ? '✓' : '✗ (needed for MP3/FLAC/WAV and covers)'} · deno ${t.deno ? '✓' : '✗ (YouTube may refuse some videos)'}`)
-        : h('span.rbi-error', {}, 'yt-dlp not found. Install yt-dlp (with ffmpeg and deno) or choose the folder that holds it: ',
-          h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { this.save({ toolsDir: d }); close(); this.open(tab); } } }, 'Choose folder…')));
-    });
+    this.toolsLine.replaceChildren(this.toolsPanel());
     this.showTab(tab);
   }
 

@@ -3,6 +3,7 @@
 
 import { toBeatgrid } from '../../shared/beatgrid.js';
 import { finePeaks } from '../../shared/dsp/waveform.js';
+import { transposeKey } from '../../shared/keys.js';
 
 /** Insert [a, b) into a sorted list of disjoint ranges, merging neighbours. */
 export function mergeRange(ranges, [a, b]) {
@@ -59,6 +60,7 @@ export class Deck extends EventTarget {
     this.slip = false;
     this.reverse = false;
     this.sync = false;
+    this.keySync = false;
     this.beatJumpSize = 4;
     this.releaseFx = 'BRAKE';  // DRUM RELEASE FX type
     this.fxParts = [false, false, false, false]; // FX PART SELECT [drums, bass, other, vocals]
@@ -297,6 +299,22 @@ export class Deck extends EventTarget {
     if (target) this.setCues(this.track.cues.filter((c) => c !== target));
   }
 
+  /** MEMORY CUE pads: go to the n-th memory cue (in track order) and make it the cue point. */
+  callMemorySlot(n) {
+    const target = this.memoryCues()[n];
+    if (!target) return;
+    this.cuePoint = target.start;
+    if (target.end !== undefined) this.setLoop({ start: target.start, end: target.end }, true);
+    else if (this.playing) this.jumpTo(target.start);
+    else this.seek(target.start);
+    this.emit('cue');
+  }
+
+  deleteMemoryCue(n) {
+    const target = this.memoryCues()[n];
+    if (target) this.setCues(this.track.cues.filter((c) => c !== target));
+  }
+
   /** Jump to the previous/next memory cue (CALL). */
   callMemoryCue(direction) {
     const pos = this.position();
@@ -525,9 +543,12 @@ export class Deck extends EventTarget {
     if (this.loop?.beats === beats) { this.exitLoop(); return; }
     this.beatLoopSize = beats;
     const pos = this.position();
-    const p = this.period || 0.5; // 120 BPM fallback without a grid
-    const start = this.quantize && this.grid ? this.floorBeat(pos, Math.min(1, beats)) : pos;
-    this.setLoop({ start, end: start + beats * p, beats });
+    const bg = this.bg;
+    // Quantize: the loop starts on the closest beat line (or 1/n beat for short loops), which may
+    // be just ahead of the play head, rather than always on the one already passed.
+    const start = this.quantize && bg ? Math.max(0, bg.snap(pos, Math.min(1, beats))) : pos;
+    const end = bg ? bg.timeOf(bg.indexAt(start) + beats) : start + beats * (this.period || 0.5); // 120 BPM fallback
+    this.setLoop({ start, end, beats });
   }
 
   loopIn() { if (this.loaded) { this.pendingLoopIn = this.snap(this.position()); this.emit('loop'); } }
@@ -637,6 +658,22 @@ export class Deck extends EventTarget {
     this.emit('tempo');
   }
 
+  /**
+   * The DJ moved this deck's tempo fader. A synced deck that is not the master would be pulled
+   * back to the master's tempo at once, so (like rekordbox) the shared tempo moves instead: the
+   * master takes the matching BPM and every synced deck follows.
+   */
+  userTempo(pct) {
+    const master = this.engine.masterDeck;
+    if (!this.sync || !master || master === this || !master.loaded || !master.originalBpm || !this.originalBpm) { this.setTempoPct(pct); return; }
+    let target = this.originalBpm * (1 + Math.max(-this.tempoRange, Math.min(this.tempoRange, pct)) / 100);
+    const ratio = target / master.originalBpm;
+    if (this.engine.syncDoubleHalf !== false) { if (ratio > 1.5) target /= 2; else if (ratio < 0.67) target *= 2; }
+    const masterPct = (target / master.originalBpm - 1) * 100;
+    if (Math.abs(masterPct) > master.tempoRange) master.tempoRange = TEMPO_RANGES.find((r) => r >= Math.abs(masterPct)) ?? 100;
+    master.setTempoPct(masterPct);
+  }
+
   setTempoRange(range) {
     this.tempoRange = range;
     this.setTempoPct(this.tempoPct);
@@ -646,10 +683,54 @@ export class Deck extends EventTarget {
 
   toggleKeyLock() { this.keyLock = !this.keyLock; this.post({ type: 'keyLock', on: this.keyLock }); this.emit('mode'); }
 
-  setKeyShift(semitones) {
+  /** fromSync: set by KEY SYNC; a manual change turns KEY SYNC off, like rekordbox. */
+  setKeyShift(semitones, fromSync = false) {
+    if (!fromSync && this.keySync) this.keySync = false;
     this.keyShift = Math.max(-12, Math.min(12, semitones));
     this.post({ type: 'keyShift', semitones: this.keyShift });
     this.emit('mode');
+  }
+
+  /** Track key (Camelot) before key shift. */
+  get key() { return this.analysis?.key || this.track?.key || ''; }
+
+  /** Deck whose key KEY SYNC follows: the master, else another playing / loaded deck. */
+  keyReference() {
+    const others = this.engine.decks.filter((x) => x !== this && x.loaded && x.key);
+    const master = this.engine.masterDeck;
+    return others.includes(master) ? master : others.find((x) => x.playing) ?? others[0] ?? null;
+  }
+
+  /** Smallest shift (−6..+6) that puts this deck in the reference's key or its relative, or null. */
+  keySyncShift() {
+    const ref = this.keyReference();
+    if (!ref || !this.key) return null;
+    const theirs = transposeKey(ref.key, ref.keyShift);
+    let best = null;
+    for (let s = -6; s <= 6; s++) {
+      const mine = transposeKey(this.key, s);
+      const match = mine === theirs || mine.slice(0, -1) === theirs.slice(0, -1);
+      if (match && (best === null || Math.abs(s) < Math.abs(best))) best = s;
+    }
+    return best;
+  }
+
+  toggleKeySync() {
+    this.keySync = !this.keySync;
+    this.keySyncSig = null;
+    if (this.keySync) this.keySyncTick();
+    this.emit('mode');
+  }
+
+  /** Every frame while KEY SYNC is on: follow the reference when its key or this track changes. */
+  keySyncTick() {
+    if (!this.keySync) return;
+    const ref = this.keyReference();
+    const sig = `${this.key}|${ref?.index}|${ref?.key}|${ref?.keyShift}`;
+    if (sig === this.keySyncSig) return;
+    this.keySyncSig = sig;
+    const s = this.keySyncShift();
+    if (s !== null && s !== this.keyShift) this.setKeyShift(s, true);
   }
 
   toggleQuantize() { this.quantize = !this.quantize; this.emit('mode'); }
