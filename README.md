@@ -1,24 +1,95 @@
-<p align="center"><img src="src/renderer/assets/logo.svg" width="112" alt="Reboxed logo"></p>
+<p align="center">
+  <img src="src/renderer/assets/logo.svg" width="128" alt="Reboxed logo">
+</p>
 
 <h1 align="center">Reboxed</h1>
 
-<p align="center"><b>Comme Rekordbox mais en mieux.</b></p>
+<p align="center">
+  <b>Comme Rekordbox, mais en mieux.</b><br>
+  <sub>Le logiciel DJ gratuit, libre et ouvert pour Windows.</sub>
+</p>
 
-<p align="center">Logiciel DJ gratuit et libre pour Windows : bibliothèque, 4 decks, stems par IA, Groove Circuit, contrôleurs Pioneer par plugins, export sur clé USB pour CDJ, import de ta collection Rekordbox.</p>
+<p align="center">
+  <a href="https://github.com/Vlocky1/Reboxed/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Vlocky1/Reboxed?label=version&color=e5484d"></a>
+  <a href="LICENSE"><img alt="Licence MIT" src="https://img.shields.io/badge/licence-MIT-2ea043"></a>
+  <img alt="Windows" src="https://img.shields.io/badge/plateforme-Windows-0078d4">
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-Web%20Audio-47848f">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-94%20unitaires%20%2B%20smoke-8957e5">
+</p>
 
-<p align="center"><a href="LICENSE">Licence MIT</a> · <a href="docs/PLUGINS.md">Plugins</a> · <a href="docs/DDJ-GRV6.md">DDJ-GRV6</a> · <a href="docs/ROADMAP.md">Feuille de route</a></p>
+<p align="center">
+  <a href="#-installer">Installer</a> ·
+  <a href="#-pourquoi-reboxed-">Pourquoi Reboxed</a> ·
+  <a href="#-fonctionnalités">Fonctionnalités</a> ·
+  <a href="docs/PLUGINS.md">Plugins</a> ·
+  <a href="docs/DDJ-GRV6.md">DDJ-GRV6</a> ·
+  <a href="docs/ROADMAP.md">Feuille de route</a>
+</p>
 
-## Installer
+<p align="center">
+  Bibliothèque · 4 decks · Stems par IA · Groove Circuit · Contrôleurs Pioneer par plugins ·
+  Téléchargement YouTube / SoundCloud · Tags automatiques Deezer / Spotify ·
+  Export USB pour CDJ · Import de ta collection Rekordbox
+</p>
 
-1. Télécharge `Reboxed-Setup-<version>.exe` dans les [Releases](https://github.com/Vlocky1/Reboxed/releases).
+---
+
+## ✨ Pourquoi Reboxed ?
+
+Reboxed reprend le flux de travail que les DJ connaissent déjà (mode PERFORMANCE, CUE façon CDJ, hot cues, export pour CDJ). Il corrige aussi ce qui frustre au quotidien dans Rekordbox.
+
+### 🔓 1. Open source, gratuit, sans abonnement
+Le code est **entièrement ouvert** et distribué sous **licence MIT**. Toutes les fonctions sont incluses, sans formule payante ni matériel à « débloquer ».
+Tu peux lire le code, le modifier, corriger un bug, ajouter ton contrôleur et partager ton travail avec les autres.
+
+### ⬇️ 2. Télécharge tes morceaux directement dans le logiciel
+Un bouton **DOWNLOAD** te permet de chercher sur **YouTube** ou **SoundCloud**, de coller un lien (morceau, playlist, page d'artiste) et de suivre les nouveautés de tes chaînes préférées.
+Les fichiers arrivent en M4A, MP3 320, FLAC ou WAV, avec des tags propres et la pochette intégrée. Ils sont ajoutés tout de suite à ta collection. Tu n'as plus besoin de jongler entre un navigateur, un convertisseur et l'import.
+
+### 🏷️ 3. Des infos de morceaux remplies automatiquement par API
+Avec **Deezer** (sans compte) et **Spotify** (facultatif), Reboxed retrouve le titre, l'artiste, l'album, le **genre**, le **label**, l'année et la pochette.
+Tu peux le faire morceau par morceau ou **en masse** avec une recette d'étapes. Les titres de vidéos « Artiste - Titre (Clip officiel) [HD] » sont nettoyés. Un résultat n'est retenu que si l'artiste, le titre et la durée concordent. Tu valides chaque changement avant qu'il soit enregistré, et tout peut être annulé.
+
+### 🗂️ 4. Une bibliothèque qui t'appartient vraiment
+Depuis la version 6, Rekordbox range toute ta collection dans une **`master.db` chiffrée**. Tu ne peux ni la lire, ni la réparer, ni l'automatiser, ni la sauvegarder intelligemment sans passer par le logiciel ou un export XML.
+
+Reboxed refond complètement la gestion des collections et des playlists :
+
+- **Format ouvert et lisible** : ta bibliothèque est un simple `library.json`, accompagné des dossiers `analysis\`, `artwork\` et `stems\`. Aucun chiffrement, aucune boîte noire.
+- **Sauvegarde triviale** : copier le dossier suffit. Tu peux aussi le synchroniser ou le versionner.
+- **Bibliothèque nomade** : le dossier peut vivre sur une **clé USB**. Les chemins suivent même si la lettre du lecteur change d'un PC à l'autre.
+- **Playlists repensées** : dossiers, Intelligent Playlists (conditions ET/OU), Tag List, historiques modifiables (une mini-playlist par jour), My Tag et couleurs.
+- **Aucun enfermement** : import fidèle de `rekordbox.xml`, sans doublons, et export en `rekordbox.xml`, M3U8 ou **clé USB pour CDJ/XDJ**.
+
+### Rekordbox vs Reboxed en un coup d'œil
+
+| | Rekordbox | **Reboxed** |
+|---|---|---|
+| Code source | Fermé, propriétaire | ✅ **Ouvert, licence MIT** |
+| Coût | Base gratuite, fonctions avancées via abonnement ou matériel | ✅ **Gratuit, tout inclus** |
+| Base de données | `master.db` chiffrée | ✅ **`library.json` lisible et portable** |
+| Bibliothèque sur clé USB | Base liée à l'ordinateur | ✅ **Dossier complet sur USB, chemins qui suivent** |
+| Téléchargement de morceaux | — | ✅ **YouTube et SoundCloud intégrés** |
+| Tags en ligne (genre, label…) | — | ✅ **Deezer et Spotify, unitaire ou en masse** |
+| Contrôleurs | Mappings fournis par le constructeur | ✅ **Plugins ouverts, créables depuis un `.midi.csv`** |
+| Stems | Séparation en une seule qualité | ✅ **FAST progressif et HQ en arrière-plan, rangés en MP3** |
+| Export CDJ / XDJ | ✅ | ✅ `export.pdb`, ANLZ, My Settings |
+
+---
+
+## 📦 Installer
+
+1. Télécharge `Reboxed-Setup-<version>.exe` dans les **[Releases](https://github.com/Vlocky1/Reboxed/releases)**.
 2. Lance-le. Windows affiche « Éditeur inconnu », car l'installeur n'est pas signé : clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
-3. Reboxed démarre en plein écran fenêtré (fenêtre agrandie) ; **F11** passe en vrai plein écran. Préférences ▸ General ▸ *Window at start* change ce choix.
+3. Reboxed démarre en plein écran fenêtré (fenêtre agrandie). **F11** passe en vrai plein écran, et *Préférences ▸ General ▸ Window at start* change ce comportement.
 
-Pour récupérer ta collection Rekordbox, exporte-la depuis Rekordbox avec `File ▸ Export Collection in xml format`, puis importe-la dans Reboxed avec le menu ⋯ ▸ *Import from rekordbox*.
+> [!TIP]
+> **Tu viens de Rekordbox ?** Dans Rekordbox, fais `File ▸ Export Collection in xml format`. Dans Reboxed, ouvre le menu **⋯ ▸ *Import from rekordbox*** ou fais simplement glisser le `rekordbox.xml` sur la fenêtre.
+> Tes hot cues, memory cues, boucles, grilles, playlists et dossiers sont repris.
 
-## Développer
+---
 
-Reboxed est un logiciel desktop (Electron + Web Audio) qui reprend les fonctionnalités de Rekordbox. Elles sont réimplémentées : aucun code, visuel ni asset de Pioneer/AlphaTheta n'est utilisé.
+## 🎛️ Fonctionnalités
 
 ```sh
 npm install
@@ -31,19 +102,195 @@ npm run smoke      # test de bout en bout dans Electron, sans toucher à ta bibl
                    #  avec REBOXED_DL_TEST=1, il fait une vraie recherche et un vrai téléchargement YouTube)
 ```
 
-## Installeur Windows
+- Import par dossier, par fichiers ou par **glisser-déposer**.
+- Collection, playlists et dossiers, **Intelligent Playlists** (conditions ET/OU), Tag List et Related Tracks.
+- **Historiques** : une mini-playlist par jour. Tu peux en retirer des morceaux, supprimer un jour ou tout effacer.
+- Notes, 8 couleurs, **My Tag** et détection des fichiers manquants.
+- **Colonnes** au choix (clic droit sur l'en-tête) et **redimensionnables** :
+  - glisser le bord pour changer la largeur ;
+  - double-cliquer pour ajuster au contenu ;
+  - « Fit all columns » pour tout ajuster d'un coup.
 
-```sh
-npm run icon       # (re)génère build/icon.ico et build/icon.png
-npm run dist       # dist/Reboxed-Setup-<version>.exe : installeur, avec le choix du dossier et des raccourcis Bureau et menu Démarrer
-npm run dist:dir   # dist/win-unpacked/Reboxed.exe : version portable, sans installation
-```
+  Les largeurs sont mémorisées.
+- La colonne **Date Added** affiche aussi l'heure pour les morceaux ajoutés depuis la 1.5.
 
-- **Données** : voir « Où sont les données » plus bas. La désinstallation ne les supprime pas.
-- **Avertissement Windows** : l'installeur n'est pas signé, donc SmartScreen affiche « Éditeur inconnu ». Clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
-- **Version empaquetée** : on la teste avec `dist\win-unpacked\Reboxed.exe --smoke "--shot=<png>"`.
+<details>
+<summary><b>📝 Track information</b> : fiche complète et modifiable (clic droit)</summary>
 
-## Fonctionnalités
+Chaque champ est modifiable et accompagné d'une aide. La fiche est organisée en sections :
+
+- **Track** ;
+- **Credits** ;
+- **DJ** : note, couleur, My Tag, commentaires, BPM, tonalité, nombre de lectures, date et heure d'ajout ;
+- **File** : en lecture seule.
+
+</details>
+
+### 🏷️ Infos des morceaux par API (Deezer / Spotify)
+
+Le bouton **Search info (Deezer / Spotify)** de la fiche Track information te laisse choisir le service, et ce choix est mémorisé.
+
+| Service | Compte | Ce qu'il apporte |
+|---|---|---|
+| **Deezer** | Aucun | Genres et labels |
+| **Spotify** | Identifiants gratuits | Titres et artistes propres. Spotify n'a presque plus de genres, donc Reboxed reprend le genre et le label du **même morceau sur Deezer** (même ISRC, ou même artiste et titre). |
+
+Pour chaque champ, Reboxed montre côte à côte la **valeur actuelle** et la **valeur trouvée** : titre, mix, artiste, album, genre, année, numéro de piste, label, pochette… Il ne remplace que les cases cochées.
+- Le genre est coché d'office.
+- S'il y a plusieurs genres, tu choisis lequel garder.
+
+Une recherche qui ne répond pas s'arrête au bout de 15 s avec un message clair.
+
+<details>
+<summary><b>⚡ Auto-tag en masse</b></summary>
+
+Tu peux lancer l'auto-tag de deux façons :
+- clic droit sur une sélection ▸ *Auto-tag with Spotify / Deezer…* ;
+- menu **⋯** pour traiter toute la liste affichée.
+
+**Une recette d'étapes**, chacune avec son service et ses champs. Par exemple :
+1. **Spotify** : titre et artistes ;
+2. **Deezer** : genre, cherché avec le titre que Spotify vient de nettoyer.
+
+**Une recherche fiable :**
+- Les titres de vidéos (« Artiste - Titre (Clip officiel) [HD] ») sont nettoyés avant la recherche.
+- Un résultat n'est retenu que si l'artiste, le titre **et** la durée correspondent (± 4 s, réglable).
+- La bonne version (Extended, Radio Edit…) est préférée.
+
+**Options par étape :** ne remplir que les champs vides, ajouter le nom du mix dans le titre.
+
+**Un contrôle total :**
+- Tous les changements s'affichent avant d'être enregistrés.
+- Ils sont cochés d'office, et tu peux les décocher un par un ou champ par champ.
+- *Apply* enregistre, *Undo* revient en arrière.
+- La recette est mémorisée.
+
+</details>
+
+<details>
+<summary><b>🔑 Ajouter Spotify (facultatif)</b></summary>
+
+1. Crée une appli Spotify gratuite sur [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard), avec ces réglages :
+   - **Redirect URI** : `http://127.0.0.1:8888/callback`. Elle n'est jamais utilisée, mais Spotify l'exige.
+   - **API** : Web API.
+2. Colle le **Client ID** et le **Client Secret** dans *Préférences ▸ Library*.
+
+</details>
+
+### 🔎 Recherche
+
+- Un moteur **identique à celui de Rekordbox** ([preuves](docs/rekordbox-search-evidence.md)).
+- **Track Filter** : BPM ±%, Key, Rating, Color et My Tag.
+
+### ⬇️ Téléchargement
+
+Le bouton **DOWNLOAD** de la barre du haut ouvre trois onglets.
+
+| Onglet | Rôle |
+|---|---|
+| **Search** | Tu choisis **YouTube** ou **SoundCloud** (le choix est mémorisé), puis tu cherches. |
+| **Link** | Tu colles un lien. Reboxed reconnaît tout seul la plateforme et le type de lien (vidéo, morceau, playlist, page d'artiste) et refuse les autres sites. |
+| **New releases** | Nouveautés des chaînes YouTube ou SoundCloud que tu suis, vérifiées au démarrage. |
+
+- **Formats** : M4A, MP3 320, FLAC ou WAV, à régler dans *Préférences ▸ Downloads*.
+- **Tags** « Artiste - Titre » nettoyés et **pochette intégrée**.
+- Les morceaux arrivent dans la collection **et** dans la playlist « Downloads ».
+- Les morceaux SoundCloud réservés aux abonnés Go+ ne donnent qu'un extrait de 30 s. Ils sont signalés « 30 s preview ».
+- **Moteur** : yt-dlp, ffmpeg et deno. Reboxed les cherche dans le PATH, dans un dossier choisi dans les Préférences, ou dans l'installation de Stacher si elle existe.
+
+> [!NOTE]
+> Télécharge uniquement des contenus que tu as le droit d'utiliser, et respecte les droits d'auteur ainsi que les conditions des plateformes.
+
+### 🔁 Interop Rekordbox
+
+L'outil **Import from rekordbox** est accessible depuis le menu ⋯ du navigateur, ou en glissant un `rekordbox.xml` sur la fenêtre.
+
+- **Ce qu'il importe** : toutes les infos des morceaux, les hot cues, les memory cues, les boucles, les grilles, les playlists et les dossiers.
+- **Aperçu chiffré** avant l'import, avec le choix des playlists à reprendre.
+- **Réglages de fusion** :
+  - pour les infos, *rekordbox gagne* ou *garder mes modifs* ;
+  - pour les cues, *remplacées*, *fusionnées* ou *gardées*.
+- **Fichiers déplacés** retrouvés automatiquement, et **réimport sans doublons**.
+- **Export** en `rekordbox.xml` et en M3U8.
+
+### 💾 Bibliothèque amovible
+
+Dans *Préférences ▸ Library*, le **dossier de la bibliothèque** peut être placé sur une clé USB.
+
+- Si la lettre de la clé change d'un PC à l'autre, les chemins suivent.
+- Si la clé est absente au démarrage, Reboxed propose de réessayer, de choisir un autre dossier ou d'utiliser la bibliothèque locale.
+- Les **stems** vont par défaut dans `<bibliothèque>\stems`. Tu peux les déplacer vers un autre dossier ou les ranger à côté de chaque morceau.
+
+<details>
+<summary><b>🚚 Move my collection to a USB drive</b></summary>
+
+Cet outil se trouve dans *Préférences ▸ Library* ou dans le menu ⋯.
+
+**Comment Reboxed trouve les morceaux.** Pour chaque morceau encore sur l'ordinateur, il cherche son homonyme dans le dossier de la clé que tu choisis. Rien n'est proposé d'office. Il le reconnaît s'il porte :
+- le même nom ;
+- le même nom dans un autre format ;
+- ou un nom proche, confirmé par les tags et par la durée à ±2 s.
+
+Un Extended Mix n'est pas confondu avec l'Original Mix.
+
+**Les cas douteux** sont vérifiés morceau par morceau. Pour chacun, tu peux le lier, le copier sur la clé (dossier `From computer`), le garder ou le retirer.
+
+**Ce qui est conservé :**
+- les cues, tags, analyses et playlists ;
+- les stems, qui suivent dans le dossier `stems` de la clé.
+
+Les morceaux présents seulement sur la clé sont ajoutés. Les fichiers locaux peuvent partir à la corbeille.
+
+</details>
+
+### 💿 Export CDJ / XDJ
+
+Le menu ⋯ ▸ *Export to USB for CDJ / XDJ…* écrit une clé lisible par les lecteurs Pioneer, **comme l'export de Rekordbox**.
+
+- **`export.pdb`** : morceaux, artistes, albums, genres, tonalités, couleurs, pochettes, playlists et dossiers. Les listes intelligentes y sont figées.
+- **Fichiers d'analyse `ANLZ0000.DAT/.EXT/.2EX`** :
+  - grille ;
+  - hot cues **avec leur couleur** et leur nom ;
+  - memory cues et boucles ;
+  - formes d'onde bleue, RGB et 3Band.
+- **My Settings** des lecteurs et de la table de mixage : couleur de forme d'onde, format de tonalité, position de lecture, luminosité, jog, quantize, Auto Cue, tempo, courbes de fader…
+- **Que copier** : toute la collection ou seulement des playlists. Les morceaux déjà sur la clé restent en place, les autres sont copiés dans `Contents`.
+- Un export existant est d'abord **sauvegardé**.
+
+> [!IMPORTANT]
+> L'export a été vérifié avec des lecteurs indépendants du format, mais **pas encore essayé sur un vrai CDJ**. Les retours sont les bienvenus !
+
+### 📈 Analyse
+
+- **BPM** et grille constante ou dynamique, avec le premier temps de mesure.
+- **Tonalité** en Camelot ou en notation classique.
+- **Phrases** : INTRO, UP, CHORUS, DOWN, OUTRO…
+- **Formes d'onde** 3Band, RGB et BLUE :
+  - zoomée, c'est la vraie onde, précise au 1/2700ᵉ de seconde ;
+  - dézoomée, c'est une vue simplifiée.
+- **Loudness** et **empreinte audio**.
+
+### 🧬 Stems par IA
+
+Reboxed sépare chaque morceau en **VOCAL / INST / BASS / DRUMS**, en deux qualités.
+
+| Qualité | Moteur | Comportement |
+|---|---|---|
+| **FAST** | Spleeter, environ 7× le temps réel | **Progressif** : la séparation commence à la tête de lecture, et le deck utilise les stems dès que le premier bloc est prêt. |
+| **HQ** | HT-Demucs | Prend le relais en arrière-plan en mode *auto*. |
+
+- **Avancement visible partout** : pastille de la barre du haut, bouton STEMS, barre de couverture de la vue d'ensemble et colonne « Stems ».
+- La forme d'onde est **colorée par stem**. Coupure et solo sont disponibles par deck.
+- **Stockage léger** : les stems sont rangés en MP3 (256 ou 320 kbps) ou en WAV, au choix. En MP3, un stem de 5 min pèse environ 9 Mo, contre 53 Mo en WAV. Un bouton convertit les anciens stems WAV.
+
+### 🛠️ Préparation
+
+- Éditeur de grille (tap tempo, verrouillage…).
+- Cues créés depuis les phrases.
+- MIX IN / MIX OUT et **Mix Point Link**.
+- **Track Suggestion** : propose des morceaux qui sonnent pareil.
+
+### 🎚️ Performance
 
 | Zone | Fonctionnalités |
 |---|---|
@@ -60,30 +307,106 @@ npm run dist:dir   # dist/win-unpacked/Reboxed.exe : version portable, sans inst
 | **Pads** | Modes HOT CUE, BEAT LOOP, BEAT JUMP, SLICER, SAMPLER, KEY SHIFT, KEYBOARD. |
 | **Mixer** | Trim, auto-gain, EQ isolateur 3 bandes, Color FX (FILTER, SPACE, DUB ECHO, NOISE, CRUSH), cue casque sur une 2ᵉ carte son, courbes de fader et de crossfader, limiteur, VU-mètres. |
 | **Beat FX** (16) | DELAY, ECHO, PING PONG, REVERB, FLANGER, PHASER, FILTER, TRANS, ROLL, REV ROLL, VINYL BRAKE, PITCH, UP ECHO, DOWN ECHO, PAN, ROBOT. Synchronisés au BPM, sur CH1–4 ou MASTER. |
-| **Sampler** | 16 slots en one-shot ou en boucle, synchro au master, glisser-déposer, capture de la boucle d'un deck. |
-| **Automix** | Joue la liste affichée avec préchargement, sync et fondu de 4 à 32 temps ; répétition et lecture aléatoire. |
-| **Enregistrement** | WAV 16 bits dans `Musique\Reboxed Recordings\`, ajouté automatiquement à la collection. |
-| **Contrôle** | **Plugins matériels** (Préférences ▸ Plugins) : un plugin par contrôleur, activable ou non, reconnu automatiquement au branchement. Fournis : **DDJ-GRV6** (mapping complet, LED, jogs, Groove Circuit, carte son 4 canaux, [notice](docs/DDJ-GRV6.md)), **DDJ-FLX2**, **DDJ-FLX4**, **DDJ-FLX6** et **DDJ-FLX10**. N'importe qui peut en créer un pour un autre contrôleur, en un clic depuis un mapping rekordbox `.midi.csv` ou à la main ([guide](docs/PLUGINS.md)), et le partager. Sans plugin, un contrôleur dont le mapping est dans une installation rekordbox est quand même reconnu. Clavier façon preset « Performance 1 », MIDI learn. |
+| **Sampler** | 16 slots en one-shot ou en boucle, synchro au master, glisser-déposer, capture de la boucle d'un deck |
+| **Automix** | Joue la liste affichée avec préchargement, sync et fondu de 4 à 32 temps ; répétition et lecture aléatoire |
+| **Enregistrement** | WAV 16 bits dans `Musique\Reboxed Recordings\`, ajouté automatiquement à la collection |
 
-## Interface
+### 🎮 Contrôleurs et plugins
+
+- **Plugins matériels** (*Préférences ▸ Plugins*) : un plugin par contrôleur, activable ou non, **reconnu automatiquement au branchement**.
+- **Plugins fournis** :
+  - **DDJ-GRV6** : mapping complet, LED, jogs, Groove Circuit, carte son 4 canaux ([notice](docs/DDJ-GRV6.md)) ;
+  - **DDJ-FLX2**, **DDJ-FLX4**, **DDJ-FLX6** et **DDJ-FLX10**.
+- **Crée le tien** pour un autre contrôleur, en un clic depuis un mapping Rekordbox `.midi.csv` ou à la main ([guide](docs/PLUGINS.md)), puis partage-le.
+- **Sans plugin**, un contrôleur dont le mapping se trouve dans une installation Rekordbox est quand même reconnu.
+- **Clavier** façon preset « Performance 1 », et **MIDI learn**.
+
+---
+
+## 🖥️ Interface
 
 Disposition et ambiance du mode PERFORMANCE de Rekordbox :
 - **Barre globale**, rangée par usage : logo, mode et dispositions (2 decks / 4 decks / navigateur) ; **panneaux** (FX, MIXER, SAMPLER) ; **aides au mix** (MIX POINT LINK, AUTOMIX) ; **outils** (DOWNLOAD, REC) ; puis l'état (stems, MIDI, horloge), le raccourci **Appearance** (palette) et les Préférences.
 - **Thèmes** (Préférences ▸ Appearance) : Reboxed Dark, OLED Black, Midnight, Graphite, Ember, Neon, Forest et Rosé, avec un aperçu de chacun ; couleur d'accent au choix (10 teintes ou n'importe quelle couleur) ; taille de l'interface de 85 % à 125 % ; barre du haut avec icônes et noms ou icônes seules.
 - **Préférences épurées** : une barre latérale avec icônes, un titre et une phrase par section, des réglages en cartes, des interrupteurs à la place des cases à cocher. Onglets General, Appearance, Decks & Mixer, Audio, Library, Stems, Downloads, MIDI, Plugins, Keyboard. La version de Reboxed est affichée dans la barre de titre et en tête des Préférences.
 - **Panneau Beat FX** sur sa propre ligne.
-- **Formes d'onde agrandies** empilées, avec le repère de chaque deck.
+- **Formes d'onde agrandies** et empilées, avec le repère de chaque deck.
 - **Decks** : pochette, KEY, BPM, MASTER/SYNC, vue d'ensemble, gros CUE/PLAY, pads colorés, fader de tempo.
 - **Mixer** : potards à arc de valeur, VU-mètres segmentés.
 - **Navigateur** : icônes, recherche, colonne pochette.
 
-Palette, icônes et dessins sont propres à Reboxed : aucun fichier visuel ni logo de Pioneer/AlphaTheta n'est utilisé.
+> Palette, icônes et dessins sont propres à Reboxed : aucun fichier visuel ni logo de Pioneer/AlphaTheta n'est utilisé.
 
-## Architecture
+---
+
+## 📁 Où sont les données
+
+Reboxed n'utilise **aucune base chiffrée**. Tout est rangé dans des dossiers et fichiers que tu peux ouvrir, sauvegarder et déplacer.
+
+**`%APPDATA%\Reboxed\`** (propre à l'ordinateur) contient :
+- `location.json` : indique où se trouve la bibliothèque ;
+- `models\` : les modèles de stems, `spleeter\` pour FAST et `htdemucs_fp16weights.onnx` pour HQ ;
+- `plugins\` : les plugins matériels que tu as installés ou créés ;
+- les caches.
+
+Les versions précédentes utilisaient `%APPDATA%\rbclone\`. Ce dossier est renommé automatiquement au premier lancement.
+
+**Le dossier de la bibliothèque** est par défaut le même. Il peut aussi être sur une clé USB. Il contient :
+
+| Élément | Contenu |
+|---|---|
+| `library.json` | Collection, playlists, dossiers, cues, tags… au format JSON lisible |
+| `analysis\` | Grilles, formes d'onde, phrases |
+| `artwork\` | Pochettes |
+| `groove\` | Captures DRUM CAPTURE |
+| `stems\<morceau>\` | `vocals`, `drums`, `bass`, `other` en `.mp3` (ou `.wav`) ; la version HQ remplace la FAST |
+
+**Les stems** peuvent être rangés dans le dossier de la bibliothèque, dans un dossier au choix ou à côté de chaque morceau. Ceux déjà rangés à côté de la musique ou dans l'ancien cache restent lus.
+
+> [!NOTE]
+> La désinstallation **ne supprime pas** tes données.
+
+---
+
+## 👩‍💻 Développer
+
+Reboxed est un logiciel desktop (**Electron + Web Audio**) qui reprend les fonctionnalités de Rekordbox. Elles sont **réimplémentées** : aucun code, visuel ni asset de Pioneer/AlphaTheta n'est utilisé.
+
+```sh
+npm install
+npm start          # lance l'application
+npm test           # 94 tests unitaires (recherche, DSP, grilles, phrases, Camelot, rekordbox.xml, listes,
+                   # MIDI, contrôleurs, plugins, export CDJ, formes d'onde, stockage…)
+npm run smoke      # test de bout en bout dans Electron, sans toucher à ta bibliothèque
+```
+
+<details>
+<summary>Options du test <code>smoke</code></summary>
+
+| Variable | Effet |
+|---|---|
+| `REBOXED_SPLEETER_DIR=<dossier des 4 .fp16.onnx>` | Teste aussi les stems FAST |
+| `REBOXED_STEM_MODEL=<HT-Demucs .onnx>` | Teste aussi les stems HQ |
+| `REBOXED_DL_TEST=1` | Fait une vraie recherche et un vrai téléchargement YouTube |
+
+</details>
+
+### Construire l'installeur Windows
+
+```sh
+npm run icon       # (re)génère build/icon.ico et build/icon.png
+npm run dist       # dist/Reboxed-Setup-<version>.exe : installeur, avec choix du dossier et raccourcis Bureau / menu Démarrer
+npm run dist:dir   # dist/win-unpacked/Reboxed.exe : version portable, sans installation
+```
+
+- **Tester la version empaquetée** : `dist\win-unpacked\Reboxed.exe --smoke "--shot=<png>"`.
+- **Avertissement Windows** : l'installeur n'est pas signé, donc SmartScreen affiche « Éditeur inconnu ». Clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
+
+### Architecture
 
 ```
-src/main/        process Electron : fenêtre, protocoles app:// et media://, IPC, tags, stockage, enregistrement WAV,
-                 plugins, export CDJ, stems (process isolé, encodage MP3)
+src/main/        process Electron : fenêtre, protocoles app:// et media://, IPC, tags, stockage,
+                 enregistrement WAV, plugins, export CDJ, stems (process isolé, encodage MP3)
 src/plugins/     plugins matériels fournis (un dossier par contrôleur : plugin.json + mapping)
 src/renderer/
   audio/         deck-processor (lecture, boucles, slip, time-stretch), fx-processor (roll, brake, pitch),
@@ -91,34 +414,42 @@ src/renderer/
   analysis/      décodage, ré-échantillonnage, worker
   ui/            decks et pads, mixer, navigateur, listes intelligentes et related, sampler, MIDI, préférences
   automix.js, library.js, app.js
-src/shared/      code pur testé sous Node : DSP, Camelot, XML, rekordbox.xml, smartlist, related, MIDI, WAV, MP3,
-                 format CDJ (export.pdb, ANLZ, My Settings),
-                 boucles DRUM SWAP, chemins portables, liaison USB, date d'ajout
+src/shared/      code pur testé sous Node : DSP, Camelot, XML, rekordbox.xml, smartlist, related, MIDI,
+                 WAV, MP3, format CDJ (export.pdb, ANLZ, My Settings), boucles DRUM SWAP,
+                 chemins portables, liaison USB, date d'ajout
 src/search/      moteur de recherche façon Rekordbox
 ```
 
-## Où sont les données
+### Contribuer
 
-- `%APPDATA%\Reboxed\` (propre à l'ordinateur) contient :
-  - `location.json`, qui indique où est la bibliothèque ;
-  - `models\` : les modèles de stems, `spleeter\` pour FAST et `htdemucs_fp16weights.onnx` pour HQ ;
-  - `plugins\` : les plugins matériels que tu as installés ou créés ;
-  - les caches.
+Reboxed est open source : les issues, les idées et les pull requests sont les bienvenues.
+Tu peux par exemple :
+- créer un plugin pour ton contrôleur ([guide](docs/PLUGINS.md)) ;
+- tester l'export sur un vrai CDJ ;
+- proposer une amélioration.
 
-  Les versions précédentes utilisaient `%APPDATA%\rbclone\`, qui est renommé automatiquement au premier lancement.
-- **Dossier de la bibliothèque** (par défaut le même, ou une clé USB) : `library.json`, `analysis\`, `artwork\`, `groove\` (captures DRUM CAPTURE) et `stems\<morceau>\{vocals,drums,bass,other}.mp3` (ou `.wav`). La version HQ des stems remplace la FAST.
-- **Emplacements des stems** : le dossier de la bibliothèque, un dossier au choix ou à côté de chaque morceau. Les stems déjà rangés à côté de la musique ou dans l'ancien cache restent lus.
+---
 
-La suite est dans [docs/ROADMAP.md](docs/ROADMAP.md) : phase 5 (mode Edit, Pad FX, vidéo…).
+## 🗺️ Feuille de route
 
-## Licence
+La suite est détaillée dans **[docs/ROADMAP.md](docs/ROADMAP.md)**. La prochaine étape est la phase 5 : mode Edit, Pad FX, vidéo…
+
+---
+
+## 📜 Licence
 
 Reboxed est distribué sous **licence MIT** ([LICENSE](LICENSE)). Tout le monde peut l'utiliser, le copier, le modifier et le redistribuer, y compris pour un usage commercial. Seule condition : garder la mention de copyright et de licence.
 
-Composants tiers :
-- Electron, onnxruntime et music-metadata : licence MIT.
-- lamejs (`@breezystack/lamejs`, encodage MP3 des stems) : licence LGPL-3.0, utilisée sans modification comme bibliothèque séparée.
-- Modèles de stems, téléchargés au premier usage et absents du dépôt : Spleeter 4 stems (poids de Deezer sous MIT, export ONNX sous Apache-2.0) et HT-Demucs v4 (MIT).
-- yt-dlp, ffmpeg et deno : utilisés s'ils sont installés sur la machine. Ils ne sont pas fournis avec Reboxed.
+<details>
+<summary>Composants tiers</summary>
 
-Reboxed n'est ni affilié ni approuvé par AlphaTheta / Pioneer DJ. *rekordbox*, *Pioneer DJ*, *CDJ*, *XDJ*, *DDJ-GRV6* et *DDJ-FLX* sont des marques de leurs propriétaires respectifs ; elles ne sont citées que pour décrire la compatibilité.
+- **Electron**, **onnxruntime** et **music-metadata** : licence MIT.
+- **lamejs** (`@breezystack/lamejs`, encodage MP3 des stems) : licence LGPL-3.0, utilisée sans modification comme bibliothèque séparée.
+- **Modèles de stems**, téléchargés au premier usage et absents du dépôt :
+  - Spleeter 4 stems : poids de Deezer sous MIT, export ONNX sous Apache-2.0 ;
+  - HT-Demucs v4 : MIT.
+- **yt-dlp**, **ffmpeg** et **deno** : utilisés s'ils sont installés sur la machine. Ils ne sont pas fournis avec Reboxed.
+
+</details>
+
+<sub>Reboxed n'est ni affilié ni approuvé par AlphaTheta / Pioneer DJ. *rekordbox*, *Pioneer DJ*, *CDJ*, *XDJ*, *DDJ-GRV6* et *DDJ-FLX* sont des marques de leurs propriétaires respectifs ; elles ne sont citées que pour décrire la compatibilité.</sub>
