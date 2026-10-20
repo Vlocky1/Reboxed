@@ -9,6 +9,8 @@ import { mediaUrl } from '../analysis/analyzer.js';
 import { toast } from '../ui/dom.js';
 import { padValue } from '../../shared/pad-tables.js';
 
+const fmtBeat = (b) => (b >= 1 ? String(Math.round(b * 100) / 100) : `1/${Math.round(1 / b)}`);
+
 const FX_SELECT = {
   DELAY: 'DELAY', ECHO: 'ECHO', LOWCUTECHO: 'LOW CUT ECHO', SPIRAL: 'SPIRAL', HELIX: 'HELIX', REVERB: 'REVERB',
   FLANGER: 'FLANGER', PHASER: 'PHASER', FILTER: 'FILTER', TRANS: 'TRANS', PITCH: 'PITCH', ROLL: 'ROLL',
@@ -115,7 +117,9 @@ export class PioneerController {
     if (param && d) {
       if (!press) return;
       const dir = param[1] === 'Left' ? -1 : 1;
-      if (param[2] === 'HotCue') d.callMemoryCue(dir);
+      // CALL ◀ ▶ arrive here when the controller thinks no loop plays (it picks the message from the
+      // GetLoopActive indicator): same handling as LoopHalf / LoopDouble either way.
+      if (param[2] === 'HotCue') this.callOrResize(i, dir);
       else this.turnPage(i, dir);
       return;
     }
@@ -202,9 +206,10 @@ export class PioneerController {
       case 'PlayPause': if (press) d.playPause(); break;
       case 'Cue': if (press) d.cueDown(); else d.cueUp(); break;
       case 'JumpToTrackStart': if (press) d.jumpToStart(); break;
-      case 'JogTouch': if (press) { if (d.vinyl) d.scratchStart(); } else d.scratchEnd(); break;
-      case 'JogScratch': if (d.scratching) d.scratchMove(ev.delta); else d.jogBend(ev.delta); break;
-      case 'JogPitchBend': case 'WheelPitchBend': d.jogBend(ev.delta); break;
+      // SHIFT + jog = fast search only: touching the platter with SHIFT never starts a scratch.
+      case 'JogTouch': if (press && !s.shift) { if (d.vinyl) d.scratchStart(); } else d.scratchEnd(); break;
+      case 'JogScratch': if (s.shift) d.jogSearch(ev.delta); else if (d.scratching) d.scratchMove(ev.delta); else d.jogBend(ev.delta); break;
+      case 'JogPitchBend': case 'WheelPitchBend': if (s.shift) d.jogSearch(ev.delta); else d.jogBend(ev.delta); break;
       case 'WheelSearch': case 'JogSearch': d.jogSearch(ev.delta); break;
       case 'TempoReset': if (press) d.setTempoPct(0); break;
       case 'Reverse': if (press) d.setReverse(!d.reverse); break;
@@ -225,16 +230,17 @@ export class PioneerController {
       case 'Master': if (press) this.engine.setMasterDeck(i); break;
       case 'KeySync': if (press) d.toggleKeySync(); break;
       case 'KeyReset': if (press) d.setKeyShift(0); break;
-      case 'Shift': s.shift = press; break;
-      case 'LoopIn': if (press) d.loopIn(); break;
-      case '4BeatLoopLongPress': if (press) d.beatLoop(4); break;
+      case 'Shift': s.shift = press; if (press && d.scratching) d.scratchEnd(); break;
+      // LOOP IN held: an auto beat loop of the chosen size, from where the button was first pressed
+      // (the long press is only recognised about a second later).
+      case 'LoopIn': if (press) { d.loopIn(); s.loopInAt = d.pendingLoopIn; } break;
+      case '4BeatLoopLongPress': if (press) { d.beatLoopFrom(s.loopInAt ?? d.position(), d.beatLoopSize); s.loopInAt = null; toast(`Deck ${i + 1}: loop ${fmtBeat(d.beatLoopSize)} beats`, 1200); } break;
       case 'LoopOut': if (press) d.loopOut(); break;
       case 'ReloopExit': case 'ActiveLoop': if (press) d.reloopExit(); break;
       // CALL ◀ ▶: halve / double the loop that plays; without a loop, call the memory cues (rekordbox).
-      case 'LoopHalf': if (press) { if (d.loop) d.resizeLoop(0.5); else d.callMemoryCue(-1); } break;
-      case 'LoopDouble': if (press) { if (d.loop) d.resizeLoop(2); else d.callMemoryCue(1); } break;
-      case 'Memory': if (press) d.addMemoryCue(); break;
-      case 'Delete': if (press) d.deleteMemoryCueNear(); break;
+      case 'LoopHalf': case 'LoopDouble': if (press) this.callOrResize(i, name === 'LoopHalf' ? -1 : 1); break;
+      case 'Memory': if (press) { const n = d.memoryCues().length; d.addMemoryCue(); toast(d.memoryCues().length > n ? `Deck ${i + 1}: memory cue ${d.memoryCues().length} set` : `Deck ${i + 1}: a memory cue is already there`, 1500); } break;
+      case 'Delete': if (press) { const n = d.memoryCues().length; d.deleteMemoryCueNear(); if (d.memoryCues().length < n) toast(`Deck ${i + 1}: memory cue deleted`, 1500); } break;
       case 'Quantize': if (press) d.toggleQuantize(); break;
       case 'TapBpm': if (press) this.tapGrid(i); break;
       case 'Slip': if (press) d.toggleSlip(); break;
@@ -288,6 +294,23 @@ export class PioneerController {
    * from the play head, like rekordbox's real-time separation): usable after a couple of seconds.
    */
   requireStems(d) { return this.app.ensureStems(d); }
+
+  /**
+   * CALL ◀ ▶ (LOOP 1/2X / 2X): with a loop, halve / double it; without one, go to the previous / next
+   * memory cue. A message says what happened (the controller has no loop display).
+   */
+  callOrResize(i, dir) {
+    const d = this.deck(i);
+    if (d.loop) {
+      d.resizeLoop(dir < 0 ? 0.5 : 2);
+      toast(`Deck ${i + 1}: loop ${fmtBeat(d.currentLoopBeats())} beats`, 1200);
+    } else if (d.memoryCues().length) {
+      d.callMemoryCue(dir);
+    } else {
+      d.resizeLoop(dir < 0 ? 0.5 : 2); // no loop and no memory cue: the next loop's size
+      toast(`Deck ${i + 1}: next loop ${fmtBeat(d.beatLoopSize)} beats`, 1200);
+    }
+  }
 
   /** Pad table page of deck i (0/1), shared with the on-screen pads. */
   page(i) { return this.app.deckViews[i]?.padPage ?? 0; }
@@ -449,6 +472,8 @@ export class PioneerController {
       o('Sync', i, d.sync);
       o('Master', i, this.engine.masterDeck === d);
       o('KeySync', i, d.keySync);
+      // Loop state: the controller sends CALL ◀ ▶ as LOOP 1/2X / 2X only while this says a loop plays.
+      o('GetLoopActive', i, !!d.loop);
       o('LoopIn', i, !!d.loop || d.pendingLoopIn !== undefined);
       o('LoopOut', i, !!d.loop);
       o('Quantize', i, d.quantize);

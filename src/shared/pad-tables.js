@@ -3,7 +3,8 @@
 // tables and the same page, so the labels always match what a pad does.
 
 export const PAD_TABLES = {
-  'BEAT JUMP': [-1, 1, -2, 2, -4, 4, -8, 8, -16, 16, -32, 32, -64, 64, -128, 128],
+  // rekordbox's BEAT JUMP pads start with the fine jumps: ±1/4, ±1/2, then ±1 … ±32 beats.
+  'BEAT JUMP': [-1 / 4, 1 / 4, -1 / 2, 1 / 2, -1, 1, -2, 2, -4, 4, -8, 8, -16, 16, -32, 32],
   'BEAT LOOP': [1 / 64, 1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
   'KEY SHIFT': [4, 5, 6, 7, 0, 1, 2, 3, -4, -3, -2, -1, -8, -7, -6, -5],
   KEYBOARD: [4, 5, 6, 7, 0, 1, 2, 3, -4, -3, -2, -1, -8, -7, -6, -5],

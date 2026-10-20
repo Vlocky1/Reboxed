@@ -391,6 +391,10 @@ input.num { width: 64px; background: var(--bg-0); border: 1px solid var(--line-2
 .th { padding: 0 6px; line-height: 22px; color: var(--dim); font-weight: 700; font-size: 10.5px; white-space: nowrap; overflow: hidden; flex: none; border-right: 1px solid #000; box-shadow: 1px 0 0 var(--panel-3); }
 .th:hover { color: #fff; }
 .th .sort { color: var(--accent-2); }
+/* Column being moved: where it will land. */
+.th.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.th.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
+.th[draggable="true"] { cursor: grab; }
 .tbody { position: relative; }
 .tspacer { pointer-events: none; }
 .tr { position: absolute; left: 0; height: var(--row); display: flex; align-items: center; color: var(--text-2); }

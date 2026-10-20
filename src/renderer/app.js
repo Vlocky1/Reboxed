@@ -304,7 +304,8 @@ class App {
     const deck = this.engine.decks[deckIndex];
     const track = this.library.get(trackId);
     if (!deck || !track) return;
-    if (deck.playing) { toast(`Deck ${deckIndex + 1} is playing — pause it first`); return; }
+    // Load lock (Preferences ▸ Decks & Mixer): by default a playing deck cannot be replaced by mistake.
+    if (deck.playing && !this.library.settings.loadOnPlaying) { toast(`Deck ${deckIndex + 1} is playing — pause it first (or allow it in Preferences ▸ Decks & Mixer)`, 3500); return; }
     deck.loading = true;
     try {
       const buffer = await this.analyzer.decode(track.path);
@@ -652,7 +653,7 @@ class App {
   async instantDouble(fromIdx, toIdx) {
     const from = this.engine.decks[fromIdx];
     const to = this.engine.decks[toIdx];
-    if (!from.track || to.playing) return;
+    if (!from.track || (to.playing && !this.library.settings.loadOnPlaying)) return;
     await this.loadTrack(toIdx, from.track.id);
     to.setTempoRange(from.tempoRange);
     to.setTempoPct(from.tempoPct);
@@ -1351,14 +1352,18 @@ async function smoke(app) {
     const label = dv.pads[4].querySelector('.pad-letter').textContent;
     dv.setPadPage(0);
     step('pad key shift (rekordbox table, 2 pages)', k1 === 1 && k2 === -8 && label === '-8', `pad 6 → ${k1}, page 2 pad 5 → ${k2} (label ${label})`);
-    // BEAT JUMP pads: -1 +1 -2 +2 -4 +4 -8 +8, exactly on the grid.
+    // BEAT JUMP pads: -1/4 +1/4 -1/2 +1/2 -1 +1 -2 +2, exactly on the grid.
     dv.setPadMode('BEAT JUMP');
     d1.pause(); d1.seek(d1.beatTime(8) + 0.1);
     const j0 = d1.position(); const b0 = d1.beatIndexAt(j0);
-    dv.padDown(5, {}); // +4
+    dv.padDown(7, {}); // +2
     const jumped = d1.beatIndexAt(d1.position()) - b0;
+    const b1 = d1.beatIndexAt(d1.position());
+    dv.padDown(1, {}); // +1/4
+    const quarter = d1.beatIndexAt(d1.position()) - b1;
     const labels = dv.pads.map((p) => p.querySelector('.pad-letter').textContent).join(' ');
-    step('pad beat jump (rekordbox table, on the grid)', Math.abs(jumped - 4) < 1e-6 && labels === '-1 +1 -2 +2 -4 +4 -8 +8', `pad 6 → ${jumped.toFixed(4)} beats · pads ${labels}`);
+    step('pad beat jump (rekordbox table, on the grid)', Math.abs(jumped - 2) < 1e-6 && Math.abs(quarter - 0.25) < 1e-6 && labels === '-1/4 +1/4 -1/2 +1/2 -1 +1 -2 +2',
+      `pad 8 → ${jumped.toFixed(4)} beats, pad 2 → ${quarter.toFixed(4)} · pads ${labels}`);
     d1.play();
     dv.setPadMode('HOT CUE');
     d1.setKeyShift(0);
@@ -1382,6 +1387,17 @@ async function smoke(app) {
     d3.exitLoop();
     await app.instantDouble(2, 3);
     step('instant double', d4.track?.id === id128 && d4.playing && Math.abs(d4.position() - d3.position()) < 0.1, `${d3.position().toFixed(2)} vs ${d4.position().toFixed(2)}`);
+    // Load lock: a playing deck refuses a new track unless "Load a track onto a playing deck" is on.
+    {
+      const id100b = lib.all().find((t) => t.title === 'Kick 100').id;
+      await app.loadTrack(3, id100b);
+      const refused = d4.track?.id === id128;
+      lib.setSetting('loadOnPlaying', true);
+      await app.loadTrack(3, id100b);
+      const allowed = d4.track?.id === id100b;
+      lib.setSetting('loadOnPlaying', false);
+      step('load lock setting', refused && allowed, `playing deck: refused by default ${refused}, loaded when allowed ${allowed}`);
+    }
     d3.pause(); d4.pause();
 
     await app.toggleRecording();
@@ -1676,6 +1692,61 @@ async function smoke(app) {
         press(0x90, 101);
         step('grv6 pad mode buttons -> pad pages', pages.join() === 'PAD FX,STEMS,SAMPLER,HOT CUE' && ctrlMode === 'BEAT JUMP' && !ks0 && ks1 && !d1.keySync,
           `pages ${pages.join(' → ')} · screen BEAT JUMP → controller ${ctrlMode} · KEY SYNC ${ks0}→${ks1}→${d1.keySync}`);
+      }
+      // Real-GRV6 feedback (1.13.1): SHIFT + jog, LOOP IN held, CALL < > on a loop, MEMORY, hot cue in a loop.
+      {
+        d1.exitLoop(); d1.seek(2); d1.play(); // back from the end of the 24 s test track
+        await wait(100);
+        // SHIFT held + platter touched + turned: no scratch, the play head moves forward fast. With
+        // SHIFT the GRV6 sends the platter on CC 0x29 (JogSearch, commented out in rekordbox's mapping).
+        tx([0x90, 0x3f, 0x7f]);              // SHIFT
+        tx([0x90, 0x67, 0x7f]);              // JogTouch (with SHIFT)
+        const p0 = d1.position();
+        for (let k = 0; k < 20; k++) tx([0xb0, 0x29, 0x45]); // JogSearch +5 x 20
+        await wait(300);
+        const searched = d1.position() - p0;
+        const noScratch = !d1.scratching;
+        tx([0x80, 0x67, 0]); tx([0x80, 0x3f, 0]);
+        step('grv6 SHIFT + jog = fast search, no scratch', noScratch && searched > 2, `moved ${searched.toFixed(2)} s, scratching ${!noScratch}`);
+        // LOOP IN held: the loop starts on the beat where it was pressed, not where the long press registers.
+        d1.exitLoop(); d1.setBeatLoopSize(1);
+        tx([0x90, 0x10, 0x7f]);              // LOOP IN pressed
+        const pressedAt = d1.pendingLoopIn;
+        await wait(600);                     // the controller sends the long press later
+        tx([0x90, 0x14, 0x7f]); tx([0x80, 0x14, 0]); tx([0x80, 0x10, 0]);
+        const longLoop = d1.loop ? { ...d1.loop } : null;
+        step('grv6 LOOP IN held: loop from the press', longLoop && Math.abs(longLoop.start - pressedAt) < 1e-6 && longLoop.beats === 1 && d1.pendingLoopIn === undefined,
+          `pressed at ${pressedAt?.toFixed(3)} s, loop ${longLoop?.start.toFixed(3)}–${longLoop?.end.toFixed(3)} (${longLoop?.beats} beat)`);
+        // CALL < > like the hardware: it sends LOOP 1/2X / 2X (0x12 / 0x13) only while Reboxed's
+        // GetLoopActive LED (0x9F 0x04) says a loop plays, else MEMORY CALL (0x51 / 0x53).
+        const loopLed = () => { const m = [...sent].reverse().find(([st, n]) => st === 0x9f && n === 0x04); return !!m && m[2] > 0; };
+        const call = (dir) => press(0x90, loopLed() ? (dir < 0 ? 0x12 : 0x13) : (dir < 0 ? 0x51 : 0x53));
+        d1.beatLoop(4);
+        await wait(120);                     // LEDs are refreshed at 30 Hz
+        const ledOn = loopLed();
+        call(-1); const half = d1.currentLoopBeats();
+        await wait(120);
+        call(1); await wait(60); call(1); const dbl = d1.currentLoopBeats();
+        // Even if the LED were late (memory call message during a loop), the loop is resized.
+        press(0x90, 0x51); const lateLed = d1.currentLoopBeats();
+        step('grv6 CALL < > halve / double the loop', ledOn && Math.abs(half - 2) < 1e-6 && Math.abs(dbl - 8) < 1e-6 && Math.abs(lateLed - 4) < 1e-6,
+          `loop LED ${ledOn} · 4 → ${half} → ${dbl} beats · memory-call message during the loop → ${lateLed}`);
+        // MEMORY adds a memory cue; a point hot cue leaves the loop.
+        const memBefore = d1.memoryCues().length;
+        press(0x90, 0x3d);
+        const memAfter = d1.memoryCues().length;
+        d1.setCues((d1.track.cues ?? []).filter((c) => !(c.kind === 'hot' && c.slot === 2)));
+        d1.exitLoop(); d1.seek(2); d1.hotCuePress(2);   // hot cue C at 2 s
+        d1.seek(8); d1.beatLoop(2);
+        d1.hotCuePress(2);
+        const leftLoop = !d1.loop;
+        step('grv6 MEMORY; hot cue leaves the loop', memAfter === memBefore + 1 && leftLoop, `memory cues ${memBefore} → ${memAfter} · loop after hot cue: ${!leftLoop}`);
+        // BEAT JUMP pads as rekordbox: -1/4 +1/4 -1/2 +1/2 -1 +1 -2 +2.
+        app.deckViews[0].setPadMode('BEAT JUMP');
+        const jumpLabels = app.deckViews[0].pads.map((p) => p.querySelector('.pad-letter').textContent).join(' ');
+        app.deckViews[0].setPadMode('HOT CUE');
+        step('beat jump pads start with 1/4 and 1/2', jumpLabels === '-1/4 +1/4 -1/2 +1/2 -1 +1 -2 +2', jumpLabels);
+        d1.setBeatLoopSize(4);
       }
       // Tempo slider with soft takeover: far away -> ignored, centre -> caught, then moves.
       d1.setTempoPct(0);
@@ -2211,6 +2282,21 @@ async function smoke(app) {
       b.lib.setSetting('columnWidths', {}); b.applyWidths();
       step('browser columns: resize to fit', grips === b.columns.length && after > before && shown && lib.settings.columnWidths.title === undefined,
         `grips=${grips} title ${before}px -> ${after}px, full title visible=${shown}`);
+      // Columns move by drag and drop of their header: BPM dropped on the left half of TITLE.
+      {
+        const orderBefore = lib.settings.columns.slice();
+        const target = document.querySelector('.thead .th.c-title');
+        const dt = new DataTransfer();
+        dt.setData('application/x-rb-column', 'bpm');
+        const r = target.getBoundingClientRect();
+        target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, clientX: r.left + 2, clientY: r.top + 5, bubbles: true, cancelable: true }));
+        await wait(100);
+        const moved = lib.settings.columns;
+        const headOrder = [...document.querySelectorAll('.thead .th')].map((x) => x.className.match(/c-(\w+)/)?.[1]);
+        const ok = moved.indexOf('bpm') === moved.indexOf('title') - 1 && headOrder.indexOf('bpm') === headOrder.indexOf('title') - 1;
+        lib.setSetting('columns', orderBefore);
+        step('browser columns: drag a header to move the column', ok, `${orderBefore.join(',')} → ${moved.join(',')}`);
+      }
 
       const closed = b.editTrack(t.id);
       await wait(300);

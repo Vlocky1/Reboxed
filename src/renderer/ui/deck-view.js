@@ -346,7 +346,7 @@ export class DeckView {
     this.loopBtn.classList.toggle('on', !!d.loop);
     this.exitBtn.textContent = d.loop ? 'EXIT' : 'RELOOP';
     this.inBtn.classList.toggle('on', d.pendingLoopIn !== undefined);
-    this.jumpSize.textContent = String(d.beatJumpSize);
+    this.jumpSize.textContent = fmtBeats(d.beatJumpSize);
     const semis = `${d.keyShift > 0 ? '+' : ''}${d.keyShift}`;
     this.keyShiftVal.textContent = semis;
     if (this.kbBtn) this.kbBtn.textContent = String.fromCharCode(65 + this.kbCue);
@@ -488,7 +488,7 @@ export class DeckView {
           break;
         }
         case 'BEAT LOOP': letter = fmtSigned(v); sub = 'beat'; color = '#ff9a1f'; set = true; active = d.loop?.beats === v && d.loop.slice === undefined; break;
-        case 'BEAT JUMP': letter = `${v > 0 ? '+' : ''}${v}`; sub = 'jump'; color = '#3d7dff'; set = true; break;
+        case 'BEAT JUMP': letter = `${v > 0 ? '+' : ''}${fmtSigned(v)}`; sub = 'jump'; color = '#3d7dff'; set = true; break;
         case 'SLICER': letter = String(i + 1); sub = 'slice'; color = '#25e6d6'; set = true; active = d.loop?.slice === i; break;
         case 'SAMPLER': {
           const s = this.app.sampler?.slots[slot];

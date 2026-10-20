@@ -14,6 +14,10 @@ import { lookupPanel } from './track-lookup.js';
 import { openAutoTag, undoAutoTag } from './autotag.js';
 import { openCleanNames } from './clean-names.js';
 import { addedTime, dateAddedText } from '../../shared/date-added.js';
+import { DEFAULT_SETTINGS } from '../library.js';
+
+/** Drag data type of a column header being moved. */
+const COLUMN_TYPE = 'application/x-rb-column';
 
 /** Value of the Track information date-time field. */
 const dateTimeInput = (t) => (t.dateAdded ? `${t.dateAdded}T${addedTime(t) ?? '00:00'}` : '');
@@ -458,13 +462,42 @@ export class Browser {
       grip.addEventListener('pointerdown', (e) => this.startResize(e, c, grip));
       grip.addEventListener('dblclick', (e) => { e.stopPropagation(); this.autoFit(c); });
       grip.addEventListener('click', (e) => e.stopPropagation());
-      const cell = h(`div.th.c-${c}${def.num ? '.num' : ''}`, { style: { width: `var(--w-${c})` } },
+      const cell = h(`div.th.c-${c}${def.num ? '.num' : ''}`, { style: { width: `var(--w-${c})` }, draggable: true, title: 'Click to sort · drag to move the column' },
         def.label, s.col === c ? h('span.sort', {}, s.dir > 0 ? ' ▲' : ' ▼') : '', grip);
       cell.onclick = () => { this.sort = { col: c, dir: s.col === c ? -s.dir : 1 }; this.refreshRows(); };
       cell.oncontextmenu = (e) => this.columnMenu(e);
+      // Drag a header onto another to move the column before / after it (order saved).
+      cell.addEventListener('dragstart', (e) => {
+        if (e.target !== cell || this.resizing) { e.preventDefault(); return; }
+        e.dataTransfer.setData(COLUMN_TYPE, c);
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      const side = (e) => (e.clientX - cell.getBoundingClientRect().left > cell.offsetWidth / 2 ? 'after' : 'before');
+      cell.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes(COLUMN_TYPE)) return;
+        e.preventDefault();
+        const where = side(e);
+        cell.classList.toggle('drop-before', where === 'before');
+        cell.classList.toggle('drop-after', where === 'after');
+      });
+      cell.addEventListener('dragleave', () => cell.classList.remove('drop-before', 'drop-after'));
+      cell.addEventListener('drop', (e) => {
+        cell.classList.remove('drop-before', 'drop-after');
+        const moved = e.dataTransfer.getData(COLUMN_TYPE);
+        if (moved && moved !== c) { e.preventDefault(); this.moveColumn(moved, c, side(e)); }
+      });
       return cell;
     }));
     this.head.style.width = 'var(--total)';
+  }
+
+  /** Put column `c` before / after column `target` (the order is kept in the settings). */
+  moveColumn(c, target, where = 'before') {
+    const cols = this.lib.settings.columns.filter((x) => x !== c);
+    const at = cols.indexOf(target);
+    if (at < 0) return;
+    cols.splice(where === 'after' ? at + 1 : at, 0, c);
+    this.lib.setSetting('columns', cols);
   }
 
   // ---- column widths (drag the header edge; double-click fits the content) -----------------------
@@ -492,10 +525,12 @@ export class Browser {
     if (e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
     grip.setPointerCapture(e.pointerId);
+    this.resizing = true; // not a column move
     const x0 = e.clientX; const w0 = this.colWidth(c);
     let w = w0;
     const move = (ev) => { w = Math.max(24, Math.min(1200, w0 + ev.clientX - x0)); this.applyWidths({ [c]: w }); };
     const up = () => {
+      this.resizing = false;
       grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up);
       if (w !== w0) this.setColWidth(c, w);
     };
@@ -529,6 +564,11 @@ export class Browser {
       '-',
       { label: 'Fit all columns to their content', action: () => this.columns.forEach((c) => this.autoFit(c)) },
       { label: 'Reset column widths', action: () => { this.lib.setSetting('columnWidths', {}); this.applyWidths(); } },
+      { label: 'Reset column order', action: () => {
+        const order = DEFAULT_SETTINGS.columns;
+        const rank = (k) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
+        this.lib.setSetting('columns', [...cur].sort((a, b) => rank(a) - rank(b)));
+      } },
     ]));
   }
 
