@@ -29,8 +29,9 @@ export class LicenseManager {
   async save() { await writeFile(this.file, JSON.stringify(this.state, null, 2)); }
 
   /**
-   * Settings published on the website (app-config.json): buy / donate / beta key links (https only) and
-   * the discount text for beta testers change without a new version. The beta end date stays built in.
+   * Settings published on the website (app-config.json): buy / donate / beta key links (https only), the
+   * price shown and the discount text for beta testers change without a new version. The beta end date
+   * stays built in.
    */
   async loadRemoteConfig(url = 'https://reboxed.github.io/app-config.json') {
     try {
@@ -41,6 +42,7 @@ export class LicenseManager {
       const patch = {};
       for (const k of ['donateUrl', 'buyUrl', 'betaUrl']) if (https(cfg[k])) patch[k] = cfg[k];
       if (typeof cfg.betaDiscount === 'string' && cfg.betaDiscount.trim()) patch.betaDiscount = cfg.betaDiscount.trim().slice(0, 200);
+      if (typeof cfg.price === 'string' && /^[\d.,]+\s?[€$£]$/.test(cfg.price.trim())) patch.price = cfg.price.trim();
       this.product = { ...this.product, ...patch };
     } catch { /* offline: the built-in settings */ }
   }

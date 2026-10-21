@@ -19,6 +19,7 @@ import { Deezer } from './deezer.js';
 import { MetadataLookup } from './metadata.js';
 import { Updater } from './updater.js';
 import { LicenseManager } from './license.js';
+import { PRODUCT } from '../shared/product.js';
 import { hostname } from 'node:os';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -438,7 +439,9 @@ app.whenReady().then(async () => {
   store = new LibraryStore(await resolveDatabase(), { legacyDir: smoke ? null : join(app.getPath('appData'), 'rbclone') });
   // Licence: trial from the first run, then a key (the smoke test gets a fresh trial in its folder).
   // Run from the source (npm start), Reboxed asks for no licence; the smoke test still checks it.
-  const license = new LicenseManager({ file: join(appDir, 'license.json'), fetch: (url, opts) => net.fetch(url, opts), instanceName: `${hostname()} (Reboxed)`, dev: !app.isPackaged && !smoke });
+  // The smoke test runs the beta without a beta key (its own step opens the beta key dialog).
+  const license = new LicenseManager({ file: join(appDir, 'license.json'), fetch: (url, opts) => net.fetch(url, opts), instanceName: `${hostname()} (Reboxed)`,
+    dev: !app.isPackaged && !smoke, ...(smoke ? { product: { ...PRODUCT, betaUrl: null } } : {}) });
   await license.load();
   if (!smoke) license.loadRemoteConfig();
   ipcMain.handle('license:status', () => license.status());
