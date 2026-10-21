@@ -48,10 +48,10 @@ export async function pluginsSection(app) {
     const name = h('input', { type: 'text', placeholder: 'e.g. Pioneer DDJ-400' });
     const match = h('input', { type: 'text', placeholder: 'part of the MIDI port name, e.g. DDJ-400' });
     const decks = h('select', {}, h('option', { value: 2 }, '2 decks'), h('option', { value: 4 }, '4 decks'));
-    const ok = await modal('New plugin from a rekordbox mapping', h('div.form-grid', {},
+    const ok = await modal('New plugin from a controller mapping (CSV)', h('div.form-grid', {},
       h('label', {}, 'Mapping'), h('code.path', { title: csv }, csv),
       h('label', {}, 'Name'), name, h('label', {}, 'MIDI port name'), match, h('label', {}, 'Decks'), decks,
-      h('label', {}, ''), h('span.dim', {}, 'Empty fields: taken from the mapping file. rekordbox keeps its mappings in <rekordbox folder>\\MidiMappings.')),
+      h('label', {}, ''), h('span.dim', {}, 'Empty fields: taken from the mapping file (a .midi.csv from the MidiMappings folder of your DJ software).')),
     [{ label: 'Create', value: true, primary: true }, { label: 'Cancel', value: false }]);
     if (!ok) return;
     try {
@@ -66,7 +66,7 @@ export async function pluginsSection(app) {
     h('p.dim', {}, 'A plugin teaches Reboxed a piece of hardware: which MIDI messages its buttons send, its LEDs and its sound card. Anyone can write one for a controller that is not supported yet — see docs/PLUGINS.md in the Reboxed repository.'),
     h('div.frow', {},
       h('button.dbtn.small', { onclick: install }, 'Install a plugin folder…'),
-      h('button.dbtn.small', { onclick: fromCsv }, 'Create from a rekordbox mapping…'),
+      h('button.dbtn.small', { onclick: fromCsv }, 'Create from a controller mapping (CSV)…'),
       h('button.dbtn.small', { onclick: () => window.rb.plugins.openFolder() }, 'Open the plugins folder'),
       h('button.dbtn.small', { onclick: changed }, 'Reload')),
     list);

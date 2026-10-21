@@ -201,7 +201,7 @@ export class Library extends EventTarget {
     } else if (nodes.length) {
       const prev = placement === 'sync' ? this.playlists.find((n) => n.importSource === 'rekordbox') : null;
       if (prev) { prev.children = nodes; prev.open = true; report.folderId = prev.id; } else {
-        const folder = { id: newId(), type: 'folder', name: placement === 'sync' ? 'rekordbox' : `rekordbox ${today()}`, children: nodes, open: true,
+        const folder = { id: newId(), type: 'folder', name: placement === 'sync' ? 'Imported' : `Imported ${today()}`, children: nodes, open: true,
           ...(placement === 'sync' ? { importSource: 'rekordbox' } : {}) };
         this.playlists.push(folder);
         report.folderId = folder.id;

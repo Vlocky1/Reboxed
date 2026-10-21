@@ -123,7 +123,7 @@ test('library import: tracks, cues, playlists; re-import updates the rekordbox f
   assert.equal(strobe.beatgrid.bpm, 128);
   assert.equal(lib.all().find((t) => t.title === 'Lonely').missing, true);
   const folder = lib.playlists.find((n) => n.importSource === 'rekordbox');
-  assert.equal(folder.name, 'rekordbox');
+  assert.equal(folder.name, 'Imported');
   const friday = folder.children[0].children[0];
   assert.equal(friday.name, 'Friday');
   assert.deepEqual(friday.trackIds.map((id) => lib.get(id).title), ['Café', 'Strobe']);
@@ -147,5 +147,5 @@ test('library import: only selected playlists, keep my edits, relocated files', 
   assert.equal(lib.get('c').artist, 'X');
   assert.ok(lib.all().some((t) => t.path === 'E:\\DJ\\Music\\Strobe.mp3'));
   assert.equal(lib.all().some((t) => t.title === 'Lonely'), false);
-  assert.match(lib.playlists[0].name, /^rekordbox \d{4}-\d{2}-\d{2}$/);
+  assert.match(lib.playlists[0].name, /^Imported \d{4}-\d{2}-\d{2}$/);
 });

@@ -5,7 +5,7 @@ which LEDs it has, and which sound card it brings. Reboxed ships plugins for the
 DDJ-FLX2, DDJ-FLX4, DDJ-FLX6 and DDJ-FLX10. Anyone can write one for another controller and share it.
 
 Plugins are managed in **Preferences > Plugins**: enable / disable, install a plugin folder, create
-one from a rekordbox mapping, remove, open the plugins folder.
+one from a controller mapping (CSV), remove, open the plugins folder.
 
 ## Where plugins live
 
@@ -17,22 +17,22 @@ one from a rekordbox mapping, remove, open the plugins folder.
 A plugin you install with the **same id** as a built-in one replaces it: that is how you fix or
 extend a built-in mapping without rebuilding Reboxed.
 
-## The quickest way: from a rekordbox mapping
+## The quickest way: from a controller mapping (CSV)
 
-Most controllers that work with rekordbox come with a mapping file in the rekordbox install folder
+Many controllers come with a MIDI mapping file installed by their manufacturer's DJ software
 (`MidiMappings\<model>.midi.csv`). Reboxed understands that format directly:
 
-- In the app: **Preferences > Plugins > Create from a rekordbox mapping…**, pick the `.csv`, give a
+- In the app: **Preferences > Plugins > Create from a controller mapping (CSV)…**, pick the `.csv`, give a
   name and the MIDI port name. Done.
 - From the command line (for contributors):
 
   ```sh
-  node scripts/plugin-from-rekordbox.mjs "C:\...\MidiMappings\DDJ-400.midi.csv" src/plugins/pioneer-ddj-400 \
+  node scripts/plugin-from-csv.mjs "C:\...\MidiMappings\DDJ-400.midi.csv" src/plugins/pioneer-ddj-400 \
     --id pioneer-ddj-400 --name "Pioneer DDJ-400" --match DDJ-400 --decks 2
   ```
 
-Even without a plugin, a controller whose mapping is in a local rekordbox install is picked up
-automatically; a plugin makes it work without rekordbox and lets you tune it.
+Even without a plugin, a controller whose mapping file is installed on the computer is picked up
+automatically; a plugin makes it work anywhere and lets you tune it.
 
 ## plugin.json
 
@@ -60,8 +60,8 @@ automatically; a plugin makes it work without rekordbox and lets you tune it.
 | `name`, `version`, `author`, `description` | no | Shown in Preferences > Plugins. |
 | `kind` | yes | `"controller"` (the only kind for now). |
 | `match` | yes | Parts of the MIDI port name (case and punctuation ignored). The longest match wins. |
-| `driver` | no | `"pioneer"` (default): the mapping uses rekordbox function names. |
-| `mapping` | yes | `mapping.json` (Reboxed format) or a raw rekordbox `.midi.csv`. |
+| `driver` | no | `"pioneer"` (default): the mapping uses the standard Pioneer function names. |
+| `mapping` | yes | `mapping.json` (Reboxed format) or a raw `.midi.csv` mapping. |
 | `decks` | no | 2 or 4. |
 | `audio` | no | `device`: part of the sound card name to select when the controller connects; `layout`: `"stereo"` or `"quad"` (master on 1/2, headphones on 3/4). Users can turn this off (Preferences > Audio). |
 | `padModes` | no | For controllers whose pads use generic names (`PADn_PadModeM`, `PadModeM`): what each mode number is. Values: `HOT CUE`, `PAD FX`, `PAD FX2`, `SLICER`, `BEAT JUMP`, `BEAT LOOP`, `SAMPLER`, `KEYBOARD`, `KEY SHIFT`, `STEMS`, `MEMORY CUE`. Pressing a mode button opens the matching pad page on screen. |
@@ -69,8 +69,7 @@ automatically; a plugin makes it work without rekordbox and lets you tune it.
 
 ## mapping.json
 
-The parsed form of a rekordbox mapping (`parseRekordboxMapping` in
-`src/shared/controllers/rbcsv.js`):
+The parsed form of a `.midi.csv` mapping (see `src/shared/controllers/rbcsv.js`):
 
 ```json
 {
@@ -87,7 +86,7 @@ The parsed form of a rekordbox mapping (`parseRekordboxMapping` in
 }
 ```
 
-- `name` is the function (rekordbox's names: `PlayPause`, `Cue`, `Sync`, `JogScratch`, `TempoSlider`,
+- `name` is the function (standard names: `PlayPause`, `Cue`, `Sync`, `JogScratch`, `TempoSlider`,
   `ChannelFader`, `CrossFader`, `EQHigh`, `PAD1_HotCue`, `PAD1_PadMode2`, `FX1-1On`, `Browse`, `Load`…).
   `src/renderer/controller/pioneer.js` lists every function Reboxed handles; FX2 controls drive the
   same Beat FX unit as FX1.

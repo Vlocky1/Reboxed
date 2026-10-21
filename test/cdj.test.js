@@ -68,6 +68,7 @@ test('My Settings files: CRC16-XMODEM and chosen values', () => {
     const crc = crc16xmodem(name === 'DJMMYSETTING.DAT' ? buf.subarray(0, 104 + len) : buf.subarray(104, 104 + len));
     assert.equal(v.getUint16(104 + len, true), crc, `${name} CRC`);
   }
+  // "CDJ" is the name earlier versions saved for the pitch bend jog mode.
   const jog = PLAYER_SETTINGS.jogMode;
-  assert.equal(files['MYSETTING.DAT'][104 + jog.offset], jog.choices.CDJ);
+  assert.equal(files['MYSETTING.DAT'][104 + jog.offset], jog.choices['pitch bend']);
 });

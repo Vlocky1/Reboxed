@@ -22,7 +22,7 @@ export function openRekordboxImport(app, file = null) {
   const st = { path: null, parsed: null, summary: null, selected: new Set(), missing: new Set(), relocated: new Map(), rules: [], checking: false };
 
   return new Promise((resolve) => {
-    const title = h('h2', {}, 'Import from rekordbox');
+    const title = h('h2', {}, 'Import a DJ library (XML)');
     const body = h('div.dialog-body.rbi');
     const buttons = h('div.dialog-buttons');
     const dialog = h('div.dialog.rbi-dialog', { role: 'dialog' }, title, body, buttons);
@@ -39,27 +39,27 @@ export function openRekordboxImport(app, file = null) {
 
     // ---- step 1: source -------------------------------------------------------------------------
     function stepSource(error = '') {
-      title.textContent = 'Import from rekordbox';
+      title.textContent = 'Import a DJ library (XML)';
       const last = saved.lastPath;
       body.replaceChildren(
-        h('p', {}, 'Bring your rekordbox library over: tracks with all their information, cues and playlists.'),
+        h('p', {}, 'Bring your library over from your current DJ software: tracks with all their information, cues and playlists.'),
         h('ol.rbi-howto', {},
-          h('li', {}, 'In rekordbox, open ', h('b', {}, 'File ▸ Export Collection in xml format'), ' and save ', h('code', {}, 'rekordbox.xml'), '.'),
+          h('li', {}, 'In your current DJ software, export the collection in XML format (', h('b', {}, 'File ▸ Export Collection in xml format'), ').'),
           h('li', {}, 'Choose that file below, or drop it on this window.')),
         h('div.rbi-pick', {},
-          h('button.dbtn.rbi-choose', { onclick: async () => { const [f] = await window.rb.openFiles('xml'); if (f) load(f); } }, 'Choose rekordbox.xml…'),
+          h('button.dbtn.rbi-choose', { onclick: async () => { const [f] = await window.rb.openFiles('xml'); if (f) load(f); } }, 'Choose the XML file…'),
           last ? h('button.dbtn', { title: last, onclick: () => load(last) }, `Re-import ${baseName(last)}`) : null),
         error ? h('p.rbi-error', {}, error) : null,
         h('div.rbi-note', {},
           h('b', {}, 'Imported: '), 'title, artist, album, genre, composer, remixer, label, mix, year, BPM, key, comments, rating, colour, play count, date added, ',
           'hot cues (A–H with names and colours), memory cues, loops, beatgrid, playlists and folders.',
-          h('br'), h('b', {}, 'Not in rekordbox.xml: '), 'My Tags, histories and waveforms. Reboxed redraws waveforms by analysing the audio; ',
+          h('br'), h('b', {}, 'Not in the XML: '), 'My Tags, histories and waveforms. Reboxed redraws waveforms by analysing the audio; ',
           'your grid, cues and key are kept.'));
       setButtons([{ label: 'Cancel', onclick: () => close(null) }]);
     }
 
     async function load(path) {
-      title.textContent = 'Import from rekordbox';
+      title.textContent = 'Import a DJ library (XML)';
       body.replaceChildren(h('p.dim', {}, `Reading ${path}…`));
       setButtons([{ label: 'Cancel', onclick: () => close(null) }]);
       try {
@@ -91,7 +91,7 @@ export function openRekordboxImport(app, file = null) {
 
     function stepPreview() {
       const s = st.summary;
-      title.textContent = `Import from rekordbox — ${baseName(st.path)}`;
+      title.textContent = `Import a DJ library — ${baseName(st.path)}`;
       const stat = (n, label) => h('div.rbi-stat', {}, h('b', {}, n.toLocaleString()), h('span', {}, label));
       const radio = (key, value, label, hint) => h('label.rbi-opt', {},
         h('input', { type: 'radio', name: `rbi-${key}`, checked: opts[key] === value, onchange: () => { opts[key] = value; refreshButtons(); } }),
@@ -112,15 +112,15 @@ export function openRekordboxImport(app, file = null) {
             radio('scope', 'all', 'Whole collection'),
             radio('scope', 'playlists', 'Only tracks in the selected playlists'),
             h('h3', {}, 'Tracks already in Reboxed'),
-            radio('metadata', 'overwrite', 'rekordbox wins', 'titles, comments, rating… exactly as in rekordbox'),
+            radio('metadata', 'overwrite', 'The XML wins', 'titles, comments, rating… exactly as in the XML'),
             radio('metadata', 'fill', 'Keep my Reboxed edits', 'only fill what is empty here'),
             h('h3', {}, 'Cues'),
-            radio('cues', 'replace', "Take rekordbox's cues"),
-            radio('cues', 'merge', 'Merge', 'add rekordbox cues on free pads / new positions'),
+            radio('cues', 'replace', 'Take the imported cues'),
+            radio('cues', 'merge', 'Merge', 'add the imported cues on free pads / new positions'),
             radio('cues', 'keep', 'Keep mine'),
             check('beatgrid', 'Import beatgrids', 'Reboxed keeps them when analysing'),
             h('h3', {}, 'Playlists go to'),
-            radio('placement', 'sync', 'A "rekordbox" folder', 're-importing updates it, no duplicates'),
+            radio('placement', 'sync', 'An "Imported" folder', 're-importing updates it, no duplicates'),
             radio('placement', 'new', 'A new dated folder'),
             radio('placement', 'root', 'The top level of the tree'),
             h('h3', {}, 'After import'),
@@ -208,7 +208,7 @@ export function openRekordboxImport(app, file = null) {
       const list = st.parsed.tracks.filter((t) => st.missing.has(keyOf(t.path))).slice(0, 200);
       missingBox.replaceChildren(
         h('div.rbi-warn', {},
-          h('span', {}, `${n} music file${n > 1 ? 's' : ''} not found at the path rekordbox knows${moved ? ` (${moved} relocated)` : ''}. `,
+          h('span', {}, `${n} music file${n > 1 ? 's' : ''} not found at the path saved in the XML${moved ? ` (${moved} relocated)` : ''}. `,
             'They are imported anyway (shown in red) with their cues. Point Reboxed to the folder where they are now:'),
           h('button.dbtn.small', { onclick: relocate }, 'Search in folder…')),
         h('details.rbi-list', {}, h('summary', {}, 'Show missing files'),
@@ -235,7 +235,7 @@ export function openRekordboxImport(app, file = null) {
         if (ids.length) app.analyzeTracks(ids);
       }
       if (report.folderId) app.browser.select(report.folderId);
-      title.textContent = 'rekordbox import finished';
+      title.textContent = 'Import finished';
       const line = (n, label) => h('li', {}, h('b', {}, n.toLocaleString()), ` ${label}`);
       body.replaceChildren(h('ul.rbi-report', {},
         line(report.added, 'new tracks'), line(report.updated, 'tracks updated'), line(report.cues, 'cues (hot + memory)'),

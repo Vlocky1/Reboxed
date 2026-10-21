@@ -259,8 +259,8 @@ function registerIpc(win) {
     return r.canceled ? [] : r.filePaths;
   });
   ipcMain.handle('dialog:openFiles', async (_e, kind) => {
-    const filters = kind === 'xml' ? [{ name: 'rekordbox XML', extensions: ['xml'] }]
-      : kind === 'csv' ? [{ name: 'rekordbox controller mapping', extensions: ['csv'] }]
+    const filters = kind === 'xml' ? [{ name: 'DJ library XML', extensions: ['xml'] }]
+      : kind === 'csv' ? [{ name: 'Controller MIDI mapping', extensions: ['csv'] }]
       : [{ name: 'Audio', extensions: [...AUDIO_EXTENSIONS].map((x) => x.slice(1)) }];
     const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters });
     return r.canceled ? [] : r.filePaths;

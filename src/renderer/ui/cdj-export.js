@@ -35,7 +35,7 @@ export async function openCdjExport(app) {
   let whole = true;
 
   return new Promise((resolve) => {
-    const title = h('h2', {}, 'Export to USB for CDJ / XDJ players');
+    const title = h('h2', {}, 'Export to USB for DJ players');
     const body = h('div.dialog-body.rbi.cdjx');
     const buttons = h('div.dialog-buttons');
     const overlay = h('div.overlay', {}, h('div.dialog.rbi-dialog.cdjx-dialog', { role: 'dialog' }, title, body, buttons));
@@ -70,7 +70,7 @@ export async function openCdjExport(app) {
     function start() {
       body.replaceChildren(
         h('div.form-grid', {}, h('label', {}, 'Drive'), h('div', {}, driveSel, ' ', other)),
-        h('p.dim', {}, 'Tracks already on the drive are used where they are; the others are copied to \\Contents\\<artist>\\<album>. An existing rekordbox export on the drive is moved to PIONEER\\rekordbox\\backup-<date> first.'),
+        h('p.dim', {}, 'Tracks already on the drive are used where they are; the others are copied to \\Contents\\<artist>\\<album>. An export already on the drive is backed up first (backup-<date>).'),
         h('div.rbi-cols', {},
           h('div.rbi-col', {},
             h('h3', {}, 'What to export'),
@@ -102,7 +102,7 @@ export async function openCdjExport(app) {
       });
       try {
         const r = await window.rb.cdj.export({ root, tracks, playlists, settings });
-        title.textContent = 'Drive ready for CDJ / XDJ';
+        title.textContent = 'Drive ready for DJ players';
         body.replaceChildren(h('ul.rbi-report', {},
           h('li', {}, h('b', {}, String(r.tracks)), ' tracks exported'),
           h('li', {}, h('b', {}, String(r.inPlace)), ' already on the drive, ', h('b', {}, String(r.copied)), ' copied'),

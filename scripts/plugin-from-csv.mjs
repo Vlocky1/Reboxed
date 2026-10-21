@@ -1,9 +1,9 @@
-// Build a Reboxed controller plugin from a rekordbox controller mapping (MidiMappings/<model>.midi.csv).
-// Usage: node scripts/plugin-from-rekordbox.mjs <mapping.csv> <output folder> --id <id> --name "<name>"
+// Build a Reboxed controller plugin from a controller MIDI mapping (MidiMappings/<model>.midi.csv).
+// Usage: node scripts/plugin-from-csv.mjs <mapping.csv> <output folder> --id <id> --name "<name>"
 //          [--match "<port name part>"] [--decks 2|4] [--audio "<sound card name part>" --layout quad]
 //          [--uncomment "JogSearch,WheelSearch"] [--keep-manifest]
 // The plugin gets plugin.json (manifest) and mapping.json (the parsed mapping in Reboxed's format).
-// --uncomment: rows rekordbox ships commented out (#Name,...) that the hardware sends anyway, e.g. the
+// --uncomment: rows the mapping ships commented out (#Name,...) that the hardware sends anyway, e.g. the
 //   GRV6's SHIFT + jog (JogSearch on CC 0x29) or the DDJ-FLX10's jog rows.
 // --keep-manifest: only rewrite mapping.json when plugin.json already exists (hand-tuned manifests).
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -14,7 +14,7 @@ const args = process.argv.slice(2);
 const opt = (k, d = null) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
 const [csv, out] = args;
 if (!csv || !out || !opt('id')) {
-  console.error('usage: node scripts/plugin-from-rekordbox.mjs <mapping.csv> <output folder> --id <id> --name "<name>" [--match ...] [--decks 2|4] [--uncomment A,B] [--keep-manifest]');
+  console.error('usage: node scripts/plugin-from-csv.mjs <mapping.csv> <output folder> --id <id> --name "<name>" [--match ...] [--decks 2|4] [--uncomment A,B] [--keep-manifest]');
   process.exit(1);
 }
 const uncomment = new Set((opt('uncomment') ?? '').split(',').map((s) => s.trim()).filter(Boolean));
@@ -30,7 +30,7 @@ const manifest = {
   version: opt('version', '1.0.0'),
   author: opt('author', 'Reboxed'),
   kind: 'controller',
-  description: opt('description', `${mapping.device}: generated from its rekordbox mapping (${mapping.entries.length} entries).`),
+  description: opt('description', `${mapping.device}: generated from its MIDI mapping (${mapping.entries.length} entries).`),
   match: [opt('match', mapping.device)],
   driver: 'pioneer',
   mapping: 'mapping.json',

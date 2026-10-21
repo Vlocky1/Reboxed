@@ -4,7 +4,7 @@
   "version": "1.15.0",
   "private": true,
   "type": "module",
-  "description": "Comme Rekordbox mais en mieux — free DJ software for Windows (library, 4 decks, stems, DDJ-GRV6).",
+  "description": "DJ software for Windows: library, 4 decks, AI stems, controllers.",
   "author": "Vlocky1",
   "license": "MIT",
   "homepage": "https://github.com/Vlocky1/Reboxed#readme",

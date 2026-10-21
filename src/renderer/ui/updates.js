@@ -108,5 +108,5 @@ export function aboutSection(app, version) {
     h('div.about-links', {}, link('Website', LINKS.website), link('GitHub', LINKS.github), link('Release notes', LINKS.releases), link('Report a bug', LINKS.issues), link('Instagram @rebox.ed', LINKS.instagram)),
     h('h4', {}, 'Credits'),
     h('p.dim', {}, 'Stems: Spleeter (Deezer) and HT-Demucs (Meta) models, run with ONNX Runtime. Downloads: yt-dlp, ffmpeg and deno, fetched from their own releases. ',
-      'Not affiliated with AlphaTheta / Pioneer DJ; rekordbox and CDJ are their trademarks.'));
+      'Independent software, not affiliated with AlphaTheta / Pioneer DJ.'));
 }

@@ -53,7 +53,7 @@ export const QWERTY_KEYMAP = (() => {
 /** The same letters on an AZERTY keyboard (A/Q, Z/W swapped; ";" is where QWERTY has ","). */
 export const AZERTY_KEYMAP = Object.fromEntries(Object.entries(QWERTY_KEYMAP).map(([k, v]) => [k, v.replace(/Key[AQZW]$|Semicolon$/, (c) => ({ KeyA: 'KeyQ', KeyQ: 'KeyA', KeyZ: 'KeyW', KeyW: 'KeyZ', Semicolon: 'Comma' })[c])]));
 
-export const PRESETS = { qwerty: ['QWERTY (Rekordbox Performance 1)', QWERTY_KEYMAP], azerty: ['AZERTY (same letters)', AZERTY_KEYMAP] };
+export const PRESETS = { qwerty: ['QWERTY (Performance 1)', QWERTY_KEYMAP], azerty: ['AZERTY (same letters)', AZERTY_KEYMAP] };
 
 /** Layout map of the user's keyboard (code -> character), when the browser can tell. */
 let layoutMap = null;

@@ -430,7 +430,7 @@ class App {
   importXml(file = null) { return openRekordboxImport(this, file); }
 
   async exportXml() {
-    const path = await window.rb.saveFileDialog('rekordbox.xml', 'xml');
+    const path = await window.rb.saveFileDialog('collection.xml', 'xml');
     if (!path) return;
     // Intelligent playlists are exported as their current contents (rekordbox.xml has no smart nodes).
     const resolve = (nodes) => nodes.map((n) => (n.type === 'folder' ? { ...n, children: resolve(n.children) }
