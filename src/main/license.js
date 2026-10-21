@@ -1,0 +1,97 @@
+// Licence keys through the Lemon Squeezy License API (activate / validate / deactivate; no API key,
+// made for apps). The state lives in <app folder>/license.json.
+import { readFile, writeFile } from 'node:fs/promises';
+import { licenseStatus, maskKey } from '../shared/license.js';
+import { PRODUCT } from '../shared/product.js';
+
+const API = 'https://api.lemonsqueezy.com/v1/licenses';
+
+export class LicenseManager {
+  /**
+   * @param {{file: string, fetch: typeof fetch, instanceName: string, now?: () => number, product?: object}} o
+   */
+  constructor({ file, fetch: f, instanceName, now = Date.now, product = PRODUCT }) {
+    Object.assign(this, { file, fetch: f, instanceName, now, product });
+    this.state = {};
+  }
+
+  async load() {
+    try { this.state = JSON.parse(await readFile(this.file, 'utf8')); } catch { this.state = {}; }
+    const now = this.now();
+    this.state.firstRun ??= now;
+    this.state.lastSeen = Math.max(this.state.lastSeen ?? 0, now);
+    await this.save();
+    return this.status();
+  }
+
+  async save() { await writeFile(this.file, JSON.stringify(this.state, null, 2)); }
+
+  status() {
+    const s = licenseStatus(this.state, this.now());
+    return {
+      ...s,
+      key: maskKey(this.state.key),
+      customer: this.state.customer ?? null,
+      product: { name: this.product.name, price: this.product.price, buyUrl: this.product.buyUrl },
+    };
+  }
+
+  /** POST to the License API; its errors come back as JSON with `error`. */
+  async call(action, params) {
+    let res;
+    try {
+      res = await this.fetch(`${API}/${action}`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(params).toString(),
+      });
+    } catch (err) {
+      throw Object.assign(new Error(`Could not reach the licence server (${err.message})`), { offline: true });
+    }
+    const body = await res.json().catch(() => ({}));
+    return { status: res.status, body };
+  }
+
+  /** A key of another store or product (set in shared/product.js) is refused. */
+  sameProduct(meta = {}) {
+    return (this.product.storeId == null || meta.store_id === this.product.storeId)
+      && (this.product.productId == null || meta.product_id === this.product.productId);
+  }
+
+  async activate(key) {
+    key = String(key ?? '').trim();
+    if (!key) throw new Error('Enter your licence key');
+    const { body } = await this.call('activate', { license_key: key, instance_name: this.instanceName });
+    if (!body.activated) throw new Error(body.error || 'This licence key could not be activated');
+    if (!this.sameProduct(body.meta)) {
+      await this.call('deactivate', { license_key: key, instance_id: body.instance.id }).catch(() => {});
+      throw new Error('This key is not a Reboxed licence');
+    }
+    Object.assign(this.state, { key, instanceId: body.instance.id, validatedAt: this.now(), revoked: false, customer: body.meta?.customer_name ?? null });
+    await this.save();
+    return this.status();
+  }
+
+  /** Re-validate online. Offline: nothing changes (the key keeps working for OFFLINE_DAYS). */
+  async validate() {
+    if (!this.state.key || !this.state.instanceId) return this.status();
+    try {
+      const { status, body } = await this.call('validate', { license_key: this.state.key, instance_id: this.state.instanceId });
+      if (body.valid && this.sameProduct(body.meta)) Object.assign(this.state, { validatedAt: this.now(), revoked: false });
+      else if (status === 404 || ['expired', 'disabled'].includes(body.license_key?.status) || body.valid === false) this.state.revoked = true;
+      await this.save();
+    } catch (err) {
+      if (!err.offline) throw err;
+    }
+    return this.status();
+  }
+
+  /** Frees this computer's activation (to move the licence to another computer). */
+  async deactivate() {
+    const { key, instanceId } = this.state;
+    if (key && instanceId) await this.call('deactivate', { license_key: key, instance_id: instanceId }).catch(() => {});
+    for (const k of ['key', 'instanceId', 'validatedAt', 'revoked', 'customer']) delete this.state[k];
+    await this.save();
+    return this.status();
+  }
+}

@@ -18,6 +18,8 @@ import { Spotify } from './spotify.js';
 import { Deezer } from './deezer.js';
 import { MetadataLookup } from './metadata.js';
 import { Updater } from './updater.js';
+import { LicenseManager } from './license.js';
+import { hostname } from 'node:os';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
@@ -431,6 +433,13 @@ app.whenReady().then(async () => {
   storage = new Storage(appDir);
   await storage.load();
   store = new LibraryStore(await resolveDatabase(), { legacyDir: smoke ? null : join(app.getPath('appData'), 'rbclone') });
+  // Licence: trial from the first run, then a key (the smoke test gets a fresh trial in its folder).
+  const license = new LicenseManager({ file: join(appDir, 'license.json'), fetch: (url, opts) => net.fetch(url, opts), instanceName: `${hostname()} (Reboxed)` });
+  await license.load();
+  ipcMain.handle('license:status', () => license.status());
+  ipcMain.handle('license:activate', (_e, key) => license.activate(key));
+  ipcMain.handle('license:validate', () => license.validate());
+  ipcMain.handle('license:deactivate', () => license.deactivate());
   protocol.handle('app', serveApp);
   protocol.handle('media', serveMedia);
   createWindow();

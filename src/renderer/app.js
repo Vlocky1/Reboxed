@@ -13,6 +13,7 @@ import { applyTheme } from './themes.js';
 import { editSample } from './ui/sample-editor.js';
 import { openDrumSwapEditor } from './ui/drum-swap-editor.js';
 import { checkForUpdates, openUpdateDialog } from './ui/updates.js';
+import { openLicenseGate } from './ui/license.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
 import { Automix } from './automix.js';
@@ -136,6 +137,7 @@ class App {
     this.dlBadge = h('span.dl-badge', { hidden: true });
     // Shown when GitHub has a newer version.
     this.updatePill = h('button.update-pill', { hidden: true, title: 'A new version of Reboxed is available', onclick: () => openUpdateDialog(this) });
+    this.trialPill = h('button.trial-pill', { hidden: true, title: 'Free trial: activate a licence in Preferences > About', onclick: () => this.openSettings('about') });
     this.dlBtn.append(this.dlBadge);
     this.samplerView = new SamplerView(this.sampler, this);
     this.samplerView.el.hidden = !s.showSampler;
@@ -175,7 +177,7 @@ class App {
           h('div.ggroup', { title: 'Panels' }, this.fxBtn, this.mixerBtn, this.samplerBtn),
           h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
           h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.recBtn, this.recTime)),
-        h('div.gbar-right', {}, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
+        h('div.gbar-right', {}, this.trialPill, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
           h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: 'Appearance: themes, colours, size' }, icon('palette')),
           h('button.lbtn', { onclick: () => this.openSettings(), title: 'Preferences' }, icon('gear')))),
       this.fxPanel,
@@ -197,6 +199,11 @@ class App {
     this.plugins.refresh().then(() => this.midi.init());
     this.library.addEventListener('change', (e) => this.onLibraryChange(e.detail));
     requestAnimationFrame((t) => this.frame(t));
+    // Licence: trial pill, or the activation dialog once the trial is over; keys are re-checked online.
+    window.rb.license.status().then(async (st) => {
+      this.applyLicense(st);
+      if (st.needsCheck) this.applyLicense(await window.rb.license.validate().catch(() => st));
+    });
     // New releases from followed channels, quietly, a few seconds after start.
     if (!new URLSearchParams(location.search).has('smoke') && !new URLSearchParams(location.search).has('shots') && this.library.settings.checkUpdates !== false) {
       setTimeout(() => checkForUpdates(this, { silent: true }).then((info) => { if (info?.newer) toast(`Reboxed ${info.latest} is available: click the update button in the top bar`, 7000); }), 5000);
@@ -805,6 +812,14 @@ class App {
   }
 
   /** DOWNLOAD button badge: running downloads (with progress), else new releases to look at. */
+  /** Licence status: trial pill (days left), activation dialog when it is over. */
+  applyLicense(st) {
+    this.license = st;
+    this.trialPill.hidden = st.mode !== 'trial';
+    if (st.mode === 'trial') this.trialPill.textContent = `Trial · ${st.daysLeft} day${st.daysLeft > 1 ? 's' : ''}`;
+    if (st.mode === 'expired') openLicenseGate(this, st);
+  }
+
   refreshUpdatePill() {
     const info = this.updateInfo;
     this.updatePill.hidden = !info?.newer;
@@ -2156,6 +2171,22 @@ async function smoke(app) {
       await window.rb.smokeShot('about');
       step('preferences: About tab with Check for updates', aboutVersion === `Version ${await window.rb.version()}` && /latest version|Up to date|is available|Could not reach/.test(aboutStatus) && links === 5,
         `${aboutVersion} · ${aboutStatus} · ${links} links`);
+      // Licence: a fresh trial (pill + About), a wrong key is refused by the licence server.
+      const licText = document.querySelector('.license-status')?.textContent ?? '';
+      document.querySelector('.license-key').value = 'REBOXED-SMOKE-NOT-A-KEY';
+      document.querySelector('.license-form .dbtn.primary').click();
+      for (let i = 0; i < 100 && !document.querySelector('.license-error')?.textContent; i++) await wait(100);
+      const licErr = document.querySelector('.license-error')?.textContent ?? '';
+      // The dialog shown once the trial is over (with a pretend status), then removed.
+      openLicenseGate(app, { mode: 'expired', reason: 'trial', product: { price: '10 €', buyUrl: null } });
+      await wait(200);
+      await window.rb.smokeShot('license-gate');
+      const gate = document.querySelector('.license-gate');
+      const gateOk = !!gate && /trial is over/.test(gate.textContent) && !!gate.querySelector('.license-key');
+      gate?.remove();
+      step('licence: activation dialog after the trial', gateOk, gate?.querySelector('h2')?.textContent ?? 'none');
+      step('licence: 14-day trial, wrong key refused', /14 days left/.test(licText) && app.trialPill.textContent === 'Trial · 14 days' && !app.trialPill.hidden && !!licErr && (await window.rb.license.status()).mode === 'trial',
+        `${licText} · pill "${app.trialPill.textContent}" · ${licErr}`);
       document.querySelector('.settings-close').click();
       await closed;
       step('preferences tabs', tabs.length === 11 && tabs.at(-1) === 'About' && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,

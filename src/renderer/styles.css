@@ -855,6 +855,13 @@ body.gbar-icons .gbtn .ico { font-size: 14px; }
 /* Updates */
 .update-pill { height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 28%, transparent); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; animation: updpulse 2s ease-in-out infinite; }
 .update-pill:hover { background: var(--accent); }
+.trial-pill { height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line, #3a3a44); background: transparent; color: var(--dim, #9a9aa6); font-size: 11px; font-weight: 600; cursor: pointer; }
+.trial-pill:hover { color: #fff; border-color: var(--accent); }
+.license-section { display: flex; flex-direction: column; gap: 8px; }
+.license-form .frow { gap: 8px; }
+.license-key { flex: 1; min-width: 280px; font-family: Consolas, monospace; }
+.license-error:empty { display: none; }
+.license-gate .dialog { max-width: 520px; }
 @keyframes updpulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); } }
 .dialog.update-dialog { width: min(620px, 92vw); }
 .update-notes { white-space: pre-wrap; max-height: 300px; overflow: auto; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 12px/1.5 var(--font, inherit); color: var(--text-2); }

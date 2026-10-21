@@ -1,6 +1,7 @@
 // Updates from GitHub: checked at startup (unless turned off), a pill in the top bar when a newer
 // version exists, and a dialog that downloads the installer and restarts Reboxed on the new version.
 import { h, toast } from './dom.js';
+import { licenseSection } from './license.js';
 
 /** @returns {Promise<object|null>} the check result, null on error (shown unless silent) */
 export async function checkForUpdates(app, { silent = false } = {}) {
@@ -96,7 +97,9 @@ export function aboutSection(app, version) {
       h('div', {},
         h('div.about-name', {}, 're', h('b', {}, 'box'), 'ed'),
         h('div.about-version', {}, `Version ${version}`),
-        h('div.dim', {}, 'Free and open-source DJ software (MIT licence).'))),
+        h('div.dim', {}, 'DJ software for Windows.'))),
+    h('h4', {}, 'Licence'),
+    licenseSection(app),
     h('h4', {}, 'Updates'),
     h('div.form-grid', {},
       h('label', {}, 'New version'), h('div', {}, h('div.frow', {}, check), status),
