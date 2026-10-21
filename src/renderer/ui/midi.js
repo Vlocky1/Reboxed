@@ -195,7 +195,7 @@ export class MidiController {
       drivers.length
         ? h('div', {}, h('p', {}, `Controller mapping active: ${drivers.map((d) => d.device).join(', ')}`),
           h('label', {}, invert, ' Invert tempo slider direction'), monitor)
-        : h('p.dim', {}, 'Supported automatically: controllers with a plugin (Preferences > Plugins) and any controller whose mapping is in your rekordbox install.'),
+        : h('p.dim', {}, 'Supported automatically: controllers with a plugin (Preferences > Plugins) and any controller whose MIDI mapping file is installed on this computer.'),
       h('h4', {}, 'MIDI learn (extra mappings)'),
       h('div.frow', {}, targetSel, learnBtn, status),
       table);

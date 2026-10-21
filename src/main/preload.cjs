@@ -49,6 +49,12 @@ contextBridge.exposeInMainWorld('rb', {
     onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cdj:progress', l); return () => ipcRenderer.off('cdj:progress', l); },
   },
   version: () => ipcRenderer.invoke('app:version'),
+  license: {
+    status: () => ipcRenderer.invoke('license:status'),
+    activate: (key) => ipcRenderer.invoke('license:activate', key),
+    validate: () => ipcRenderer.invoke('license:validate'),
+    deactivate: () => ipcRenderer.invoke('license:deactivate'),
+  },
   update: {
     check: () => ipcRenderer.invoke('update:check'),
     download: (asset) => ipcRenderer.invoke('update:download', asset),

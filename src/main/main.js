@@ -18,6 +18,8 @@ import { Spotify } from './spotify.js';
 import { Deezer } from './deezer.js';
 import { MetadataLookup } from './metadata.js';
 import { Updater } from './updater.js';
+import { LicenseManager } from './license.js';
+import { hostname } from 'node:os';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
@@ -201,7 +203,10 @@ function registerIpc(win) {
   ipcMain.handle('shell:openExternal', (_e, url) => {
     const allowed = /^https:\/\/(www\.|music\.)?youtube\.com\/|^https:\/\/youtu\.be\//.test(url)
       || /^https:\/\/github\.com\/Vlocky1\/Reboxed(\/|$)/.test(url)
-      || /^https:\/\/vlocky1\.github\.io\//.test(url)
+      || /^https:\/\/(vlocky1|reboxed)\.github\.io\//.test(url)
+      // Shop (licence, beta key) and donations.
+      || /^https:\/\/reboxed\.lemonsqueezy\.com\//.test(url)
+      || /^https:\/\/(www\.)?(ko-fi\.com|buymeacoffee\.com)\/[\w.-]+\/?$/.test(url)
       || /^https:\/\/(www\.)?instagram\.com\/rebox\.ed\/?$/.test(url);
     if (allowed) shell.openExternal(url);
     return allowed;
@@ -257,8 +262,8 @@ function registerIpc(win) {
     return r.canceled ? [] : r.filePaths;
   });
   ipcMain.handle('dialog:openFiles', async (_e, kind) => {
-    const filters = kind === 'xml' ? [{ name: 'rekordbox XML', extensions: ['xml'] }]
-      : kind === 'csv' ? [{ name: 'rekordbox controller mapping', extensions: ['csv'] }]
+    const filters = kind === 'xml' ? [{ name: 'DJ library XML', extensions: ['xml'] }]
+      : kind === 'csv' ? [{ name: 'Controller MIDI mapping', extensions: ['csv'] }]
       : [{ name: 'Audio', extensions: [...AUDIO_EXTENSIONS].map((x) => x.slice(1)) }];
     const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters });
     return r.canceled ? [] : r.filePaths;
@@ -431,6 +436,15 @@ app.whenReady().then(async () => {
   storage = new Storage(appDir);
   await storage.load();
   store = new LibraryStore(await resolveDatabase(), { legacyDir: smoke ? null : join(app.getPath('appData'), 'rbclone') });
+  // Licence: trial from the first run, then a key (the smoke test gets a fresh trial in its folder).
+  // Run from the source (npm start), Reboxed asks for no licence; the smoke test still checks it.
+  const license = new LicenseManager({ file: join(appDir, 'license.json'), fetch: (url, opts) => net.fetch(url, opts), instanceName: `${hostname()} (Reboxed)`, dev: !app.isPackaged && !smoke });
+  await license.load();
+  if (!smoke) license.loadRemoteConfig();
+  ipcMain.handle('license:status', () => license.status());
+  ipcMain.handle('license:activate', (_e, key) => license.activate(key));
+  ipcMain.handle('license:validate', () => license.validate());
+  ipcMain.handle('license:deactivate', () => license.deactivate());
   protocol.handle('app', serveApp);
   protocol.handle('media', serveMedia);
   createWindow();

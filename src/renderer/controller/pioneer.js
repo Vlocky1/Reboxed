@@ -270,7 +270,7 @@ export class PioneerController {
       case 'Quantize': if (press) d.toggleQuantize(); break;
       case 'TapBpm': if (press) this.tapGrid(i); break;
       case 'Slip': if (press) d.toggleSlip(); break;
-      case 'Vinyl': if (press) { d.vinyl = !d.vinyl; toast(`Deck ${i + 1}: ${d.vinyl ? 'VINYL (scratch)' : 'CDJ (pitch bend)'} jog mode`); } break;
+      case 'Vinyl': if (press) { d.vinyl = !d.vinyl; toast(`Deck ${i + 1}: ${d.vinyl ? 'VINYL (scratch)' : 'PITCH BEND'} jog mode`); } break;
       case 'Deck': case 'DeckState': if (press && d && i >= 2 && app.deckCount < 4) { app.library.setSetting('deckCount', 4); app.applyLayout(); } break;
       // DECK 3 / DECK 4 layer selected on the hardware: show 4 decks.
       case 'DualDeckState13': case 'DualDeckState24': case 'Deck3': case 'Deck4': if (press && app.deckCount < 4) { app.library.setSetting('deckCount', 4); app.applyLayout(); } break;

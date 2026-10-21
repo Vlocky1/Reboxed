@@ -21,11 +21,11 @@ export const PLAYER_SETTINGS = {
   sync: { label: 'Sync', file: 'my', offset: 22, choices: { off: 0x80, on: 0x81 }, default: 'off' },
   playMode: { label: 'Play mode', file: 'my', offset: 23, choices: { continue: 0x80, single: 0x81 }, default: 'single' },
   quantizeBeatValue: { label: 'Quantize beat value', file: 'my', offset: 24, choices: { '1': 0x80, '1/2': 0x81, '1/4': 0x82, '1/8': 0x83 }, default: '1' },
-  hotCueAutoload: { label: 'Hot cue auto load', file: 'my', offset: 25, choices: { off: 0x80, on: 0x81, 'rekordbox setting': 0x82 }, default: 'on' },
+  hotCueAutoload: { label: 'Hot cue auto load', file: 'my', offset: 25, choices: { off: 0x80, on: 0x81, 'per-track setting': 0x82 }, default: 'on' },
   hotCueColor: { label: 'Hot cue color', file: 'my', offset: 26, choices: { off: 0x80, on: 0x81 }, default: 'on' },
   needleLock: { label: 'Needle lock', file: 'my', offset: 29, choices: { unlock: 0x80, lock: 0x81 }, default: 'lock' },
   timeMode: { label: 'Time mode', file: 'my', offset: 32, choices: { elapsed: 0x80, remain: 0x81 }, default: 'remain' },
-  jogMode: { label: 'Jog mode', file: 'my', offset: 33, choices: { CDJ: 0x80, vinyl: 0x81 }, default: 'vinyl' },
+  jogMode: { label: 'Jog mode', file: 'my', offset: 33, choices: { 'pitch bend': 0x80, vinyl: 0x81 }, default: 'vinyl' },
   autoCue: { label: 'Auto cue', file: 'my', offset: 34, choices: { off: 0x80, on: 0x81 }, default: 'on' },
   masterTempo: { label: 'Master tempo', file: 'my', offset: 35, choices: { off: 0x80, on: 0x81 }, default: 'off' },
   tempoRange: { label: 'Tempo range', file: 'my', offset: 36, choices: { '±6%': 0x80, '±10%': 0x81, '±16%': 0x82, wide: 0x83 }, default: '±10%' },
@@ -92,6 +92,9 @@ export function defaultSettings() {
  * @param {Record<string, string>} values option key -> choice name (missing = default)
  * @returns {Record<string, Uint8Array>} file name -> bytes
  */
+// Choice names saved by earlier versions.
+const LEGACY_CHOICES = { CDJ: 'pitch bend', 'rekordbox setting': 'per-track setting' };
+
 export function buildSettingFiles(values = {}) {
   const all = { ...PLAYER_SETTINGS, ...MIXER_SETTINGS };
   const out = {};
@@ -100,7 +103,7 @@ export function buildSettingFiles(values = {}) {
     for (const [o, v] of Object.entries(f.fixed)) data[Number(o)] = v;
     for (const [key, def] of Object.entries(all)) {
       if (def.file !== id) continue;
-      const choice = values[key] ?? def.default;
+      const choice = LEGACY_CHOICES[values[key]] ?? values[key] ?? def.default;
       data[def.offset] = def.choices[choice] ?? def.choices[def.default];
     }
     const buf = new Uint8Array(104 + f.len + 4);

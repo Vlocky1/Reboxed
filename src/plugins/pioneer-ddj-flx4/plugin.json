@@ -4,7 +4,7 @@
   "version": "1.1.0",
   "author": "Reboxed",
   "kind": "controller",
-  "description": "2-deck controller, from its rekordbox mapping: 8 pad modes, CALL < > that halve / double a playing loop (like the DDJ-GRV6), SHIFT + CALL for MEMORY / DELETE, SHIFT + jog search. Every mapped control is handled; not yet tried on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
+  "description": "2-deck controller, from the manufacturer's MIDI mapping: 8 pad modes, CALL < > that halve / double a playing loop (like the DDJ-GRV6), SHIFT + CALL for MEMORY / DELETE, SHIFT + jog search. Every mapped control is handled; not yet tried on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
   "match": [
     "DDJ-FLX4"
   ],

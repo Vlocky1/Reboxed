@@ -285,13 +285,13 @@ export class Browser {
   moreMenu(e) {
     const r = e.currentTarget.getBoundingClientRect();
     contextMenu(r.left, r.bottom + 2, [
-      { label: 'Import from rekordbox (playlists, cues, tags)…', action: () => this.app.importXml() },
+      { label: 'Import a DJ library (XML: playlists, cues, tags)…', action: () => this.app.importXml() },
       { label: 'Download tracks (YouTube, new releases)…', action: () => this.app.downloads.open() },
-      { label: 'Export to USB for CDJ / XDJ…', action: () => openCdjExport(this.app) },
+      { label: 'Export to USB for DJ players…', action: () => openCdjExport(this.app) },
       { label: 'Auto-tag the tracks shown… (Spotify / Deezer)', action: () => openAutoTag(this.app, (this.selectedRows().length > 1 ? this.selectedRows() : this.rows ?? []).map((r) => r.track.id)) },
       { label: 'Clean the names of the tracks shown…', action: () => openCleanNames(this.app, (this.selectedRows().length > 1 ? this.selectedRows() : this.rows ?? []).map((r) => r.track.id)) },
       { label: 'Undo the last auto-tag / clean', disabled: !this.app.lastAutoTag?.length, action: () => undoAutoTag(this.app) },
-      { label: 'Export collection as rekordbox xml…', action: () => this.app.exportXml() },
+      { label: 'Export collection as XML…', action: () => this.app.exportXml() },
       '-',
       { label: 'Analyze all unanalyzed tracks', action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },
       { label: 'Find missing files', action: () => this.app.findMissing() },
