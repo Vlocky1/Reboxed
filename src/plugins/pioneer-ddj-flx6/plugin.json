@@ -1,10 +1,10 @@
 {
   "id": "pioneer-ddj-flx6",
   "name": "Pioneer DDJ-FLX6",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Reboxed",
   "kind": "controller",
-  "description": "DDJ-FLX6: mapping from its rekordbox MIDI mapping. Untested on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
+  "description": "4-deck controller, from its rekordbox mapping: pad modes (SAMPLE SCRATCH opens the sampler pads), CALL < > on loops and LOOP IN held like the DDJ-GRV6, DECK 3/4. Reboxed has one Beat FX: the multi-FX knobs 2 and 3 do nothing. Not yet tried on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
   "match": [
     "DDJ-FLX6"
   ],

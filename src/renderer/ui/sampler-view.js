@@ -42,14 +42,21 @@ export class SamplerView {
       });
       return { tile, name, bar, info };
     });
+    this.volume = knob({ label: 'VOLUME', min: 0, max: 1.2, value: 0.8, reset: 0.8, size: 'sm', onInput: (v) => sampler.setVolume(v) });
     this.el = h('section.sampler', {},
       h('div.smp-side', {},
         h('div.fx-title', {}, 'SAMPLER'),
-        knob({ label: 'VOLUME', min: 0, max: 1.2, value: 0.8, reset: 0.8, size: 'sm', onInput: (v) => sampler.setVolume(v) }),
+        this.volume,
         h('button.dbtn.small', { onclick: () => sampler.stopAll() }, 'STOP ALL')),
       h('div.smp-grid', {}, this.tiles.map((t) => t.tile)));
     sampler.addEventListener('change', () => this.refresh());
     this.refresh();
+  }
+
+  /** Volume from a controller knob: the on-screen knob follows. */
+  setVolume(v) {
+    this.volume.setValue(v);
+    this.sampler.setVolume(v);
   }
 
   menu(e, i) {

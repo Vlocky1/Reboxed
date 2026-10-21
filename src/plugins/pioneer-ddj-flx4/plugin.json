@@ -1,10 +1,10 @@
 {
   "id": "pioneer-ddj-flx4",
   "name": "Pioneer DDJ-FLX4",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Reboxed",
   "kind": "controller",
-  "description": "DDJ-FLX4: mapping from its rekordbox MIDI mapping. Untested on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
+  "description": "2-deck controller, from its rekordbox mapping: 8 pad modes, CALL < > that halve / double a playing loop (like the DDJ-GRV6), SHIFT + CALL for MEMORY / DELETE, SHIFT + jog search. Every mapped control is handled; not yet tried on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
   "match": [
     "DDJ-FLX4"
   ],

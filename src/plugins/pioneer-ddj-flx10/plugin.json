@@ -1,10 +1,10 @@
 {
   "id": "pioneer-ddj-flx10",
   "name": "Pioneer DDJ-FLX10",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Reboxed",
   "kind": "controller",
-  "description": "4-deck controller with jog displays and stems. Pad modes from its rekordbox mapping: HOT CUE, PAD FX 1/2, BEAT JUMP, BEAT LOOP, SAMPLER, KEYBOARD, KEY SHIFT.",
+  "description": "4-deck controller with stems. Pad modes HOT CUE, PAD FX 1/2, BEAT JUMP, BEAT LOOP, SAMPLER, KEYBOARD, KEY SHIFT (16 hot cues), MEMORY CUE CALL, ACTIVE PART, PART ISOLATOR, FX PART SELECT on the Beat FX channel, SAMPLER VOLUME / CUE, BEAT GRID ADJUST / SLIDE with the jog. rekordbox ships the jog, channel fader, crossfader and FX ON rows commented out: they are enabled here. Not yet tried on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
   "match": [
     "DDJ-FLX10"
   ],

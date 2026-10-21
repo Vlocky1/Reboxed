@@ -21,6 +21,19 @@ export class Sampler extends EventTarget {
 
   setVolume(v) { this.bus.gain.setTargetAtTime(v, this.engine.ctx.currentTime, 0.01); }
 
+  /** SAMPLER CUE: the sampler in the headphones too. */
+  setCue(on) {
+    const ctx = this.engine.ctx;
+    if (!this.cueSend) {
+      this.cueSend = ctx.createGain();
+      this.cueSend.gain.value = 0;
+      this.bus.connect(this.cueSend);
+      this.cueSend.connect(this.engine.cueBus);
+    }
+    this.cue = on;
+    this.cueSend.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.005);
+  }
+
   /** Serializable configuration (buffers are re-decoded from `path` on startup). */
   config() {
     return this.slots.map(({ name, path, bpm, mode, sync, gain }) => ({ name, path, bpm, mode, sync, gain }));

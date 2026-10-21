@@ -1974,6 +1974,63 @@ async function smoke(app) {
       app.midi.controllers.delete('virtual-grv6');
     }
 
+    // ---- DDJ-FLX10 (virtual port): where its mapping differs from the GRV6 ----
+    {
+      const flxPlugin = app.plugins.forPort('DDJ-FLX10');
+      const flx = app.midi.attachDriver('virtual-flx10', await app.plugins.mapping(flxPlugin), () => {}, 'DDJ-FLX10 (virtual)', flxPlugin);
+      const tx = (...msgs) => msgs.forEach((m) => flx.receive(m));
+      const press = (st, d1v) => tx([st, d1v, 0x7f], [st & 0x0f | 0x80, d1v, 0]);
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      d1.pause();
+      d1.exitLoop?.();
+      d1.seek(2);
+      // SHIFT rows carry no deck column on the FLX10 (one per MIDI channel); SHIFT + jog = search.
+      tx([0x90, 0x3f, 0x7f]);
+      const from = d1.position();
+      for (let k = 0; k < 20; k++) tx([0xb0, 0x22, 0x50]);
+      await wait(50);
+      const searched = d1.position() - from;
+      tx([0x80, 0x3f, 0]);
+      step('flx10 SHIFT + jog = search', flx.decks[0].shift === false && searched > 1 && !d1.scratching, `moved ${searched.toFixed(2)} s`);
+      // MEMORY CUE CALL < has its own button: it calls the memory cue and leaves a playing loop's size alone.
+      if (!d1.memoryCues().length) { d1.seek(1); d1.addMemoryCue(); }
+      d1.seek(8);
+      d1.beatLoop(4);
+      const loopBefore = d1.currentLoopBeats();
+      press(0x90, 0x51);
+      await wait(50);
+      const loopAfter = d1.loop ? d1.currentLoopBeats() : null;
+      step('flx10 MEMORY CUE CALL does not resize the loop', loopAfter === null || Math.abs(loopAfter - loopBefore) < 1e-6, `loop ${loopBefore} → ${loopAfter ?? 'left'} beats, play head ${d1.position().toFixed(2)} s`);
+      d1.exitLoop?.();
+      // BEAT GRID SLIDE held + jog moves the grid; released, the jog is a jog again.
+      const gridBefore = d1.grid;
+      press(0x90, 0x0a); // SLIDE alone: nothing moves
+      tx([0x90, 0x0a, 0x7f], [0xb0, 0x22, 0x44]);
+      const slid = JSON.stringify(d1.grid) !== JSON.stringify(gridBefore);
+      tx([0x80, 0x0a, 0]);
+      const afterSlide = JSON.stringify(d1.grid);
+      tx([0xb0, 0x23, 0x44]);
+      step('flx10 BEAT GRID SLIDE + jog', slid && JSON.stringify(d1.grid) === afterSlide, `grid ${gridBefore?.firstBeat?.toFixed?.(4)} → ${d1.grid?.firstBeat?.toFixed?.(4)}`);
+      if (gridBefore && !d1.track.gridLocked) app.setTrackGrid(d1, gridBefore);
+      // SAMPLER CUE / VOLUME (global rows on channel 7).
+      press(0x96, 0x69);
+      const cueOn = app.sampler.cue === true;
+      press(0x96, 0x69);
+      tx([0xb6, 0x03, 0x40], [0xb6, 0x23, 0x00]);
+      step('flx10 SAMPLER CUE / VOLUME', cueOn && app.sampler.cue === false && Math.abs(app.samplerView.volume.getValue() - 0.6) < 0.02, `volume knob ${app.samplerView.volume.getValue().toFixed(3)}`);
+      app.samplerView.setVolume(0.8);
+      // FX PART SELECT is global on the FLX10: it applies to the Beat FX's channel.
+      if (d3.stemsReady) {
+        app.engine.fx.setTarget('ch3');
+        press(0x96, 0x1b);
+        const on = d3.fxParts[3];
+        press(0x96, 0x1b);
+        step('flx10 FX PART SELECT (global, Beat FX channel)', on && !d3.fxParts[3], `vocal part on deck 3: ${on}`);
+      }
+      step('flx10: every message handled', flx.unknown.size === 0, [...flx.unknown].join(', '));
+      app.midi.controllers.delete('virtual-flx10');
+    }
+
     // ---- rekordbox import tool: a rekordbox.xml with edited info, cues, a playlist and a missing file ----
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
