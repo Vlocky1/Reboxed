@@ -4,7 +4,7 @@
 import { ControllerCore } from '../../shared/controllers/core.js';
 import { BEAT_FX, stepFxBeats } from '../audio/fx.js';
 import { COLOR_FX } from '../ui/mixer-view.js';
-import { constantGridAt, tapBpm } from '../../shared/beatgrid.js';
+import { constantGridAt, shiftGrid, tapBpm } from '../../shared/beatgrid.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 import { toast } from '../ui/dom.js';
 import { padValue } from '../../shared/pad-tables.js';
@@ -15,7 +15,17 @@ const FX_SELECT = {
   DELAY: 'DELAY', ECHO: 'ECHO', LOWCUTECHO: 'LOW CUT ECHO', SPIRAL: 'SPIRAL', HELIX: 'HELIX', REVERB: 'REVERB',
   FLANGER: 'FLANGER', PHASER: 'PHASER', FILTER: 'FILTER', TRANS: 'TRANS', PITCH: 'PITCH', ROLL: 'ROLL',
   MOBIUSSAW: 'MOBIUS SAW', MOBIUSTRI: 'MOBIUS TRI',
+  // DDJ-FLX10 effects Reboxed does not have: the closest one.
+  MTDELAY: 'DELAY', SLIPROLL: 'ROLL',
 };
+// Functions with no equivalent in Reboxed: said once (with what they are), then ignored.
+const UNSUPPORTED = [
+  [/^SmartFader$/, 'SMART FADER'],
+  [/^SyncRate$/, 'SYNC RATE'],
+  [/^MixPoint(Select(Prev|Next)|Link(Exit|Deck|Silent))$/, 'MIX POINT LINK (select / exit / deck / silent)'],
+  [/^FX1-[23](On)?$|^Fx\d-\d_BeatTarget$/, 'Beat FX multi mode (Reboxed has one Beat FX)'],
+  [/^FX1-1Select\.(ENIGMAJET|STRETCH)$/, 'this Beat FX (ENIGMA JET / STRETCH)'],
+];
 // Beat value list the controller's FX beat display is indexed by (rekordbox's, with 3/4).
 const RB_FX_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 3 / 4, 1, 2, 4, 8, 16, 32];
 const DRUM_ROLL = { DrumRoll1_8: 1 / 8, DrumRoll1_4: 1 / 4, DrumRoll1_2: 1 / 2, DrumRoll1: 1 };
@@ -23,8 +33,8 @@ const DRUM_TRANS = { DrumTrans1_8: 1 / 8, DrumTrans1_4: 1 / 4, DrumTrans1_2: 1 /
 // PART ISOLATOR knobs -> isolator band (Deck.ISO_PARTS: 0 HI vocal, 1 MID inst + bass, 2 LOW drums).
 const PART_KNOBS = { PartIsolatorVocal: 0, PartIsolatorInst: 1, PartIsolatorDrums: 2 };
 const ACTIVE_PART = { ActivePartVocal: 3, ActivePartInst: 2, ActivePartBass: 1, ActivePartDrums: 0 };
-// Pad channels per deck (FX PART SELECT rows have no deck column in the mapping). Plugin option.
-const PAD_STATUS = [0x97, 0x99, 0x9b, 0x9d];
+// Part -> stem index (Deck stems: 0 drums, 1 bass, 2 inst, 3 vocal).
+const PART_STEM = { Vocal: 3, Inst: 2, Bass: 1, Drums: 0 };
 // Controllers with generic pad functions (PadMode1..8, PADn_PadModeN): what each mode is. Plugin
 // option "padModes"; this default is the DDJ-FLX10 layout (from its rekordbox mapping comments).
 export const DEFAULT_PAD_MODES = { 1: 'HOT CUE', 2: 'PAD FX', 3: 'BEAT JUMP', 4: 'SAMPLER', 5: 'KEYBOARD', 6: 'PAD FX2', 7: 'BEAT LOOP', 8: 'KEY SHIFT' };
@@ -33,6 +43,7 @@ const MODE_KIND = { 'HOT CUE': 'HotCue', 'PAD FX': 'PadFx1', 'PAD FX2': 'PadFx2'
 const ALIAS = {
   'FX1-1BeatDown': 'FX1BeatDown', 'FX1-1BeatUp': 'FX1BeatUp', '4BeatLoop': '4BeatLoopToggle',
   ActivePartButtonDrums: 'ActivePartDrums', ActivePartButtonVocal: 'ActivePartVocal', ActivePartButtonInst: 'ActivePartInst',
+  SampleScratch: 'Sampler', // DDJ-FLX6 SAMPLE SCRATCH mode: the sampler pads
 };
 /** One Beat FX unit in Reboxed: FX2 controls drive it too; Parameter2 = Parameter1 pages. */
 export function normalizeFunction(name) {
@@ -58,7 +69,14 @@ export class PioneerController {
     this.app = app;
     this.plugin = plugin;
     this.padModes = plugin.padModes ?? DEFAULT_PAD_MODES;
-    this.padStatus = plugin.fxPartPadStatus ?? PAD_STATUS;
+    // Pad channel of each deck, for FX PART SELECT rows without a deck column (DDJ-GRV6 only).
+    this.padStatus = plugin.fxPartPadStatus ?? [];
+    // CALL ◀ ▶ double as LOOP 1/2X / 2X when the mapping puts LoopHalf on the same button (GRV6,
+    // FLX4, FLX6); the DDJ-FLX10 has separate MEMORY CUE CALL buttons.
+    const label = (n) => profile.entries.find((e) => e.name === n)?.label;
+    this.callResizesLoop = !!label('LoopHalf') && label('LoopHalf') === label('Parameter1Left_HotCue');
+    this.warned = new Set();
+    this.unknown = new Set(); // mapped functions the driver has no handling for
     this.device = profile.device;
     this.core = new ControllerCore(profile, (ev) => this.handle(ev), send);
     this.decks = [0, 1, 2, 3].map(() => ({
@@ -90,7 +108,10 @@ export class PioneerController {
     const { press } = ev;
     const name = normalizeFunction(ev.name);
     if (IGNORED.test(name)) return;
-    const i = ev.deck;
+    const missing = UNSUPPORTED.find(([re]) => re.test(name));
+    if (missing) { if (press && !this.warned.has(missing[1])) { this.warned.add(missing[1]); toast(`${missing[1]}: not available in Reboxed`, 2500); } return; }
+    // SHIFT rows without deck columns (DDJ-FLX10): one row per MIDI channel.
+    const i = ev.deck ?? (name === 'Shift' && ev.raw && (ev.raw[0] & 0x0f) < 4 ? ev.raw[0] & 0x0f : null);
     const d = i !== null ? this.deck(i) : null;
     const s = i !== null ? this.decks[i] : null;
     const app = this.app;
@@ -119,8 +140,7 @@ export class PioneerController {
       const dir = param[1] === 'Left' ? -1 : 1;
       // CALL ◀ ▶ arrive here when the controller thinks no loop plays (it picks the message from the
       // GetLoopActive indicator): same handling as LoopHalf / LoopDouble either way.
-      if (param[2] === 'HotCue') this.callOrResize(i, dir);
-      else this.turnPage(i, dir);
+      if (param[2] === 'HotCue') { if (this.callResizesLoop) this.callOrResize(i, dir); else this.callMemory(i, dir); } else this.turnPage(i, dir);
       return;
     }
     if (FX_SELECT[name.replace('FX1-1Select.', '')] && name.startsWith('FX1-1Select.')) { if (press) fx.setEffect(FX_SELECT[name.slice(12)]); return; }
@@ -142,9 +162,9 @@ export class PioneerController {
     if (PART_KNOBS[name] !== undefined && d) { this.requireStems(d); d.setIsoKnob(PART_KNOBS[name], ev.value01); return; }
     if (ACTIVE_PART[name] !== undefined && d) { if (press && this.requireStems(d)) d.setStemOn(ACTIVE_PART[name], d.stemGains[ACTIVE_PART[name]] === 0); return; }
     if (/^FXPartSelect(Vocal|Inst|Bass|Drums)On$/.test(name)) {
-      // Beat FX on chosen parts only. Stem index: Vocal 3, Inst 2, Bass 1, Drums 0.
+      // Beat FX on chosen parts only (GRV6: per deck, on the deck's pad channel).
       if (!press) return;
-      const stem = { Vocal: 3, Inst: 2, Bass: 1, Drums: 0 }[/Select(\w+?)On/.exec(name)[1]];
+      const stem = PART_STEM[/Select(\w+?)On/.exec(name)[1]];
       const deckIdx = ev.raw ? this.padStatus.indexOf(ev.raw[0]) : -1;
       const dk = this.deck(deckIdx);
       if (!dk) return;
@@ -152,6 +172,9 @@ export class PioneerController {
       dk.setFxPart(stem, !dk.fxParts[stem]);
       return;
     }
+    // DDJ-FLX10 FX PART SELECT: global buttons, for the deck(s) the Beat FX is assigned to.
+    const gpart = /^FXPartSelect(Vocal|Inst|Bass|Drums)$/.exec(name);
+    if (gpart) { if (press) this.fxPartForFx(PART_STEM[gpart[1]]); return; }
     if (MODES[name] && d) { if (press) this.setMode(i, MODES[name]); return; }
     const swap = /^DrumSwap([1-4])$/.exec(name);
     // Built-in loops play right away; the track's own drums are replaced as soon as stems exist.
@@ -195,7 +218,8 @@ export class PioneerController {
       case 'SmartCFX': if (press) this.toggleCfx(); break;
       case 'SmartCFXSelect': if (press) this.cycleCfx(1); break;
       case 'SmartCFXSelectBack': if (press) this.cycleCfx(-1); break;
-      case 'SmartFader': if (press && !this.warnedSmartFader) { this.warnedSmartFader = true; toast('SMART FADER is not available in Reboxed'); } break;
+      case 'SamplerVolume': app.samplerView.setVolume(ev.value01 * 1.2); break;
+      case 'SamplerCue': if (press) app.sampler.setCue(!app.sampler.cue); break;
       case 'FX1-1Select': case 'FX1-1SelectBack': if (press) {
         const ids = BEAT_FX.map((x) => x.id);
         fx.setEffect(ids[(ids.indexOf(fx.effectId) + (name.endsWith('Back') ? ids.length - 1 : 1)) % ids.length]);
@@ -208,8 +232,10 @@ export class PioneerController {
       case 'JumpToTrackStart': if (press) d.jumpToStart(); break;
       // SHIFT + jog = fast search only: touching the platter with SHIFT never starts a scratch.
       case 'JogTouch': if (press && !s.shift) { if (d.vinyl) d.scratchStart(); } else d.scratchEnd(); break;
-      case 'JogScratch': if (s.shift) d.jogSearch(ev.delta); else if (d.scratching) d.scratchMove(ev.delta); else d.jogBend(ev.delta); break;
-      case 'JogPitchBend': case 'WheelPitchBend': if (s.shift) d.jogSearch(ev.delta); else d.jogBend(ev.delta); break;
+      case 'JogScratch': if (s.grid) this.gridJog(i, ev.delta); else if (s.shift) d.jogSearch(ev.delta); else if (d.scratching) d.scratchMove(ev.delta); else d.jogBend(ev.delta); break;
+      case 'JogPitchBend': case 'WheelPitchBend': if (s.grid) this.gridJog(i, ev.delta); else if (s.shift) d.jogSearch(ev.delta); else d.jogBend(ev.delta); break;
+      // BEAT GRID ADJUST / SLIDE held (DDJ-FLX10): the jog changes the BPM / moves the grid.
+      case 'GridAdjust': case 'GridSlide': s.grid = press ? (name === 'GridAdjust' ? 'adjust' : 'slide') : null; break;
       case 'WheelSearch': case 'JogSearch': d.jogSearch(ev.delta); break;
       case 'TempoReset': if (press) d.setTempoPct(0); break;
       case 'Reverse': if (press) d.setReverse(!d.reverse); break;
@@ -247,7 +273,7 @@ export class PioneerController {
       case 'Vinyl': if (press) { d.vinyl = !d.vinyl; toast(`Deck ${i + 1}: ${d.vinyl ? 'VINYL (scratch)' : 'CDJ (pitch bend)'} jog mode`); } break;
       case 'Deck': case 'DeckState': if (press && d && i >= 2 && app.deckCount < 4) { app.library.setSetting('deckCount', 4); app.applyLayout(); } break;
       // DECK 3 / DECK 4 layer selected on the hardware: show 4 decks.
-      case 'DualDeckState13': case 'DualDeckState24': if (press && app.deckCount < 4) { app.library.setSetting('deckCount', 4); app.applyLayout(); } break;
+      case 'DualDeckState13': case 'DualDeckState24': case 'Deck3': case 'Deck4': if (press && app.deckCount < 4) { app.library.setSetting('deckCount', 4); app.applyLayout(); } break;
 
       // ---- Groove Circuit
       case 'DrumSwapGain': app.groove[i].setLevel(ev.value01 * 1.5); break;
@@ -285,7 +311,7 @@ export class PioneerController {
       case 'FX1-1': fx.setDepth(ev.value01); break;
       case 'FX1-1On': if (press) fx.setOn(!fx.on); break;
       case 'FX1ReleaseFXOn': fx.release(press); break;
-      default: break;
+      default: this.unknown.add(name); break; // listed by the plugin tests
     }
   }
 
@@ -312,6 +338,38 @@ export class PioneerController {
     }
   }
 
+  /** MEMORY CUE CALL ◀ ▶ on their own buttons (DDJ-FLX10): only the memory cues. */
+  callMemory(i, dir) {
+    const d = this.deck(i);
+    if (d.memoryCues().length) d.callMemoryCue(dir);
+    else toast(`Deck ${i + 1}: no memory cue`, 1200);
+  }
+
+  /** Decks the Beat FX applies to: its channel, or every deck for MASTER / SAMPLER. */
+  fxDecks() {
+    const m = /^ch(\d)$/.exec(this.engine.fx.target ?? '');
+    return m ? [this.deck(Number(m[1]) - 1)].filter(Boolean) : this.engine.decks.filter((d) => d.loaded);
+  }
+
+  /** Global FX PART SELECT button: the part on / off on the Beat FX's deck(s), all the same way. */
+  fxPartForFx(stem) {
+    const decks = this.fxDecks();
+    if (!decks.length) { toast('FX PART SELECT: load a track on the Beat FX channel'); return; }
+    const on = !decks.some((d) => d.fxParts?.[stem]);
+    for (const d of decks) { if (on) this.requireStems(d); d.setFxPart(stem, on); }
+  }
+
+  /** Jog while BEAT GRID ADJUST (BPM, 0.01 per step) or SLIDE (0.5 ms per step) is held. */
+  gridJog(i, delta) {
+    const d = this.deck(i);
+    const g = d.grid;
+    if (!d.loaded || !g) return;
+    if (d.track.gridLocked) { if (!this.warned.has('gridLocked')) { this.warned.add('gridLocked'); toast('Beatgrid is locked'); } return; }
+    if (this.decks[i].grid === 'slide') this.app.setTrackGrid(d, shiftGrid(g, delta * 0.0005));
+    else if (!g.beats) this.app.setTrackGrid(d, { ...g, bpm: Math.round((g.bpm + delta * 0.01) * 100) / 100 });
+    else if (!this.warned.has('gridDynamic')) { this.warned.add('gridDynamic'); toast('Dynamic grid: convert it to a constant grid to adjust the BPM'); }
+  }
+
   /** Pad table page of deck i (0/1), shared with the on-screen pads. */
   page(i) { return this.app.deckViews[i]?.padPage ?? 0; }
 
@@ -336,7 +394,10 @@ export class PioneerController {
   padEvent(i, n, kind, shift, press) {
     const d = this.deck(i);
     const s = this.decks[i];
-    const slot = n - 1;
+    const raw = n - 1;
+    // PAD9..16 are hot cues 9-16 and PAD FX slots 9-16; in the other modes the DDJ-FLX10 sends them
+    // for its 8 pads on its second page ("Sample Slot 1", "BEAT JUMP REV1"): same values as 1-8.
+    const slot = kind === 'HotCue' || kind === 'PadFx1' || kind === 'PadFx2' || kind === 'BeatLoop' ? raw : raw % 8;
     switch (kind) {
       case 'HotCue': if (press) { if (shift) d.deleteHotCue(slot); else d.hotCuePress(slot); } break;
       case 'BeatJump': if (press) d.beatJump(padValue('BEAT JUMP', this.page(i), slot)); break;
@@ -504,6 +565,10 @@ export class PioneerController {
     o('FX1ReleaseFXOn', null, !!fx.releaseFx);
     o('FX1BeatMultiplier', null, Math.max(0, RB_FX_BEATS.indexOf(fx.beats)));
     o('CFXOn', null, (this.engine.colorFx ?? 'FILTER') !== 'FILTER');
+    o('SamplerCue', null, !!app.sampler.cue);
+    // DDJ-FLX10 global FX PART SELECT LEDs.
+    const fxDecks = this.fxDecks();
+    for (const [part, stem] of Object.entries(PART_STEM)) o(`FXPartSelect${part}`, null, fxDecks.some((d) => d.fxParts?.[stem]));
   }
 
   padLeds(i, force = false) {

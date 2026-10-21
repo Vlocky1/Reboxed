@@ -64,7 +64,7 @@ export const LINKS = {
   github: 'https://github.com/Vlocky1/Reboxed',
   releases: 'https://github.com/Vlocky1/Reboxed/releases',
   issues: 'https://github.com/Vlocky1/Reboxed/issues',
-  website: 'https://vlocky1.github.io/',
+  website: 'https://reboxed.github.io/',
   instagram: 'https://www.instagram.com/rebox.ed/',
 };
 

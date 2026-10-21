@@ -1,10 +1,10 @@
 {
   "id": "pioneer-ddj-flx2",
   "name": "Pioneer DDJ-FLX2",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Reboxed",
   "kind": "controller",
-  "description": "DDJ-FLX2: mapping from its rekordbox MIDI mapping. Untested on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
+  "description": "2-deck controller, from its rekordbox mapping: HOT CUE, PAD FX, BEAT LOOP, SAMPLER pads, SHIFT + jog search, Smart CFX. Every mapped control is handled; not yet tried on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
   "match": [
     "DDJ-FLX2"
   ],
