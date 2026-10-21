@@ -2179,7 +2179,7 @@ async function smoke(app) {
       for (let i = 0; i < 100 && !document.querySelector('.license-error')?.textContent; i++) await wait(100);
       const licErr = document.querySelector('.license-error')?.textContent ?? '';
       // The dialog shown once the trial is over (with a pretend status), then removed.
-      openLicenseGate(app, { mode: 'expired', reason: 'trial', product: { price: '10 €', buyUrl: null, donateUrl: 'https://example.org/coffee' } });
+      openLicenseGate(app, { mode: 'expired', reason: 'trial', product: { price: '5 €', buyUrl: null, donateUrl: 'https://example.org/coffee' } });
       await wait(200);
       await window.rb.smokeShot('license-gate');
       const gate = document.querySelector('.license-gate');
@@ -2187,12 +2187,19 @@ async function smoke(app) {
       gate?.remove();
       step('licence: activation dialog after the trial (with Buy me a coffee)', gateOk, gate?.querySelector('h2')?.textContent ?? 'none');
       // End of the beta for a tester: thank-you title and the discount.
-      openLicenseGate(app, { mode: 'expired', reason: 'betaOver', betaTester: true, product: { price: '10 €', buyUrl: null, betaDiscount: '-50 % with the code BETA50' } });
+      openLicenseGate(app, { mode: 'expired', reason: 'betaOver', betaTester: true, product: { price: '5 €', buyUrl: null, betaDiscount: '-50 % with the code BETA50' } });
       await wait(100);
       const over = document.querySelector('.license-gate');
       const overOk = !!over && /Thank you for the beta/.test(over.textContent) && /BETA50/.test(over.querySelector('.license-discount')?.textContent ?? '');
       over?.remove();
       step('licence: end of the beta shows the tester discount', overOk, over?.querySelector('.license-discount')?.textContent ?? 'none');
+      // Joining the beta: the free beta key dialog, with the beta checkout link.
+      openLicenseGate(app, { mode: 'expired', reason: 'betaKey', product: { price: '5 €', betaEndsAt: '2026-12-30', betaUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/beta' } });
+      await wait(100);
+      const join = document.querySelector('.license-gate');
+      const joinOk = !!join && /Join the open beta/.test(join.textContent) && /Get my free beta key/.test(join.textContent) && /30 December 2026/.test(join.textContent);
+      join?.remove();
+      step('licence: join the open beta with a free beta key', joinOk, join?.querySelector('h2')?.textContent ?? 'none');
       // During the open beta a fresh install is in beta; afterwards, in its 14-day trial.
       const lic = await window.rb.license.status();
       const fresh = lic.mode === 'beta' ? /Open beta: free until/.test(licText) && /^Beta · \d+ days?$/.test(app.trialPill.textContent)

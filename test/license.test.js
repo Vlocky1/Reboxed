@@ -42,13 +42,13 @@ test('beta keys: by product id when set, else by "beta" in the product / variant
 
 test('website config: links (https only) and the beta discount text; offline keeps the built-in ones', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
-  const product = { name: 'Reboxed', price: '10 €', buyUrl: 'https://shop/buy', donateUrl: null };
+  const product = { name: 'Reboxed', price: '5 €', buyUrl: 'https://shop/buy', donateUrl: null };
   const cfg = (body) => async () => ({ ok: true, json: async () => body });
-  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: cfg({ donateUrl: 'https://ko-fi.com/reboxed', buyUrl: 'javascript:alert(1)', betaUrl: 'https://reboxed.lemonsqueezy.com/buy/beta', betaDiscount: '-50 % with BETA50' }), instanceName: 'PC', product });
+  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: cfg({ donateUrl: 'https://ko-fi.com/reboxed', buyUrl: 'javascript:alert(1)', betaUrl: 'https://reboxed.lemonsqueezy.com/buy/beta', betaDiscount: '-50 % with BETA50', price: '5 €' }), instanceName: 'PC', product });
   await lm.load();
   await lm.loadRemoteConfig();
   const p = lm.status().product;
-  assert.deepEqual([p.donateUrl, p.buyUrl, p.betaUrl, p.betaDiscount], ['https://ko-fi.com/reboxed', 'https://shop/buy', 'https://reboxed.lemonsqueezy.com/buy/beta', '-50 % with BETA50']);
+  assert.deepEqual([p.donateUrl, p.buyUrl, p.betaUrl, p.betaDiscount, p.price], ['https://ko-fi.com/reboxed', 'https://shop/buy', 'https://reboxed.lemonsqueezy.com/buy/beta', '-50 % with BETA50', '5 €']);
   lm.fetch = async () => { throw new Error('offline'); };
   await lm.loadRemoteConfig();
   assert.equal(lm.status().product.donateUrl, 'https://ko-fi.com/reboxed');
@@ -91,7 +91,7 @@ test('activate / validate / deactivate against the License API, product checked,
   const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
   let now = T0;
   const api = fakeApi();
-  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', now: () => now, product: { name: 'Reboxed', price: '10 €', buyUrl: null, storeId: 1, productId: 2 } });
+  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', now: () => now, product: { name: 'Reboxed', price: '5 €', buyUrl: null, storeId: 1, productId: 2 } });
   assert.equal((await lm.load()).mode, 'trial');
   await assert.rejects(() => lm.activate('BAD'), /license_key not found/);
   const st = await lm.activate(' GOOD ');
@@ -119,7 +119,7 @@ test('beta key during the beta, refused after it; the licence then replaces it (
   const endMs = new Date(`${end}T00:00:00`).getTime();
   let now = endMs - 20 * DAY;
   const api = fakeApi();
-  const product = { name: 'Reboxed', price: '10 €', storeId: 1, productId: 2, betaEndsAt: end, betaUrl: 'https://reboxed.lemonsqueezy.com/buy/beta', betaDiscount: '-50 %' };
+  const product = { name: 'Reboxed', price: '5 €', storeId: 1, productId: 2, betaEndsAt: end, betaUrl: 'https://reboxed.lemonsqueezy.com/buy/beta', betaDiscount: '-50 %' };
   const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', now: () => now, product });
   assert.equal((await lm.load()).reason, 'betaKey');
   const st = await lm.activate('BETA');

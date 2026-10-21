@@ -4,14 +4,14 @@
 // app-config.json, so they change without a new version.
 export const PRODUCT = {
   name: 'Reboxed',
-  price: '10 €',
+  price: '5 €',
   buyUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/3639fa22-a137-4f19-986e-ad7dbe941e4c',
   storeId: null,
   productId: null,
   // Open beta: until this date (local midnight). Beta keys stop working then; beta testers get a discount.
   betaEndsAt: '2026-12-30',
   // Free "Reboxed Beta" product (0 €) whose keys register the testers. While empty, the beta needs no key.
-  betaUrl: null,
+  betaUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/f508be5f-68f4-4fd3-b365-8206ee56d1c9',
   betaProductId: null, // without it, a key whose product or variant name contains "beta" is a beta key
   betaDiscount: null, // shown to beta testers when the beta ends, e.g. "-50 % with the code BETA50"
   // "Buy me a coffee".
