@@ -1,16 +1,25 @@
 // Where Reboxed is sold (Lemon Squeezy). storeId / productId: a key from another store or product is
 // refused once they are set. Discount codes are made in the Lemon Squeezy dashboard (Store > Discounts).
+// The links (buy, donate, beta key) and the beta discount text can also come from the website's
+// app-config.json, so they change without a new version.
 export const PRODUCT = {
   name: 'Reboxed',
   price: '10 €',
   buyUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/3639fa22-a137-4f19-986e-ad7dbe941e4c',
   storeId: null,
   productId: null,
-  // Open beta: free for everyone until this date (local midnight); then the trial, then a licence.
-  betaEndsAt: '2026-12-21',
-  // "Buy me a coffee": a donation page (Lemon Squeezy pay-what-you-want product, Ko-fi…). Hidden while empty.
-  donateUrl: null,
+  // Open beta: until this date (local midnight). Beta keys stop working then; beta testers get a discount.
+  betaEndsAt: '2026-12-30',
+  // Free "Reboxed Beta" product (0 €) whose keys register the testers. While empty, the beta needs no key.
+  betaUrl: null,
+  betaProductId: null, // without it, a key whose product or variant name contains "beta" is a beta key
+  betaDiscount: null, // shown to beta testers when the beta ends, e.g. "-50 % with the code BETA50"
+  // "Buy me a coffee".
+  donateUrl: 'https://ko-fi.com/reboxed',
 };
 
 /** The beta end date as a timestamp (local midnight), or null. */
 export const betaEnd = (p = PRODUCT) => (p.betaEndsAt ? new Date(`${p.betaEndsAt}T00:00:00`).getTime() : null);
+
+/** Is a licence key (Lemon Squeezy activation / validation meta) a beta key? */
+export const isBetaKey = (meta = {}, p = PRODUCT) => (p.betaProductId != null ? meta.product_id === p.betaProductId : /\bbeta\b/i.test(`${meta.product_name ?? ''} ${meta.variant_name ?? ''}`));

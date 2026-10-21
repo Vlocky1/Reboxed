@@ -13,7 +13,7 @@ import { applyTheme } from './themes.js';
 import { editSample } from './ui/sample-editor.js';
 import { openDrumSwapEditor } from './ui/drum-swap-editor.js';
 import { checkForUpdates, openUpdateDialog } from './ui/updates.js';
-import { openLicenseGate, showBetaOver } from './ui/license.js';
+import { openLicenseGate } from './ui/license.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
 import { Automix } from './automix.js';
@@ -818,7 +818,6 @@ class App {
     this.trialPill.hidden = st.mode !== 'trial' && st.mode !== 'beta';
     if (!this.trialPill.hidden) this.trialPill.textContent = `${st.mode === 'beta' ? 'Beta' : 'Trial'} · ${st.daysLeft} day${st.daysLeft > 1 ? 's' : ''}`;
     this.trialPill.title = st.mode === 'beta' ? 'Open beta: free until its end date (Preferences > About)' : 'Free trial: activate a licence in Preferences > About';
-    if (st.mode === 'trial' && st.afterBeta) showBetaOver(this, st);
     if (st.mode === 'expired') openLicenseGate(this, st);
   }
 
@@ -2187,6 +2186,13 @@ async function smoke(app) {
       const gateOk = !!gate && /trial is over/.test(gate.textContent) && !!gate.querySelector('.license-key') && /coffee/i.test(gate.textContent);
       gate?.remove();
       step('licence: activation dialog after the trial (with Buy me a coffee)', gateOk, gate?.querySelector('h2')?.textContent ?? 'none');
+      // End of the beta for a tester: thank-you title and the discount.
+      openLicenseGate(app, { mode: 'expired', reason: 'betaOver', betaTester: true, product: { price: '10 €', buyUrl: null, betaDiscount: '-50 % with the code BETA50' } });
+      await wait(100);
+      const over = document.querySelector('.license-gate');
+      const overOk = !!over && /Thank you for the beta/.test(over.textContent) && /BETA50/.test(over.querySelector('.license-discount')?.textContent ?? '');
+      over?.remove();
+      step('licence: end of the beta shows the tester discount', overOk, over?.querySelector('.license-discount')?.textContent ?? 'none');
       // During the open beta a fresh install is in beta; afterwards, in its 14-day trial.
       const lic = await window.rb.license.status();
       const fresh = lic.mode === 'beta' ? /Open beta: free until/.test(licText) && /^Beta · \d+ days?$/.test(app.trialPill.textContent)

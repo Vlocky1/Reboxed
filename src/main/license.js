@@ -1,8 +1,9 @@
 // Licence keys through the Lemon Squeezy License API (activate / validate / deactivate; no API key,
-// made for apps). The state lives in <app folder>/license.json.
+// made for apps). Two kinds of keys: the lifetime licence, and the free beta key that registers a tester
+// (it stops at the end of the beta). The state lives in <app folder>/license.json.
 import { readFile, writeFile } from 'node:fs/promises';
 import { licenseStatus, maskKey } from '../shared/license.js';
-import { PRODUCT, betaEnd } from '../shared/product.js';
+import { PRODUCT, betaEnd, isBetaKey } from '../shared/product.js';
 
 const API = 'https://api.lemonsqueezy.com/v1/licenses';
 
@@ -28,8 +29,8 @@ export class LicenseManager {
   async save() { await writeFile(this.file, JSON.stringify(this.state, null, 2)); }
 
   /**
-   * Links published on the website (app-config.json): the donation and buy links can change without a
-   * new version. Only https links are taken; the beta end date stays the one built in.
+   * Settings published on the website (app-config.json): buy / donate / beta key links (https only) and
+   * the discount text for beta testers change without a new version. The beta end date stays built in.
    */
   async loadRemoteConfig(url = 'https://reboxed.github.io/app-config.json') {
     try {
@@ -37,18 +38,24 @@ export class LicenseManager {
       if (!res.ok) return;
       const cfg = await res.json();
       const https = (u) => typeof u === 'string' && /^https:\/\/[^\s]+$/.test(u);
-      this.product = { ...this.product, ...(https(cfg.donateUrl) ? { donateUrl: cfg.donateUrl } : {}), ...(https(cfg.buyUrl) ? { buyUrl: cfg.buyUrl } : {}) };
-    } catch { /* offline: the built-in links */ }
+      const patch = {};
+      for (const k of ['donateUrl', 'buyUrl', 'betaUrl']) if (https(cfg[k])) patch[k] = cfg[k];
+      if (typeof cfg.betaDiscount === 'string' && cfg.betaDiscount.trim()) patch.betaDiscount = cfg.betaDiscount.trim().slice(0, 200);
+      this.product = { ...this.product, ...patch };
+    } catch { /* offline: the built-in settings */ }
   }
 
   status() {
-    const s = this.dev && !this.state.key ? { mode: 'dev' } : licenseStatus(this.state, this.now(), { betaEndsAt: betaEnd(this.product) });
-    const { name, price, buyUrl, donateUrl, betaEndsAt } = this.product;
+    const p = this.product;
+    const s = this.dev && !this.state.key ? { mode: 'dev' }
+      : licenseStatus(this.state, this.now(), { betaEndsAt: betaEnd(p), betaKeyRequired: !!p.betaUrl });
+    if (this.state.betaTester && s.mode === 'expired' && s.reason === 'betaOver') s.betaTester = true;
     return {
       ...s,
       key: maskKey(this.state.key),
+      keyKind: this.state.keyKind ?? null,
       customer: this.state.customer ?? null,
-      product: { name, price, buyUrl, donateUrl: donateUrl ?? null, betaEndsAt: betaEndsAt ?? null },
+      product: { name: p.name, price: p.price, buyUrl: p.buyUrl, donateUrl: p.donateUrl ?? null, betaEndsAt: p.betaEndsAt ?? null, betaUrl: p.betaUrl ?? null, betaDiscount: p.betaDiscount ?? null },
     };
   }
 
@@ -68,10 +75,10 @@ export class LicenseManager {
     return { status: res.status, body };
   }
 
-  /** A key of another store or product (set in shared/product.js) is refused. */
+  /** A key of another store, or of another product than the licence or the beta, is refused. */
   sameProduct(meta = {}) {
     return (this.product.storeId == null || meta.store_id === this.product.storeId)
-      && (this.product.productId == null || meta.product_id === this.product.productId);
+      && (this.product.productId == null || meta.product_id === this.product.productId || isBetaKey(meta, this.product));
   }
 
   async activate(key) {
@@ -79,11 +86,17 @@ export class LicenseManager {
     if (!key) throw new Error('Enter your licence key');
     const { body } = await this.call('activate', { license_key: key, instance_name: this.instanceName });
     if (!body.activated) throw new Error(body.error || 'This licence key could not be activated');
-    if (!this.sameProduct(body.meta)) {
-      await this.call('deactivate', { license_key: key, instance_id: body.instance.id }).catch(() => {});
-      throw new Error('This key is not a Reboxed licence');
+    const release = () => this.call('deactivate', { license_key: key, instance_id: body.instance.id }).catch(() => {});
+    if (!this.sameProduct(body.meta)) { await release(); throw new Error('This key is not a Reboxed licence'); }
+    const beta = isBetaKey(body.meta, this.product);
+    const end = betaEnd(this.product);
+    if (beta && end && this.now() >= end) { await release(); throw new Error('The open beta is over: this beta key no longer works. Get the lifetime licence.'); }
+    // A new key replaces the one in use (e.g. the licence after the beta key): free the old activation.
+    if (this.state.key && this.state.instanceId && this.state.key !== key) {
+      await this.call('deactivate', { license_key: this.state.key, instance_id: this.state.instanceId }).catch(() => {});
     }
-    Object.assign(this.state, { key, instanceId: body.instance.id, validatedAt: this.now(), revoked: false, customer: body.meta?.customer_name ?? null });
+    Object.assign(this.state, { key, instanceId: body.instance.id, keyKind: beta ? 'beta' : 'lifetime', validatedAt: this.now(), revoked: false, customer: body.meta?.customer_name ?? null });
+    if (beta) this.state.betaTester = true;
     await this.save();
     return this.status();
   }
@@ -106,7 +119,7 @@ export class LicenseManager {
   async deactivate() {
     const { key, instanceId } = this.state;
     if (key && instanceId) await this.call('deactivate', { license_key: key, instance_id: instanceId }).catch(() => {});
-    for (const k of ['key', 'instanceId', 'validatedAt', 'revoked', 'customer']) delete this.state[k];
+    for (const k of ['key', 'instanceId', 'keyKind', 'validatedAt', 'revoked', 'customer']) delete this.state[k];
     await this.save();
     return this.status();
   }

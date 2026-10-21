@@ -862,6 +862,7 @@ body.gbar-icons .gbtn .ico { font-size: 14px; }
 .license-key { flex: 1; min-width: 280px; font-family: Consolas, monospace; }
 .license-error:empty { display: none; }
 .license-gate .dialog { max-width: 520px; }
+.license-discount { padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 18%, transparent); border: 1px solid var(--accent); font-weight: 600; }
 @keyframes updpulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); } }
 .dialog.update-dialog { width: min(620px, 92vw); }
 .update-notes { white-space: pre-wrap; max-height: 300px; overflow: auto; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 12px/1.5 var(--font, inherit); color: var(--text-2); }

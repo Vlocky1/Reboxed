@@ -203,7 +203,10 @@ function registerIpc(win) {
   ipcMain.handle('shell:openExternal', (_e, url) => {
     const allowed = /^https:\/\/(www\.|music\.)?youtube\.com\/|^https:\/\/youtu\.be\//.test(url)
       || /^https:\/\/github\.com\/Vlocky1\/Reboxed(\/|$)/.test(url)
-      || /^https:\/\/vlocky1\.github\.io\//.test(url)
+      || /^https:\/\/(vlocky1|reboxed)\.github\.io\//.test(url)
+      // Shop (licence, beta key) and donations.
+      || /^https:\/\/reboxed\.lemonsqueezy\.com\//.test(url)
+      || /^https:\/\/(www\.)?(ko-fi\.com|buymeacoffee\.com)\/[\w.-]+\/?$/.test(url)
       || /^https:\/\/(www\.)?instagram\.com\/rebox\.ed\/?$/.test(url);
     if (allowed) shell.openExternal(url);
     return allowed;
