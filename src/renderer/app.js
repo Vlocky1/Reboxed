@@ -13,7 +13,7 @@ import { applyTheme } from './themes.js';
 import { editSample } from './ui/sample-editor.js';
 import { openDrumSwapEditor } from './ui/drum-swap-editor.js';
 import { checkForUpdates, openUpdateDialog } from './ui/updates.js';
-import { openLicenseGate } from './ui/license.js';
+import { openLicenseGate, showBetaOver } from './ui/license.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
 import { Automix } from './automix.js';
@@ -812,11 +812,13 @@ class App {
   }
 
   /** DOWNLOAD button badge: running downloads (with progress), else new releases to look at. */
-  /** Licence status: trial pill (days left), activation dialog when it is over. */
+  /** Licence status: beta / trial pill (days left), thank-you note when the beta ends, activation dialog when it is over. */
   applyLicense(st) {
     this.license = st;
-    this.trialPill.hidden = st.mode !== 'trial';
-    if (st.mode === 'trial') this.trialPill.textContent = `Trial · ${st.daysLeft} day${st.daysLeft > 1 ? 's' : ''}`;
+    this.trialPill.hidden = st.mode !== 'trial' && st.mode !== 'beta';
+    if (!this.trialPill.hidden) this.trialPill.textContent = `${st.mode === 'beta' ? 'Beta' : 'Trial'} · ${st.daysLeft} day${st.daysLeft > 1 ? 's' : ''}`;
+    this.trialPill.title = st.mode === 'beta' ? 'Open beta: free until its end date (Preferences > About)' : 'Free trial: activate a licence in Preferences > About';
+    if (st.mode === 'trial' && st.afterBeta) showBetaOver(this, st);
     if (st.mode === 'expired') openLicenseGate(this, st);
   }
 
@@ -2178,15 +2180,19 @@ async function smoke(app) {
       for (let i = 0; i < 100 && !document.querySelector('.license-error')?.textContent; i++) await wait(100);
       const licErr = document.querySelector('.license-error')?.textContent ?? '';
       // The dialog shown once the trial is over (with a pretend status), then removed.
-      openLicenseGate(app, { mode: 'expired', reason: 'trial', product: { price: '10 €', buyUrl: null } });
+      openLicenseGate(app, { mode: 'expired', reason: 'trial', product: { price: '10 €', buyUrl: null, donateUrl: 'https://example.org/coffee' } });
       await wait(200);
       await window.rb.smokeShot('license-gate');
       const gate = document.querySelector('.license-gate');
-      const gateOk = !!gate && /trial is over/.test(gate.textContent) && !!gate.querySelector('.license-key');
+      const gateOk = !!gate && /trial is over/.test(gate.textContent) && !!gate.querySelector('.license-key') && /coffee/i.test(gate.textContent);
       gate?.remove();
-      step('licence: activation dialog after the trial', gateOk, gate?.querySelector('h2')?.textContent ?? 'none');
-      step('licence: 14-day trial, wrong key refused', /14 days left/.test(licText) && app.trialPill.textContent === 'Trial · 14 days' && !app.trialPill.hidden && !!licErr && (await window.rb.license.status()).mode === 'trial',
-        `${licText} · pill "${app.trialPill.textContent}" · ${licErr}`);
+      step('licence: activation dialog after the trial (with Buy me a coffee)', gateOk, gate?.querySelector('h2')?.textContent ?? 'none');
+      // During the open beta a fresh install is in beta; afterwards, in its 14-day trial.
+      const lic = await window.rb.license.status();
+      const fresh = lic.mode === 'beta' ? /Open beta: free until/.test(licText) && /^Beta · \d+ days?$/.test(app.trialPill.textContent)
+        : lic.mode === 'trial' && /14 days left/.test(licText) && app.trialPill.textContent === 'Trial · 14 days';
+      step('licence: open beta or trial, wrong key refused', fresh && !app.trialPill.hidden && !!licErr,
+        `${lic.mode} · ${licText} · pill "${app.trialPill.textContent}" · ${licErr}`);
       document.querySelector('.settings-close').click();
       await closed;
       step('preferences tabs', tabs.length === 11 && tabs.at(-1) === 'About' && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,

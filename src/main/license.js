@@ -2,16 +2,17 @@
 // made for apps). The state lives in <app folder>/license.json.
 import { readFile, writeFile } from 'node:fs/promises';
 import { licenseStatus, maskKey } from '../shared/license.js';
-import { PRODUCT } from '../shared/product.js';
+import { PRODUCT, betaEnd } from '../shared/product.js';
 
 const API = 'https://api.lemonsqueezy.com/v1/licenses';
 
 export class LicenseManager {
   /**
-   * @param {{file: string, fetch: typeof fetch, instanceName: string, now?: () => number, product?: object}} o
+   * @param {{file: string, fetch: typeof fetch, instanceName: string, now?: () => number, product?: object, dev?: boolean}} o
+   *   dev: Reboxed run from its source (not installed): no licence is asked for.
    */
-  constructor({ file, fetch: f, instanceName, now = Date.now, product = PRODUCT }) {
-    Object.assign(this, { file, fetch: f, instanceName, now, product });
+  constructor({ file, fetch: f, instanceName, now = Date.now, product = PRODUCT, dev = false }) {
+    Object.assign(this, { file, fetch: f, instanceName, now, product, dev });
     this.state = {};
   }
 
@@ -26,13 +27,28 @@ export class LicenseManager {
 
   async save() { await writeFile(this.file, JSON.stringify(this.state, null, 2)); }
 
+  /**
+   * Links published on the website (app-config.json): the donation and buy links can change without a
+   * new version. Only https links are taken; the beta end date stays the one built in.
+   */
+  async loadRemoteConfig(url = 'https://reboxed.github.io/app-config.json') {
+    try {
+      const res = await Promise.race([this.fetch(`${url}?t=${this.now()}`), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 6000))]);
+      if (!res.ok) return;
+      const cfg = await res.json();
+      const https = (u) => typeof u === 'string' && /^https:\/\/[^\s]+$/.test(u);
+      this.product = { ...this.product, ...(https(cfg.donateUrl) ? { donateUrl: cfg.donateUrl } : {}), ...(https(cfg.buyUrl) ? { buyUrl: cfg.buyUrl } : {}) };
+    } catch { /* offline: the built-in links */ }
+  }
+
   status() {
-    const s = licenseStatus(this.state, this.now());
+    const s = this.dev && !this.state.key ? { mode: 'dev' } : licenseStatus(this.state, this.now(), { betaEndsAt: betaEnd(this.product) });
+    const { name, price, buyUrl, donateUrl, betaEndsAt } = this.product;
     return {
       ...s,
       key: maskKey(this.state.key),
       customer: this.state.customer ?? null,
-      product: { name: this.product.name, price: this.product.price, buyUrl: this.product.buyUrl },
+      product: { name, price, buyUrl, donateUrl: donateUrl ?? null, betaEndsAt: betaEndsAt ?? null },
     };
   }
 

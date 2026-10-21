@@ -434,8 +434,10 @@ app.whenReady().then(async () => {
   await storage.load();
   store = new LibraryStore(await resolveDatabase(), { legacyDir: smoke ? null : join(app.getPath('appData'), 'rbclone') });
   // Licence: trial from the first run, then a key (the smoke test gets a fresh trial in its folder).
-  const license = new LicenseManager({ file: join(appDir, 'license.json'), fetch: (url, opts) => net.fetch(url, opts), instanceName: `${hostname()} (Reboxed)` });
+  // Run from the source (npm start), Reboxed asks for no licence; the smoke test still checks it.
+  const license = new LicenseManager({ file: join(appDir, 'license.json'), fetch: (url, opts) => net.fetch(url, opts), instanceName: `${hostname()} (Reboxed)`, dev: !app.isPackaged && !smoke });
   await license.load();
+  if (!smoke) license.loadRemoteConfig();
   ipcMain.handle('license:status', () => license.status());
   ipcMain.handle('license:activate', (_e, key) => license.activate(key));
   ipcMain.handle('license:validate', () => license.validate());
