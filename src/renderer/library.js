@@ -17,8 +17,10 @@ export const DEFAULT_SETTINGS = {
   autoGain: true,
   masterDevice: '',
   phonesDevice: '',
+  masterCopyDevice: '',        // the master also on this device ('default' = the computer's own output), e.g. with a controller
   theme: 'dark', themeAccent: null, uiScale: 1, topbarLabels: 'full',
-  columns: ['color', 'artwork', 'title', 'artist', 'album', 'genre', 'bpm', 'key', 'duration', 'stems', 'rating', 'dateAdded'],
+  columns: ['color', 'artwork', 'title', 'artist', 'album', 'genre', 'bpm', 'key', 'preview', 'duration', 'stems', 'rating', 'dateAdded'],
+  previewColumn: true,         // the Preview column was added once (1.18); hiding it afterwards sticks
   deckCount: 2,                // 2 | 4
   syncMode: 'beat',            // 'beat' (tempo + phase) | 'bpm' (tempo only)
   syncDoubleHalf: true,
@@ -39,7 +41,7 @@ export const DEFAULT_SETTINGS = {
   controllerAudioAuto: true,   // use a recognised controller's sound card automatically
   controllerTempoInvert: false,
   // Track downloader (yt-dlp, as used by Stacher): folder '' = <Music>/Reboxed Downloads.
-  downloads: { folder: '', format: 'm4a', platform: 'youtube', cleanNames: true, cleanKeywords: '', toolsDir: '', playlist: true, subs: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
+  downloads: { folder: '', format: 'mp3', platform: 'youtube', cleanNames: true, cleanKeywords: '', toolsDir: '', playlist: true, subs: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
 };
 
 /** Local date YYYY-MM-DD (the "Date Added" day; the exact moment is in addedAt, ms). */
@@ -56,6 +58,16 @@ export class Library extends EventTarget {
     this.histories = data.histories ?? [];
     this.tagList = data.tagList ?? [];
     this.settings = { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) };
+    // M4A was the default until 1.18: a format never picked by hand becomes MP3 320.
+    const dl = this.settings.downloads;
+    if (dl?.format === 'm4a' && !dl.formatChosen) this.settings.downloads = { ...dl, format: 'mp3' };
+    // Libraries from before 1.18 get the waveform Preview column once, before Time.
+    if (!data.settings?.previewColumn && data.settings?.columns && !this.settings.columns.includes('preview')) {
+      const cols = [...this.settings.columns];
+      const at = cols.indexOf('duration');
+      cols.splice(at < 0 ? cols.length : at, 0, 'preview');
+      this.settings = { ...this.settings, columns: cols, previewColumn: true };
+    }
     this.byPath = new Map([...this.tracks.values()].map((t) => [pathKey(t.path), t.id]));
     this.saveTimer = null;
   }
@@ -370,6 +382,12 @@ export class Library extends EventTarget {
     this.emit('history', { id: h.id });
   }
 
+  /** Ids of the tracks played today (in today's history): marked as played in the browser. */
+  playedToday() {
+    const h = this.histories.find((x) => x.date === today());
+    return new Set(h?.trackIds ?? []);
+  }
+
   /** Delete one day's history (the tracks stay in the collection; play counts are kept). */
   deleteHistory(historyId) {
     const before = this.histories.length;
@@ -395,6 +413,7 @@ export class Library extends EventTarget {
   /** Tracks shown for a tree selection. Each row carries its playlist position. */
   rowsFor(source) {
     if (source === 'collection') return this.all().map((t) => ({ track: t, pos: -1 }));
+    if (source === 'stems') return this.all().filter((t) => t.stems).map((t) => ({ track: t, pos: -1 }));
     if (source === 'tag-list') return this.tagList.map((id, pos) => ({ track: this.tracks.get(id), pos })).filter((r) => r.track);
     const node = this.findNode(source)?.node;
     if (node?.type === 'smart') return evaluateSmartList(node.rules, this.all()).map((t) => ({ track: t, pos: -1 }));

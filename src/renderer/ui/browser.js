@@ -7,12 +7,14 @@ import { findRelated } from '../../shared/related.js';
 import { suggest } from '../../shared/dsp/features.js';
 import { icon } from './icons.js';
 import { mediaUrl } from '../analysis/analyzer.js';
+import { base64ToU8 } from '../../shared/dsp/waveform.js';
 import { editSmartList, relatedPanel } from './lists-ui.js';
 import { openRelink } from './relink.js';
 import { openCdjExport } from './cdj-export.js';
 import { lookupPanel } from './track-lookup.js';
 import { openAutoTag, undoAutoTag } from './autotag.js';
 import { openCleanNames } from './clean-names.js';
+import { openTransferExport, openTransferImport } from './transfer.js';
 import { addedTime, dateAddedText } from '../../shared/date-added.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 
@@ -37,6 +39,7 @@ export const COLUMNS = {
   genre: { label: 'Genre', width: 120, get: (r) => r.track.genre, sort: (r) => (r.track.genre ?? '').toLowerCase() },
   bpm: { label: 'BPM', width: 64, get: (r) => (r.track.bpm ? r.track.bpm.toFixed(2) : ''), sort: (r) => r.track.bpm ?? 0, num: true },
   key: { label: 'Key', width: 50, get: (r, s) => displayKey(r.track.key, s.keyNotation), sort: (r) => CAMELOT.indexOf(r.track.key) },
+  preview: { label: 'Preview', width: 130, get: () => '', sort: (r) => (r.track.wavePreview ? 0 : 1) },
   duration: { label: 'Time', width: 56, get: (r) => (r.track.duration ? fmtTime(r.track.duration) : ''), sort: (r) => r.track.duration ?? 0, num: true },
   rating: { label: 'Rating', width: 76, get: () => '', sort: (r) => r.track.rating ?? 0 },
   dateAdded: { label: 'Date Added', width: 120, get: (r) => dateAddedText(r.track), sort: (r) => `${r.track.dateAdded ?? ''} ${addedTime(r.track) ?? '00:00'}` },
@@ -52,6 +55,41 @@ export const COLUMNS = {
   myTags: { label: 'My Tag', width: 140, get: (r) => (r.track.myTags ?? []).join(', '), sort: (r) => (r.track.myTags ?? []).join(',') },
   location: { label: 'Location', width: 280, get: (r) => r.track.path, sort: (r) => r.track.path },
 };
+
+/** Preview images by track waveform data, width and colour style (rows are re-created on scroll). */
+const previewCache = new Map();
+
+/** Small whole-track waveform of a row (Preview column), from track.wavePreview. */
+function previewCanvas(b64, width, style) {
+  const key = `${width}|${style}|${b64}`;
+  let url = previewCache.get(key);
+  if (!url) {
+    const data = base64ToU8(b64);
+    const cols = data.length / 3;
+    const dpr = devicePixelRatio || 1;
+    const W = Math.max(8, Math.round((width - 8) * dpr)); const H = Math.round(18 * dpr);
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    const colours = style === 'blue' ? ['#1f4fd8', '#3a8cff', '#c8e4ff'] : ['#1d5bff', '#f2971f', '#ffffff'];
+    for (let x = 0; x < W; x++) {
+      const i = Math.min(cols - 1, Math.floor((x / W) * cols)) * 3;
+      const [lo, mi, hi] = [data[i], data[i + 1], data[i + 2]];
+      if (style === 'rgb') {
+        const mx = Math.max(lo, mi, hi) || 1;
+        g.fillStyle = `rgb(${Math.round(255 * (lo / mx) ** 0.65)},${Math.round(255 * (mi / mx) ** 0.65)},${Math.round(255 * (hi / mx) ** 0.65)})`;
+        const hh = (mx / 255) * H; g.fillRect(x, H - hh, 1, hh);
+        continue;
+      }
+      // Drawn from the baseline up, like the deck overview: lows full, mids and highs inside.
+      [lo, mi * 0.62, hi * 0.38].forEach((v, b) => { const hh = (v / 255) * H; g.fillStyle = colours[b]; g.fillRect(x, H - hh, 1, hh); });
+    }
+    url = c.toDataURL();
+    if (previewCache.size > 3000) previewCache.clear();
+    previewCache.set(key, url);
+  }
+  return h('img.wave-preview', { src: url, alt: '', draggable: false });
+}
 
 export class Browser {
   /**
@@ -133,7 +171,13 @@ export class Browser {
   onLibraryChange({ kind }) {
     if (['playlists', 'playlist', 'history', 'taglist', 'tracks'].includes(kind)) this.renderTree();
     if (kind === 'settings') { this.renderHead(); this.renderBody(); return; }
-    if (kind === 'track') { this.rows = this.rows.map((r) => ({ ...r, track: this.lib.get(r.track.id) ?? r.track })); this.renderBody(); return; }
+    if (kind === 'track') {
+      if (this.stemsBadge) this.stemsBadge.textContent = `${this.lib.all().filter((t) => t.stems).length}`;
+      if (this.source === 'stems') { this.refreshRows(); return; }
+      this.rows = this.rows.map((r) => ({ ...r, track: this.lib.get(r.track.id) ?? r.track }));
+      this.renderBody();
+      return;
+    }
     this.refreshRows();
   }
 
@@ -226,8 +270,12 @@ export class Browser {
     this.tree.replaceChildren(
       item('collection', h('span', {}, icon('collection'), 'Collection', h('span.dim.count-badge', {}, `${lib.tracks.size}`)), 'collection'),
       tagItem,
-      item('related', h('span', {}, icon('related'), 'Related Tracks'), 'related'),
-      item('suggest', h('span', {}, icon('suggest'), 'Track Suggestion'), 'suggest'),
+      item('stems', h('span', {}, icon('wave'), 'Stems', (this.stemsBadge = h('span.dim.count-badge', {}, `${lib.all().filter((t) => t.stems).length}`))), 'stems',
+        { title: 'Tracks whose stems are already separated: they load with their stems ready' }),
+      item('related', h('span', {}, icon('related'), 'Related Tracks'), 'related',
+        { title: 'Tracks that match by their tags and analysis: key, BPM, genre, artist, rating… (criteria you choose)' }),
+      item('suggest', h('span', {}, icon('suggest'), 'Track Suggestion'), 'suggest',
+        { title: 'Tracks that sound alike, from the audio itself (timbre, harmony, energy, groove)' }),
       playlistsHeader,
       ...nodes(lib.playlists, 0),
       h('div.tree-section', {}, h('span', {}, 'Histories'),
@@ -266,6 +314,12 @@ export class Browser {
         { label: 'Analyze tracks', action: () => this.app.analyzeTracks(n.trackIds) },
         { label: 'Export as M3U8…', action: () => this.app.exportM3u(n) },
         '-']),
+      { label: 'Send to another Reboxed (USB drive)…', action: () => {
+        const ids = [];
+        const walk = (x) => (x.type === 'folder' ? x.children.forEach(walk) : ids.push(x.id));
+        walk(n);
+        openTransferExport(this.app, ids);
+      } },
       { label: 'Move to', submenu: [
         { label: 'Top level', disabled: lib.playlists.includes(n), action: () => lib.moveNode(n.id, null) },
         ...lib.folderTargets(n.id).map(({ node, depth }) => ({
@@ -292,6 +346,8 @@ export class Browser {
       { label: 'Clean the names of the tracks shown…', action: () => openCleanNames(this.app, (this.selectedRows().length > 1 ? this.selectedRows() : this.rows ?? []).map((r) => r.track.id)) },
       { label: 'Undo the last auto-tag / clean', disabled: !this.app.lastAutoTag?.length, action: () => undoAutoTag(this.app) },
       { label: 'Export collection as XML…', action: () => this.app.exportXml() },
+      { label: 'Send to another Reboxed (USB drive)…', action: () => openTransferExport(this.app) },
+      { label: 'Import from another Reboxed…', action: () => openTransferImport(this.app) },
       '-',
       { label: 'Analyze all unanalyzed tracks', action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },
       { label: 'Find missing files', action: () => this.app.findMissing() },
@@ -303,7 +359,7 @@ export class Browser {
     this.source = source;
     this.selected.clear();
     const node = this.lib.findNode(source)?.node;
-    this.sort = source === 'collection' || node?.type === 'smart' ? { col: 'dateAdded', dir: -1 }
+    this.sort = source === 'collection' || source === 'stems' || node?.type === 'smart' ? { col: 'dateAdded', dir: -1 }
       : source === 'related' || source === 'suggest' ? { col: null, dir: 1 } // keep relevance order
         : { col: 'pos', dir: 1 };
     this.renderTree();
@@ -551,7 +607,7 @@ export class Browser {
       const text = String(def.get(r, settings) ?? '');
       if (text) max = Math.max(max, g.measureText(text).width + (c === 'title' ? 26 : 16));
     }
-    if (!['rating', 'artwork', 'color', 'stems'].includes(c)) this.setColWidth(c, Math.min(900, Math.ceil(max)));
+    if (!['rating', 'artwork', 'color', 'stems', 'preview'].includes(c)) this.setColWidth(c, Math.min(900, Math.ceil(max)));
   }
 
   columnMenu(e) {
@@ -580,12 +636,13 @@ export class Browser {
     this.spacer.style.height = `${this.rows.length * ROW_H}px`;
     this.spacer.style.width = 'var(--total)';
     const loaded = new Set(this.app.engine.decks.filter((d) => d.track).map((d) => d.track.id));
+    const played = this.lib.playedToday();
     const settings = this.lib.settings;
     const frag = [];
     for (let i = first; i < last; i++) {
       const r = this.rows[i];
       const t = r.track;
-      const row = h(`div.tr${this.selected.has(r.key) ? '.sel' : ''}${loaded.has(t.id) ? '.loaded' : ''}${t.missing ? '.missing' : ''}`, {
+      const row = h(`div.tr${this.selected.has(r.key) ? '.sel' : ''}${loaded.has(t.id) ? '.loaded' : ''}${played.has(t.id) ? '.played' : ''}${t.missing ? '.missing' : ''}`, {
         style: { top: `${i * ROW_H}px`, width: 'var(--total)' }, draggable: true, dataset: { i },
       });
       for (const c of this.columns) {
@@ -593,6 +650,10 @@ export class Browser {
         const cell = h(`div.td.c-${c}${def.num ? '.num' : ''}`, { style: { width: `var(--w-${c})` } });
         if (c === 'color') cell.style.background = COLOR_CSS[t.color] ?? 'transparent';
         else if (c === 'artwork') { if (t.artwork) cell.append(h('img.thumb', { src: mediaUrl(t.artwork), loading: 'lazy', alt: '' })); }
+        else if (c === 'preview') {
+          if (t.wavePreview) cell.append(previewCanvas(t.wavePreview, this.colWidth('preview'), settings.waveformColor));
+          else if (t.analyzed) this.app.fillPreview?.(t.id); // analysed before 1.18: made from the stored analysis
+        }
         else if (c === 'stems') {
           const job = this.app.stemJobs?.get(t.id);
           if (job) {
@@ -603,7 +664,11 @@ export class Browser {
         else if (c === 'rating') cell.append(...[1, 2, 3, 4, 5].map((n) => h(`span.star${n <= (t.rating ?? 0) ? '.on' : ''}`, {
           onclick: (e) => { e.stopPropagation(); this.lib.update(t.id, { rating: t.rating === n ? 0 : n }); },
         }, '★')));
-        else if (c === 'title') { cell.textContent = def.get(r, settings) ?? ''; if (!t.analyzed) cell.prepend(h('span.unanalyzed', { title: 'Not analyzed' }, '● ')); }
+        else if (c === 'title') {
+          cell.textContent = def.get(r, settings) ?? '';
+          if (!t.analyzed) cell.prepend(h('span.unanalyzed', { title: 'Not analyzed' }, '● '));
+          if (played.has(t.id)) cell.prepend(h('span.played-mark', { title: 'Already played today' }, '✓ '));
+        }
         else cell.textContent = def.get(r, settings) ?? '';
         if (c === 'key' && t.key) cell.classList.add('keycell');
         row.append(cell);
@@ -683,7 +748,7 @@ export class Browser {
 
   /** Selectable tree items in display order (open folders expanded). */
   treeItems() {
-    const out = ['collection', 'tag-list', 'related', 'suggest'];
+    const out = ['collection', 'tag-list', 'stems', 'related', 'suggest'];
     const walk = (nodes) => nodes.forEach((n) => { out.push(n.id); if (n.type === 'folder' && n.open) walk(n.children); });
     walk(this.lib.playlists);
     this.lib.histories.forEach((h) => out.push(h.id));

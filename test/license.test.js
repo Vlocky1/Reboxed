@@ -54,6 +54,21 @@ test('website config: links (https only) and the beta discount text; offline kee
   assert.equal(lm.status().product.donateUrl, 'https://ko-fi.com/reboxed');
 });
 
+test('website config switches the beta key on and off (betaKeyRequired, betaKeyUrl)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
+  const cfg = (body) => async () => ({ ok: true, json: async () => body });
+  const product = { name: 'Reboxed', price: '5 €', betaEndsAt: '2026-12-30', betaUrl: 'https://shop/beta', betaKeyRequired: false };
+  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: cfg({}), instanceName: 'PC', now: () => T0, product });
+  assert.equal((await lm.load()).mode, 'beta', 'built in: no key while the store cannot hand them out');
+  lm.fetch = cfg({ betaKeyRequired: true, betaKeyUrl: 'https://shop/beta-key' });
+  await lm.loadRemoteConfig();
+  const st = lm.status();
+  assert.deepEqual([st.mode, st.reason, st.product.betaUrl], ['expired', 'betaKey', 'https://shop/beta-key']);
+  lm.fetch = cfg({ betaKeyRequired: false });
+  await lm.loadRemoteConfig();
+  assert.equal(lm.status().mode, 'beta');
+});
+
 test('developer build (run from the source) needs no licence', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
   const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: fakeApi().fetch, instanceName: 'PC', dev: true, now: () => T0 + 400 * DAY });
@@ -119,7 +134,7 @@ test('beta key during the beta, refused after it; the licence then replaces it (
   const endMs = new Date(`${end}T00:00:00`).getTime();
   let now = endMs - 20 * DAY;
   const api = fakeApi();
-  const product = { name: 'Reboxed', price: '5 €', storeId: 1, productId: 2, betaEndsAt: end, betaUrl: 'https://reboxed.lemonsqueezy.com/buy/beta', betaDiscount: '-50 %' };
+  const product = { name: 'Reboxed', price: '5 €', storeId: 1, productId: 2, betaEndsAt: end, betaUrl: 'https://reboxed.lemonsqueezy.com/buy/beta', betaKeyRequired: true, betaDiscount: '-50 %' };
   const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', now: () => now, product });
   assert.equal((await lm.load()).reason, 'betaKey');
   const st = await lm.activate('BETA');

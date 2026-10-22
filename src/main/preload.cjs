@@ -34,6 +34,10 @@ contextBridge.exposeInMainWorld('rb', {
     lookup: (q) => ipcRenderer.invoke('spotify:lookup', q),
   },
   metadata: { lookup: (q, source, opts) => ipcRenderer.invoke('metadata:lookup', q, source, opts) },
+  discogs: {
+    status: () => ipcRenderer.invoke('discogs:status'),
+    setToken: (token) => ipcRenderer.invoke('discogs:setToken', token),
+  },
   artworkFromUrl: (url) => ipcRenderer.invoke('artwork:fromUrl', url),
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),

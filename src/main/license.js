@@ -41,6 +41,9 @@ export class LicenseManager {
       const https = (u) => typeof u === 'string' && /^https:\/\/[^\s]+$/.test(u);
       const patch = {};
       for (const k of ['donateUrl', 'buyUrl', 'betaUrl']) if (https(cfg[k])) patch[k] = cfg[k];
+      // betaKeyUrl: the beta key link under a name 1.17.0 does not read (there, betaUrl alone asks for a key).
+      if (https(cfg.betaKeyUrl)) patch.betaUrl = cfg.betaKeyUrl;
+      if (typeof cfg.betaKeyRequired === 'boolean') patch.betaKeyRequired = cfg.betaKeyRequired;
       if (typeof cfg.betaDiscount === 'string' && cfg.betaDiscount.trim()) patch.betaDiscount = cfg.betaDiscount.trim().slice(0, 200);
       if (typeof cfg.price === 'string' && /^[\d.,]+\s?[€$£]$/.test(cfg.price.trim())) patch.price = cfg.price.trim();
       this.product = { ...this.product, ...patch };
@@ -50,7 +53,7 @@ export class LicenseManager {
   status() {
     const p = this.product;
     const s = this.dev && !this.state.key ? { mode: 'dev' }
-      : licenseStatus(this.state, this.now(), { betaEndsAt: betaEnd(p), betaKeyRequired: !!p.betaUrl });
+      : licenseStatus(this.state, this.now(), { betaEndsAt: betaEnd(p), betaKeyRequired: !!(p.betaKeyRequired && p.betaUrl) });
     if (this.state.betaTester && s.mode === 'expired' && s.reason === 'betaOver') s.betaTester = true;
     return {
       ...s,

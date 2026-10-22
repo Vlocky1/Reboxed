@@ -105,12 +105,15 @@ export function changesFor(t, c, step) {
   return out;
 }
 
-/** The default recipe: titles and artists from Spotify, then the genre from Deezer. */
+/**
+ * The default recipe: titles and artists from Spotify, then the genre from the Genre source
+ * (Discogs + MusicBrainz + Deezer voted, checked against the BPM).
+ */
 export const DEFAULT_RECIPE = {
   tolerance: 4,
   steps: [
     { source: 'spotify', fields: ['title', 'artist'], onlyEmpty: false, titleWithMix: true },
-    { source: 'deezer', fields: ['genre'], onlyEmpty: false, titleWithMix: true },
+    { source: 'genre', fields: ['genre'], onlyEmpty: false, titleWithMix: true },
   ],
 };
 
@@ -134,7 +137,7 @@ export async function runRecipe(tracks, recipe, lookup, { onProgress = () => {},
     for (const step of recipe.steps) {
       if (!step.fields.length) continue;
       const q = queryFor(work);
-      const opts = { complete: false, genres: step.fields.includes('genre'), max: 3, duration: t.duration };
+      const opts = { complete: false, genres: step.fields.includes('genre'), max: 3, duration: t.duration, bpm: t.bpm };
       let r = null; let error = '';
       for (let attempt = 0; attempt < 2 && !r; attempt++) {
         try { r = await lookup({ title: q.title, artist: q.artist }, step.source, opts); } catch (err) {

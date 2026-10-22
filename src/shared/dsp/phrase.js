@@ -8,6 +8,46 @@ export const PHRASE_COLORS = {
   VERSE: '#3fdc5a', BRIDGE: '#a24dff',
 };
 
+/** Every phrase type, in the order the editing menu shows them. */
+export const PHRASE_LABELS = ['INTRO', 'UP', 'VERSE', 'CHORUS', 'BRIDGE', 'DOWN', 'OUTRO'];
+
+/** Number the phrases of each type in order (CHORUS 1, CHORUS 2…), as the analysis does. */
+export function renumberPhrases(phrases) {
+  const counts = {};
+  return phrases.map((p) => { counts[p.label] = (counts[p.label] ?? 0) + 1; return { ...p, num: counts[p.label] }; });
+}
+
+/** Index of the phrase playing at time t, or -1. */
+export const phraseAt = (phrases, t) => phrases.findIndex((p) => t >= p.start && t < p.end);
+
+/** Give phrase i another type (hand correction). */
+export function relabelPhrase(phrases, i, label) {
+  return renumberPhrases(phrases.map((p, k) => (k === i ? { ...p, label } : p)));
+}
+
+/**
+ * Cut phrase i in two at the bar nearest to time t (the second half keeps its type). Unchanged if
+ * the cut would leave an empty part.
+ */
+export function splitPhrase(phrases, i, t) {
+  const p = phrases[i];
+  if (!p || !(p.bars > 1)) return phrases;
+  const barLen = (p.end - p.start) / p.bars;
+  const k = Math.round((t - p.start) / barLen);
+  if (k <= 0 || k >= p.bars) return phrases;
+  const cut = Math.round((p.start + k * barLen) * 1000) / 1000;
+  const a = { ...p, end: cut, bars: k };
+  const b = { ...p, start: cut, startBar: p.startBar + k, bars: p.bars - k };
+  return renumberPhrases([...phrases.slice(0, i), a, b, ...phrases.slice(i + 1)]);
+}
+
+/** Join phrase i with the next one (the first one's type is kept). */
+export function mergePhrase(phrases, i) {
+  const a = phrases[i]; const b = phrases[i + 1];
+  if (!a || !b) return phrases;
+  return renumberPhrases([...phrases.slice(0, i), { ...a, end: b.end, bars: a.bars + b.bars }, ...phrases.slice(i + 2)]);
+}
+
 /** Per-bar features: overall energy, low band (kick/bass), high band (hats/air). */
 function barFeatures(samples, sampleRate, barStarts) {
   const fftSize = 2048;

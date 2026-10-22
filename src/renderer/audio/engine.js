@@ -466,6 +466,22 @@ export class AudioEngine extends EventTarget {
     await this.phonesEl.play();
   }
 
+  /**
+   * A copy of the master on a second device, e.g. the computer's own speakers while the master
+   * goes to a controller's sound card. id: '' = off, 'default' = the system's default output.
+   */
+  async setMasterCopyDevice(id) {
+    if (!id) { this.copyEl?.pause(); return; }
+    if (!this.copyEl) {
+      this.copyDest = this.ctx.createMediaStreamDestination();
+      this.limiter.connect(this.copyDest);
+      this.copyEl = new Audio();
+      this.copyEl.srcObject = this.copyDest.stream;
+    }
+    await this.copyEl.setSinkId(id === 'default' ? '' : id);
+    await this.copyEl.play();
+  }
+
   // ---- recording -----------------------------------------------------------------------------
 
   /**

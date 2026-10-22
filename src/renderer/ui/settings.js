@@ -10,7 +10,7 @@ import { appearanceSection } from './appearance.js';
 import { cleanerSettings } from './clean-names.js';
 import { STEM_ENGINES, ENGINE_NAMES, pickEngine } from '../../shared/stem-engines.js';
 
-const FORMAT_LABELS = [['m4a', 'M4A (AAC, original quality, no re-encode)'], ['mp3', 'MP3 320 kbps'], ['flac', 'FLAC'], ['wav', 'WAV']];
+export const FORMAT_LABELS = [['mp3', 'MP3 320 kbps (recommended, plays everywhere)'], ['m4a', 'M4A (AAC, original quality, no re-encode)'], ['flac', 'FLAC'], ['wav', 'WAV']];
 
 /**
  * Engine choice (Auto / CPU / GPU) and the engine test: speed of each engine on each installed
@@ -54,7 +54,7 @@ function stemEngineRows(app, library, apply) {
 }
 
 /** Stem model status/download, quality, processing engine and cache. */
-async function stemsSection(library, apply, app) {
+export async function stemsSection(library, apply, app) {
   const status = await window.rb.stems.status();
   const s = library.settings;
   const modelRow = (quality, name, size) => {
@@ -168,11 +168,34 @@ async function librarySection(app) {
     })()),
     h('p.dim', {}, 'Move the collection to a folder you choose on your drive: each track is linked to the same music there — same name, another format, or a similar name confirmed by tags and duration — or copied there. You check every doubtful match first. Cues, tags, analysis and playlists are kept, stems move along, and the local files can go to the Recycle Bin.'),
     h('button.dbtn', { onclick: () => openRelink(app) }, 'Move my collection to a USB drive…'),
-    await spotifySection());
+    await spotifySection(),
+    await discogsSection());
+}
+
+/** Discogs personal token: precise styles (Tech House, Deep House…) for the Genre auto-tag source. */
+export async function discogsSection() {
+  const st = await window.rb.discogs.status();
+  const token = h('input.text', { type: 'password', placeholder: st.hasToken ? '•••••••• (saved — type to replace)' : 'Personal access token', spellcheck: false });
+  const status = h('span.dim', {}, st.hasToken ? '✓ Set up' : 'Not set up (the genre then comes from MusicBrainz and Deezer only)');
+  const save = async () => {
+    status.textContent = 'Checking…';
+    try {
+      await window.rb.discogs.setToken(token.value.trim());
+      status.textContent = token.value.trim() ? '✓ Connected to Discogs' : 'Removed';
+      token.value = '';
+    } catch (err) { status.textContent = `✗ ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`; }
+  };
+  return h('div', {},
+    h('h4', {}, 'Precise genres (Discogs)'),
+    h('p.dim', {}, 'Auto-tag ▸ Genre asks Discogs, MusicBrainz and Deezer and keeps the DJ genre they agree on (Tech House, Melodic House & Techno, Drum & Bass…), checked against the BPM. Discogs has the most precise styles for club music and needs a free token: sign in on discogs.com, open Settings ▸ Developers and click "Generate new token", then paste it here. It is stored encrypted on this computer.'),
+    h('div.form-grid', {},
+      h('label', {}, 'Discogs token'), token,
+      h('label', {}, ''), h('div', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
+        h('button.dbtn.small', { onclick: async () => { token.value = ''; await window.rb.discogs.setToken(''); status.textContent = 'Removed'; } }, 'Remove'), ' ', status)));
 }
 
 /** Spotify app credentials for "Search Spotify" in Track information. */
-async function spotifySection() {
+export async function spotifySection() {
   const st = await window.rb.spotify.status();
   const id = h('input.text', { value: st.clientId, placeholder: 'Client ID', spellcheck: false });
   const secret = h('input.text', { type: 'password', placeholder: st.hasSecret ? '•••••••• (saved — type to replace)' : 'Client Secret', spellcheck: false });
@@ -196,7 +219,7 @@ async function spotifySection() {
 }
 
 /** Track downloader preferences (moved here from the download window). */
-async function downloadsSection(app, library) {
+export async function downloadsSection(app, library) {
   const cfg = () => ({ ...DEFAULT_SETTINGS.downloads, ...(library.settings.downloads ?? {}) });
   const save = (patch) => library.setSetting('downloads', { ...cfg(), ...patch });
   const folder = h('code.path');
@@ -204,7 +227,7 @@ async function downloadsSection(app, library) {
   showFolder();
   const c = cfg();
   return h('div.form-grid', {},
-    h('label', {}, 'Audio quality'), h('select', { onchange: (e) => save({ format: e.target.value }) },
+    h('label', {}, 'Audio quality'), h('select', { onchange: (e) => save({ format: e.target.value, formatChosen: true }) },
       FORMAT_LABELS.map(([v, l]) => h('option', { value: v, selected: c.format === v }, l))),
     h('label', {}, 'Download folder'), h('div', {}, folder, ' ',
       h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { save({ folder: d }); showFolder(); } } }, 'Change…')),
@@ -243,7 +266,9 @@ export async function openSettings(library, engine, apply, midi, app) {
             [['maximized', 'Full screen windowed (maximised)'], ['fullscreen', 'Full screen'], ['window', 'Normal window']].map(([v, l]) => h('option', { value: v }, l)));
           window.rb.fullscreen().then((f) => { sel.value = f.startMode; sel.disabled = false; });
           return h('div', {}, sel, h('span.dim', {}, '  F11 switches full screen on / off at any time'));
-        })()))],
+        })(),
+        h('label', {}, 'Setup assistant'), h('div', {}, h('button.dbtn.small', { onclick: () => import('./setup.js').then((m) => m.openSetup(app)) }, 'Open the setup assistant'),
+          h('small', {}, 'Folders and quality, stem models, download tools, Spotify and Discogs, step by step.'))))],
     ['appearance', 'Appearance', () => appearanceSection(library, apply)],
     ['decks', 'Decks & Mixer', () => h('div.form-grid', {},
       h('label', {}, 'Decks'), sel('deckCount', [[2, '2 decks'], [4, '4 decks']], Number),
@@ -257,6 +282,8 @@ export async function openSettings(library, engine, apply, midi, app) {
     ['audio', 'Audio', () => h('div.form-grid', {},
       h('label', {}, 'Master out'), sel('masterDevice', deviceOptions),
       h('label', {}, 'Headphones (cue)'), sel('phonesDevice', [['', 'Off'], ...deviceOptions.slice(1)]),
+      h('label', {}, 'Also play the master on'), h('div', {}, sel('masterCopyDevice', [['', 'Nothing else'], ['default', "This computer's speakers (system default)"], ...deviceOptions.slice(1)]),
+        h('small', {}, 'With a controller plugged in, the sound still comes out of the computer too. Two sound cards are never perfectly in time: use it to listen, not to play to a crowd on both.')),
       h('label', {}, 'Output channels'), sel('outputLayout', [['stereo', 'Stereo (headphones on a 2nd device)'], ['quad', '4 channels: master 1/2, headphones 3/4 (DJ controller)']]),
       h('label', {}, 'Use controller sound card automatically'), check('controllerAudioAuto'))],
     ['library', 'Library', () => librarySection(app)],
