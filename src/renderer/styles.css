@@ -552,6 +552,13 @@ textarea.text { min-height: 54px; resize: vertical; }
 .dlc-new { background: #ff4fa3; color: #fff; font-size: 9px; font-weight: 800; padding: 0 4px; border-radius: 3px; margin-right: 6px; }
 .dlc-follow { background: none; border: 0; color: var(--accent-2); cursor: pointer; font-size: 10px; margin-left: 6px; padding: 0; }
 .dlc-follow:hover { text-decoration: underline; }
+/* Spotify playlist: the track, then what was found for it on YouTube */
+.dlc-sprow .dlc-info { flex: 0 0 38%; }
+.dlc-arrow { color: var(--faint); }
+.dlc-match { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.dlc-yt { color: var(--text); text-decoration: none; }
+.dlc-yt:hover { text-decoration: underline; }
+.dlc-sprow .dlc-action { min-width: 64px; display: flex; justify-content: flex-end; }
 .dlc-dur { width: 48px; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .dlc-action { width: 190px; display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
 .dlc-prog { flex: 1; height: 22px; line-height: 22px; text-align: center; font-size: 10px; font-weight: 700; color: #fff; border-radius: 3px; font-variant-numeric: tabular-nums;

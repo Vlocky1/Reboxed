@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('rb', {
     status: () => ipcRenderer.invoke('spotify:status'),
     setCredentials: (clientId, secret) => ipcRenderer.invoke('spotify:setCredentials', clientId, secret),
     lookup: (q) => ipcRenderer.invoke('spotify:lookup', q),
+    playlist: (url) => ipcRenderer.invoke('spotify:playlist', url),
   },
   metadata: { lookup: (q, source, opts) => ipcRenderer.invoke('metadata:lookup', q, source, opts) },
   discogs: {
