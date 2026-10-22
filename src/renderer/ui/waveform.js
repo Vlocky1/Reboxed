@@ -304,10 +304,20 @@ export class Overview {
     this.deck = deck;
     this.cacheKey = '';
     this.image = null;
+    // Click to jump, hold and drag to slide through the track (a slider over the whole track).
+    canvas.style.cursor = 'pointer';
     canvas.addEventListener('pointerdown', (e) => {
-      if (!deck.loaded) return;
-      const r = canvas.getBoundingClientRect();
-      onSeek(((e.clientX - r.left) / r.width) * deck.duration);
+      if (!deck.loaded || e.button !== 0) return;
+      canvas.setPointerCapture(e.pointerId);
+      const seekAt = (ev) => {
+        const r = canvas.getBoundingClientRect();
+        onSeek(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * deck.duration);
+      };
+      seekAt(e);
+      const up = () => { canvas.removeEventListener('pointermove', seekAt); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', up); };
+      canvas.addEventListener('pointermove', seekAt);
+      canvas.addEventListener('pointerup', up);
+      canvas.addEventListener('pointercancel', up);
     });
   }
 

@@ -40,7 +40,7 @@ test('changes: only ticked fields, only empty ones when asked, title with the mi
   assert.deepEqual(changesFor({ ...t, genre: 'Dance' }, c, { fields: ['genre'] }), [], 'same value: no change');
 });
 
-test('recipe: Spotify cleans title + artist, then Deezer is searched with them for the genre', async () => {
+test('recipe: Spotify cleans title + artist, then the Genre source is searched with them', async () => {
   const asked = [];
   const lookup = async (q, source, opts) => {
     asked.push([source, q.artist, q.title, opts.genres, opts.complete]);
@@ -59,7 +59,7 @@ test('recipe: Spotify cleans title + artist, then Deezer is searched with them f
   const [a, b] = res;
   assert.deepEqual(a.steps[0].changes.map((x) => [x.field, x.to]), [['title', 'Trois nuits par semaine'], ['artist', 'Indochine']]);
   assert.deepEqual(a.steps[1].changes.map((x) => [x.field, x.to]), [['genre', 'Disco']]);
-  assert.deepEqual(asked.filter((x) => x[0] === 'deezer')[0], ['deezer', 'Indochine', 'Trois nuits par semaine', true, false], 'Deezer searched with Spotify\'s title');
+  assert.deepEqual(asked.filter((x) => x[0] === 'genre')[0], ['genre', 'Indochine', 'Trois nuits par semaine', true, false], 'genre searched with Spotify\'s title');
   assert.equal(asked[0][3], false, 'no genre requests for a title + artist step');
   assert.equal(b.steps[0].match, null);
   assert.match(b.steps[0].error, /500/);

@@ -1,6 +1,8 @@
 import { Library } from './library.js';
 import { AudioEngine } from './audio/engine.js';
-import { Analyzer, mediaUrl } from './analysis/analyzer.js';
+import { Analyzer, mediaUrl, waveformArrays } from './analysis/analyzer.js';
+import { wavePreview } from '../shared/dsp/waveform.js';
+import { PHRASE_LABELS, phraseAt, relabelPhrase, splitPhrase, mergePhrase } from '../shared/dsp/phrase.js';
 import { DeckView } from './ui/deck-view.js';
 import { MixerView, FxView, deckOrder } from './ui/mixer-view.js';
 import { Browser } from './ui/browser.js';
@@ -31,6 +33,7 @@ import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.
 import { openRekordboxImport } from './ui/rekordbox-import.js';
 import { DownloadCenter } from './ui/downloads.js';
 import { openRelink } from './ui/relink.js';
+import { openSetup } from './ui/setup.js';
 
 const fmtLoopBeats = (b) => (b >= 1 ? String(Math.round(b * 100) / 100) : `1/${Math.round(1 / b)}`);
 
@@ -203,6 +206,12 @@ class App {
     window.rb.license.status().then(async (st) => {
       this.applyLicense(st);
       if (st.needsCheck) this.applyLicense(await window.rb.license.validate().catch(() => st));
+      // First launch with an empty library: the setup assistant (each step can be skipped).
+      const params = new URLSearchParams(location.search);
+      if (this.license?.mode !== 'expired' && !params.has('smoke') && !params.has('shots') && !this.library.settings.setupDone) {
+        if (this.library.tracks.size) this.library.setSetting('setupDone', true); // libraries from before 1.18
+        else openSetup(this);
+      }
     });
     // New releases from followed channels, quietly, a few seconds after start.
     if (!new URLSearchParams(location.search).has('smoke') && !new URLSearchParams(location.search).has('shots') && this.library.settings.checkUpdates !== false) {
@@ -230,21 +239,28 @@ class App {
         .catch(() => toast('Master output device unavailable'));
     }
     if (s.phonesDevice) this.engine.setPhonesDevice(s.phonesDevice).catch(() => toast('Headphone device unavailable'));
+    if ((s.masterCopyDevice ?? '') !== (this.masterCopyApplied ?? '')) {
+      this.masterCopyApplied = s.masterCopyDevice ?? '';
+      this.engine.setMasterCopyDevice(this.masterCopyApplied).catch(() => toast('Second master output unavailable'));
+    }
   }
 
   /** @param {string} [tab] general | decks | audio | library | stems | downloads | midi | keyboard */
   openSettings(tab) {
     if (typeof tab === 'string') { try { localStorage.setItem('reboxed.settingsTab', tab); } catch { /* private storage */ } }
-    return openSettings(this.library, this.engine, (key, value) => {
-      this.library.setSetting(key, value);
-      if (key === 'masterDevice') this.engine.setMasterDevice(value).catch((e) => toast(String(e)));
-      else if (key === 'outputLayout') { try { this.engine.setOutputLayout(value); } catch (e) { toast(e.message, 6000); } }
-      else if (key === 'phonesDevice') this.engine.setPhonesDevice(value).catch((e) => toast(String(e)));
-      else if (key === 'deckCount') this.applyLayout();
-      else if (['theme', 'themeAccent', 'uiScale', 'topbarLabels'].includes(key)) applyTheme(this.library.settings);
-      else this.applySettingsToEngine();
-      this.deckViews.forEach((v) => v.refresh());
-    }, this.midi, this);
+    return openSettings(this.library, this.engine, (key, value) => this.applySetting(key, value), this.midi, this);
+  }
+
+  /** Change one setting and apply it (Preferences, setup assistant). */
+  applySetting(key, value) {
+    this.library.setSetting(key, value);
+    if (key === 'masterDevice') this.engine.setMasterDevice(value).catch((e) => toast(String(e)));
+    else if (key === 'outputLayout') { try { this.engine.setOutputLayout(value); } catch (e) { toast(e.message, 6000); } }
+    else if (key === 'phonesDevice') this.engine.setPhonesDevice(value).catch((e) => toast(String(e)));
+    else if (key === 'deckCount') this.applyLayout();
+    else if (['theme', 'themeAccent', 'uiScale', 'topbarLabels'].includes(key)) applyTheme(this.library.settings);
+    else this.applySettingsToEngine();
+    this.deckViews.forEach((v) => v.refresh());
   }
 
   onLibraryChange({ kind, id }) {
@@ -349,10 +365,15 @@ class App {
   }
 
   async storeAnalysis(trackId, result, duration) {
+    // Phrases corrected by hand survive a new analysis.
+    const before = await window.rb.getAnalysis(trackId).catch(() => null);
+    if (before?.phrases?.edited) result = { ...result, phrases: before.phrases };
     await window.rb.putAnalysis(trackId, result);
     const t = this.library.get(trackId);
     if (t) {
-      const patch = { analyzed: true, key: (t.source === 'rekordbox' && t.key) || result.key || t.key, duration: duration || t.duration, features: result.features };
+      const wf = waveformArrays(result);
+      const patch = { analyzed: true, key: (t.source === 'rekordbox' && t.key) || result.key || t.key, duration: duration || t.duration, features: result.features,
+        ...(wf ? { wavePreview: wavePreview(wf) } : {}) };
       if (!t.beatgrid && result.beatgrid) { patch.beatgrid = result.beatgrid; patch.bpm = result.beatgrid.bpm; }
       // Intelligent cue creation (Preferences > Analysis), never overwriting the DJ's cues.
       if (this.library.settings.autoCues && result.phrases?.phrases?.length && !t.cues?.length) {
@@ -363,6 +384,31 @@ class App {
       for (const d of this.engine.decks) if (d.track?.id === trackId) d.updateTrack(fresh, this.deckAnalysis(fresh, { ...d.analysis, ...result }));
     }
     return result;
+  }
+
+  /**
+   * Browser Preview column for a track analysed before 1.18: the small waveform is made from its
+   * stored analysis, a few at a time (rows on screen ask for it).
+   */
+  fillPreview(trackId) {
+    this.previewQueue ??= new Set();
+    if (this.previewQueue.has(trackId) || this.previewTried?.has(trackId)) return;
+    this.previewQueue.add(trackId);
+    if (this.previewRunning) return;
+    this.previewRunning = true;
+    this.previewTried ??= new Set();
+    (async () => {
+      while (this.previewQueue.size) {
+        const id = this.previewQueue.values().next().value;
+        this.previewQueue.delete(id);
+        this.previewTried.add(id);
+        try {
+          const wf = waveformArrays(await window.rb.getAnalysis(id));
+          if (wf) this.library.update(id, { wavePreview: wavePreview(wf) });
+        } catch { /* no stored analysis: the cell stays empty */ }
+      }
+      this.previewRunning = false;
+    })();
   }
 
   /** Deck/browser action: add phrase-based cues to a track (keeps existing hot cue slots). */
@@ -951,7 +997,7 @@ class App {
       this.engine.setOutputLayout(layout);
       this.library.setSetting('masterDevice', dev.deviceId);
       this.library.setSetting('outputLayout', layout);
-      toast(layout === 'quad' ? `${name} audio: master on outputs 1/2, headphones on 3/4` : `${name} audio: master output`, 5000);
+      toast(`${layout === 'quad' ? `${name} audio: master on outputs 1/2, headphones on 3/4` : `${name} audio: master output`}${s.masterCopyDevice ? '' : ' · to hear it on the computer too: Preferences > Audio'}`, 6000);
     } catch (err) {
       toast(`${name} audio: ${err.message}`, 6000);
     }
@@ -1086,7 +1132,7 @@ class App {
 
   attachScrub(canvas, deck) {
     canvas.addEventListener('pointerdown', (e) => {
-      if (!deck.loaded) return;
+      if (!deck.loaded || e.button !== 0) return; // right button: the phrase menu
       canvas.setPointerCapture(e.pointerId);
       const wasPlaying = deck.playing;
       if (wasPlaying) deck.pause();
@@ -1105,6 +1151,49 @@ class App {
       e.preventDefault();
       this.zoom = Math.max(1, Math.min(32, this.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
     }, { passive: false });
+    // Right-click: edit the phrase under the mouse (its type, cut it, join it with the next).
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const phrases = deck.analysis?.phrases?.phrases;
+      if (!deck.loaded || !phrases?.length) { toast('No phrases on this track yet (analyse it first)'); return; }
+      const r = canvas.getBoundingClientRect();
+      const t = deck.position() + ((e.clientX - r.left) / r.width - 0.5) * this.zoom * (deck.rate || 1);
+      const i = phraseAt(phrases, t);
+      if (i < 0) return;
+      const p = phrases[i];
+      const save = (next) => this.setPhrases(deck, next);
+      contextMenu(e.clientX, e.clientY, [
+        { label: `${p.label}${p.num > 1 ? ` ${p.num}` : ''} · ${p.bars} bars`, disabled: true },
+        { label: 'Change to', submenu: PHRASE_LABELS.map((l) => ({ label: l, checked: l === p.label, action: () => save(relabelPhrase(phrases, i, l)) })) },
+        { label: 'Cut the phrase here (at the nearest bar)', disabled: !(p.bars > 1), action: () => save(splitPhrase(phrases, i, t)) },
+        { label: 'Join with the next phrase', disabled: i >= phrases.length - 1, action: () => save(mergePhrase(phrases, i)) },
+        '-',
+        { label: 'Back to the analysed phrases', disabled: !deck.analysis.phrases.edited, action: () => this.resetPhrases(deck) },
+      ]);
+    });
+  }
+
+  /** Save phrases corrected by hand (kept in the track's analysis; analysis again keeps them). */
+  async setPhrases(deck, phrases) {
+    const id = deck.track.id;
+    const stored = (await window.rb.getAnalysis(id)) ?? {};
+    const original = stored.phrases?.original ?? stored.phrases?.phrases ?? deck.analysis?.phrases?.phrases ?? [];
+    const next = { ...(stored.phrases ?? deck.analysis?.phrases ?? {}), phrases, edited: true, original };
+    await window.rb.putAnalysis(id, { ...stored, phrases: next });
+    deck.analysis = { ...deck.analysis, phrases: next };
+    deck.emit('analysis');
+  }
+
+  async resetPhrases(deck) {
+    const id = deck.track.id;
+    const stored = (await window.rb.getAnalysis(id)) ?? {};
+    const original = stored.phrases?.original;
+    if (!original) return;
+    const next = { ...stored.phrases, phrases: original };
+    delete next.edited; delete next.original;
+    await window.rb.putAnalysis(id, { ...stored, phrases: next });
+    deck.analysis = { ...deck.analysis, phrases: next };
+    deck.emit('analysis');
   }
 
   // ---- recording -------------------------------------------------------------------------------
@@ -2563,8 +2652,8 @@ async function smoke(app) {
         undoAutoTag(app);
         const undone = lib.get(k128.id);
         Object.assign(autotagApi, real);
-        step('auto-tag: Spotify title + artist, then Deezer genre with them; review, apply, undo',
-          stepsShown === 2 && changes.join() === 'Title=Kick 128 (Original Mix),Artist=Smoke DJ,Genre=Techno' && asked.join() === `spotify:${before.artist}|Kick 128,deezer:Smoke DJ|Kick 128 (Original Mix)`
+        step('auto-tag: Spotify title + artist, then the genre with them; review, apply, undo',
+          stepsShown === 2 && changes.join() === 'Title=Kick 128 (Original Mix),Artist=Smoke DJ,Genre=Techno' && asked.join() === `spotify:${before.artist}|Kick 128,genre:Smoke DJ|Kick 128 (Original Mix)`
             && applied.title === 'Kick 128 (Original Mix)' && applied.artist === 'Smoke DJ' && applied.genre === 'Techno'
             && undone.title === 'Kick 128' && (undone.artist ?? '') === before.artist && (undone.genre ?? '') === '',
           `${stepsShown} steps · ${changes} · asked ${asked} · applied ${JSON.stringify(applied)} · undo → ${undone.title}/${undone.artist}/${undone.genre}`);
@@ -2670,6 +2759,83 @@ async function smoke(app) {
       await window.rb.setFullscreen({ startMode: 'maximized' });
       step('window at start: maximised by default (setting)', fs.startMode === 'maximized' && fs.now === false && full.startMode === 'fullscreen',
         `default ${fs.startMode}, smoke window full screen=${fs.now}, after change ${full.startMode}`);
+    }
+
+    // ---- 1.18: Stems list, Preview column, played tracks, phrases by hand, transfer, setup, second output ----
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const b = app.browser;
+      const kicks = lib.all().filter((t) => /^Kick (100|128|140)/.test(t.title) && t.analyzed);
+      b.select('stems'); await wait(50);
+      const stemRows = b.rows.length; const withStems = lib.all().filter((t) => t.stems).length;
+      if (!lib.settings.columns.includes('preview')) lib.setSetting('columns', [...lib.settings.columns, 'preview']);
+      b.select('collection'); await wait(150);
+      const showRow = async (id) => { b.scroller.scrollTop = Math.max(0, b.rows.findIndex((r) => r.track.id === id) * 24 - 24); b.renderBody(); await wait(50); };
+      await showRow(kicks[0].id);
+      const previews = b.body.querySelectorAll('img.wave-preview').length;
+      step('Stems list and waveform Preview column', stemRows === withStems && kicks.length > 0 && kicks.every((t) => t.wavePreview?.length > 100) && previews > 0,
+        `stems ${stemRows}/${withStems} · previews ${kicks.filter((t) => t.wavePreview).length}/${kicks.length} tracks, ${previews} on screen`);
+
+      lib.addToHistory(kicks[0].id); await wait(100);
+      await showRow(kicks[0].id);
+      const row =[...b.body.querySelectorAll('.tr')].find((r) => b.rows[Number(r.dataset.i)]?.track.id === kicks[0].id);
+      step('a track played today is marked in the browser', lib.playedToday().has(kicks[0].id) && !!row?.classList.contains('played') && !!row.querySelector('.played-mark'),
+        `played ${lib.playedToday().size} · row ${row?.className}`);
+
+      const ph = [{ start: 0, end: 8, startBar: 0, bars: 4, label: 'INTRO', num: 1 }, { start: 8, end: 16, startBar: 4, bars: 4, label: 'CHORUS', num: 1 }];
+      const before = d1.analysis?.phrases?.phrases ?? [];
+      await app.setPhrases(d1, ph);
+      await app.setPhrases(d1, relabelPhrase(d1.analysis.phrases.phrases, 0, 'DOWN'));
+      const stored = await window.rb.getAnalysis(d1.track.id);
+      const edited = stored?.phrases?.edited && stored.phrases.phrases[0].label === 'DOWN' && d1.analysis.phrases.phrases[0].label === 'DOWN';
+      await app.resetPhrases(d1);
+      step('phrases changed by hand are saved, and can be reset', !!edited && !d1.analysis.phrases.edited && d1.analysis.phrases.phrases.length === before.length,
+        `edited ${edited} · after reset ${d1.analysis.phrases.phrases.length} phrase(s) (${before.length} before)`);
+
+      // Send two tracks to "a USB drive", then import them as the other computer would.
+      const { openTransferExport, openTransferImport } = await import('./ui/transfer.js');
+      lib.update(kicks[0].id, { myTags: ['peak', 'smoke'] });
+      const send = lib.createNode('playlist', 'To the other PC');
+      lib.addToPlaylist(send.id, kicks.slice(0, 2).map((t) => t.id));
+      const clickPrimary = async () => { for (let i = 0; i < 40 && !document.querySelector('.transfer'); i++) await wait(25); document.querySelector('.dialog:has(.transfer) .dialog-buttons button.primary').click(); };
+      const exp = openTransferExport(app, [send.id], { dir: `${dir}\\usb` });
+      await clickPrimary();
+      const sent = await exp;
+      const imp = openTransferImport(app, { xmlPath: sent?.xmlPath, dest: `${dir}\\other-pc` });
+      await clickPrimary();
+      const rep = await imp;
+      const folder = lib.findNode(rep?.folderId)?.node;
+      const got = folder?.children?.[0]?.trackIds.map((id) => lib.get(id)) ?? [];
+      // Same computer here: the tracks are already in the collection, so they are updated (moved to
+      // the copies) instead of added; on another computer they are added.
+      step('send to another Reboxed and import there: music copied, playlist, tags and cues kept',
+        sent?.tracks === 2 && rep?.added + rep?.updated === 2 && got.length === 2 && got.every((t) => t.path.startsWith(`${dir}\\other-pc\\`)) && got.some((t) => t.myTags?.join() === 'peak,smoke')
+          && got.every((t) => t.beatgrid),
+        `sent ${sent?.tracks} · import ${JSON.stringify(rep)} · ${got.map((t) => `${t.title} ${t.path.split('\\').slice(-2).join('\\')} [${t.myTags}]`).join(' | ')}`);
+      kicks.slice(0, 2).forEach((t) => lib.relink(t.id, t.path)); // back to the original files
+      lib.deleteNode(folder.id); lib.deleteNode(send.id);
+
+      lib.setSetting('setupDone', false);
+      const setup = openSetup(app); await wait(200);
+      const first = document.querySelector('.setup-dialog h2')?.textContent;
+      document.querySelector('.setup-dialog .dialog-buttons button.primary').click(); await wait(300);
+      const second = document.querySelector('.setup-dialog h2')?.textContent;
+      const hasQuality = !!document.querySelector('.setup-dialog select');
+      document.querySelector('.setup-dialog').closest('.overlay').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await setup;
+      step('setup assistant: steps, skippable', first === 'Welcome to Reboxed' && second === 'Folders and quality' && hasQuality && lib.settings.setupDone && !document.querySelector('.setup-dialog'),
+        `${first} → ${second} · quality select ${hasQuality} · done ${lib.settings.setupDone}`);
+
+      let copyErr = '';
+      try { await app.engine.setMasterCopyDevice('default'); await app.engine.setMasterCopyDevice(''); } catch (err) { copyErr = err.message; }
+      step('master also on the computer (second output)', !copyErr && !!app.engine.copyEl, copyErr || 'default device, then off');
+
+      const settingsOpen = app.openSettings('general'); await wait(300);
+      const grid = document.querySelector('.settings-content .form-grid');
+      const cells = [...grid.children];
+      const uneven = cells.filter((c, i) => i % 2 === 0 && cells[i + 1] && Math.abs(c.getBoundingClientRect().height - cells[i + 1].getBoundingClientRect().height) > 0.5).length;
+      document.querySelector('.settings-close').click(); await settingsOpen;
+      step('preferences rows: label and value cells as tall (straight lines)', uneven === 0, `${uneven} uneven row(s) of ${cells.length / 2}`);
     }
 
     if (!d1.hotCue(0)) d1.hotCuePress(0); // automix replaced deck 1's track

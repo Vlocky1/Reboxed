@@ -117,6 +117,7 @@ export function importRekordboxXml(text) {
       label: a.Label ?? '',
       mixName: a.Mix ?? '',
       color: colourName(a.Colour),
+      ...(a.RbMyTags ? { myTags: a.RbMyTags.split(',').map((x) => x.trim()).filter(Boolean) } : {}),
       source: 'rekordbox',
       xmlId: a.TrackID ?? '',
       // One TEMPO = constant grid; several = dynamic grid (a beat list is rebuilt from them).
@@ -205,6 +206,8 @@ export function exportRekordboxXml(library, { productVersion = '0.2.0' } = {}) {
       PlayCount: String(t.playCount ?? 0), Rating: String(RATING_OUT[t.rating ?? 0] ?? 0),
       Location: pathToLocation(t.path), Remixer: t.remixer ?? '', Tonality: displayKey(t.key, 'musical'),
       Label: t.label ?? '', Mix: t.mixName ?? '', Colour: HEX_BY_COLOR.get(t.color),
+      // Reboxed's own fields (other software ignores unknown attributes).
+      RbMyTags: t.myTags?.length ? t.myTags.join(', ') : undefined,
     }, children };
   });
 

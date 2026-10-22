@@ -103,6 +103,29 @@ export function loudnessDb(samples, sampleRate) {
   return Math.round(10 * Math.log10(energy) * 10) / 10;
 }
 
+export const PREVIEW_COLS = 120;
+
+/**
+ * Small whole-track waveform kept on the track for the browser's Preview column: PREVIEW_COLS
+ * columns of [low, mid, high] peaks, one base64 string (~480 characters).
+ * @param {{low: Uint8Array, mid: Uint8Array, high: Uint8Array}} wf decoded band peaks
+ */
+export function wavePreview(wf, cols = PREVIEW_COLS) {
+  const n = wf.low.length;
+  if (!n) return '';
+  const out = new Uint8Array(cols * 3);
+  [wf.low, wf.mid, wf.high].forEach((band, b) => {
+    for (let c = 0; c < cols; c++) {
+      const a = Math.floor((c * n) / cols);
+      const z = Math.max(a + 1, Math.floor(((c + 1) * n) / cols));
+      let m = 0;
+      for (let i = a; i < z && i < n; i++) if (band[i] > m) m = band[i];
+      out[c * 3 + b] = m;
+    }
+  });
+  return u8ToBase64(out);
+}
+
 /** Base64 encoding that works for large arrays in browsers too. */
 export function u8ToBase64(u8) {
   if (typeof Buffer !== 'undefined') return Buffer.from(u8).toString('base64');

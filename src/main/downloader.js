@@ -222,7 +222,7 @@ export class Downloader {
       progress({ state: 'starting', pct: 0 });
       const child = spawn(exe, [
         item.url, '--no-playlist', '--windows-filenames', '--no-mtime',
-        ...(FORMATS[opts.format] ?? FORMATS.m4a), ...METADATA, ...args,
+        ...(FORMATS[opts.format] ?? FORMATS.mp3), ...METADATA, ...args,
         '-o', out, '--newline', '--progress', '--progress-template', PROGRESS,
         '--print', 'after_move:[rbfile] %(filepath)s',
       ], { windowsHide: true });

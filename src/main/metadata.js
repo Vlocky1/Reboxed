@@ -1,6 +1,7 @@
 // Online track information: Deezer (always, no account) and Spotify (when its credentials are set).
 // Spotify has no genre for most artists any more: a Spotify result takes the genre and label of the
 // same recording on Deezer (same ISRC, or same artist and title).
+import { chooseGenre } from '../shared/genre.js';
 
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const key = (c) => `${norm(String(c.artist).split(',')[0])}|${norm(c.title)}`;
@@ -23,9 +24,37 @@ export function mergeCandidates(spotify, deezer) {
 }
 
 export class MetadataLookup {
-  /** @param {{spotify: import('./spotify.js').Spotify, deezer: import('./deezer.js').Deezer, spotifyReady: () => boolean}} o */
-  constructor({ spotify, deezer, spotifyReady }) {
-    Object.assign(this, { spotify, deezer, spotifyReady });
+  /**
+   * @param {{spotify: import('./spotify.js').Spotify, deezer: import('./deezer.js').Deezer, spotifyReady: () => boolean,
+   *          genres?: import('./genres.js').GenreSources}} o
+   */
+  constructor({ spotify, deezer, spotifyReady, genres = null }) {
+    Object.assign(this, { spotify, deezer, spotifyReady, genres });
+  }
+
+  /**
+   * "Genre" source: the track found on Deezer (to check it is the right one), its genre voted by
+   * Discogs styles, MusicBrainz genres and Deezer's album genre, checked against the BPM.
+   * @param {{title: string, artist?: string}} q
+   * @param {{duration?: number, bpm?: number}} opts
+   */
+  async lookupGenre(q, opts = {}) {
+    const errors = [];
+    const soft = (p, name) => p.catch((err) => { errors.push(`${name}: ${err.message}`); return null; });
+    const [dz, mb, dc] = await Promise.all([
+      soft(this.deezer.lookup(q, { max: 3, duration: opts.duration }), 'Deezer'),
+      soft(this.genres?.musicbrainz({ ...q, duration: opts.duration }) ?? Promise.resolve(null), 'MusicBrainz'),
+      soft(this.genres?.discogs(q) ?? Promise.resolve(null), 'Discogs'),
+    ]);
+    const sources = ['Deezer', ...(mb ? ['MusicBrainz'] : []), ...(dc ? ['Discogs'] : [])];
+    const vote = (c) => {
+      const best = chooseGenre([mb, dc, c ? { source: 'deezer', tags: c.genres } : null].filter(Boolean), { bpm: opts.bpm });
+      return { genre: best?.genre ?? c?.genre ?? '', genres: best?.ranked.map((x) => x.genre) ?? c?.genres ?? [], genreFrom: sources.join(' + ') };
+    };
+    const candidates = (dz ?? []).map((c) => ({ ...c, source: 'genre', ...vote(c) }));
+    // Not on Deezer: MusicBrainz / Discogs matched the artist and title themselves.
+    if (!candidates.length && (mb || dc)) candidates.push({ source: 'genre', title: q.title, artist: q.artist ?? '', mixName: '', duration: opts.duration ?? 0, ...vote(null) });
+    return { candidates, errors, sources };
   }
 
   /**
@@ -36,6 +65,7 @@ export class MetadataLookup {
    * @returns {Promise<{candidates: object[], errors: string[], sources: string[]}>}
    */
   async lookup(q, source = 'deezer', opts = {}) {
+    if (source === 'genre') return this.lookupGenre(q, opts);
     if (source !== 'spotify') {
       const candidates = await this.deezer.lookup(q, opts);
       return { candidates, errors: [], sources: ['Deezer'] };

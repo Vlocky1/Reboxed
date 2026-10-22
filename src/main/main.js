@@ -11,6 +11,7 @@ import { scanPaths, readTags, findFiles, listAudio, AUDIO_EXTENSIONS } from './s
 import { StemService } from './stems.js';
 import { Storage, migrateLegacyAppDir, hasLibrary, copyDatabase, moveStemsRoot } from './storage.js';
 import { Downloader } from './downloader.js';
+import { GenreSources } from './genres.js';
 import { ToolInstaller, TOOLS } from './tools.js';
 import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
@@ -153,8 +154,22 @@ function registerIpc(win) {
   });
   ipcMain.handle('spotify:lookup', (_e, q) => spotify.lookup(q));
   // Deezer (no account) + Spotify (when set up), merged: Deezer brings the genres Spotify lacks.
-  const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: timedFetch }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret) });
+  // Genre: Discogs styles (personal token, stored encrypted) + MusicBrainz + Deezer, voted.
+  const discogsToken = () => {
+    const enc = storage.cfg.discogs?.token;
+    if (!enc) return null;
+    try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
+  };
+  const genres = new GenreSources({ fetch: timedFetch, discogsToken });
+  const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: timedFetch }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret), genres });
   ipcMain.handle('metadata:lookup', (_e, q, source, opts) => metadata.lookup(q, source, opts));
+  ipcMain.handle('discogs:status', () => ({ hasToken: !!storage.cfg.discogs?.token }));
+  ipcMain.handle('discogs:setToken', async (_e, token) => {
+    if (token) await genres.checkDiscogs(token); // refused tokens are not saved
+    storage.cfg.discogs = token ? { token: safeStorage.encryptString(token).toString('base64') } : null;
+    await storage.save();
+    return { hasToken: !!token };
+  });
   /** Cover from a URL (Spotify, Deezer) -> library artwork thumbnail path. */
   ipcMain.handle('artwork:fromUrl', async (_e, url) => {
     if (!/^https:\/\/(i\.scdn\.co|cdn-images\.dzcdn\.net|e-cdns-images\.dzcdn\.net)\//.test(url)) throw new Error('unsupported artwork URL');

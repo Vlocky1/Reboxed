@@ -4,7 +4,7 @@
 import { h, toast } from './dom.js';
 import { DEFAULT_RECIPE, TAG_FIELDS, runRecipe } from '../../shared/autotag.js';
 
-const SOURCES = { spotify: 'Spotify', deezer: 'Deezer' };
+const SOURCES = { spotify: 'Spotify', deezer: 'Deezer', genre: 'Genre (Discogs + MusicBrainz + Deezer)' };
 const LABEL = Object.fromEntries(TAG_FIELDS);
 const clone = (x) => JSON.parse(JSON.stringify(x));
 /** Lookups (replaced by the smoke test, which runs offline). */
@@ -16,6 +16,8 @@ export function openAutoTag(app, ids) {
   const tracks = ids.map((id) => lib.get(id)).filter(Boolean);
   if (!tracks.length) return Promise.resolve(null);
   const recipe = clone(lib.settings.autoTagRecipe ?? DEFAULT_RECIPE);
+  // Recipes saved before 1.18 took the genre from Deezer alone: they move to the Genre source once.
+  if (!recipe.v) { recipe.steps.forEach((s) => { if (s.source === 'deezer' && s.fields.join() === 'genre') s.source = 'genre'; }); recipe.v = 2; }
 
   return new Promise((resolve) => {
     const title = h('h2', {}, `Auto-tag ${tracks.length} track${tracks.length > 1 ? 's' : ''}`);
@@ -43,7 +45,9 @@ export function openAutoTag(app, ids) {
         h('div.at-opts', {},
           h('label', {}, h('input', { type: 'checkbox', checked: !!step.onlyEmpty, onchange: (e) => { step.onlyEmpty = e.target.checked; } }), ' Only fill empty fields'),
           h('label', {}, h('input', { type: 'checkbox', checked: step.titleWithMix !== false, onchange: (e) => { step.titleWithMix = e.target.checked; } }), ' Mix name in the title (“Song (Extended Mix)”)'),
-          step.source === 'spotify' && step.fields.includes('genre') ? h('span.at-warn', {}, 'Spotify has almost no genres: take the genre from Deezer.') : null))));
+          step.source === 'spotify' && step.fields.includes('genre') ? h('span.at-warn', {}, 'Spotify has almost no genres: take the genre from the Genre source.') : null,
+          step.source === 'deezer' && step.fields.includes('genre') ? h('span.at-warn', {}, 'Deezer only knows the album\'s broad genre (Dance, Electro…): the Genre source is much more precise.') : null,
+          step.source === 'genre' ? h('span.dim', {}, 'Genre only: Discogs styles (if your free token is set in Preferences > Library), MusicBrainz and Deezer vote, and a genre that does not fit the BPM is left out.') : null))));
       render();
       const tol = h('select', { onchange: (e) => { recipe.tolerance = Number(e.target.value); } },
         [[2, '± 2 s'], [4, '± 4 s'], [8, '± 8 s'], [9999, 'ignore the duration']].map(([v, l]) => h('option', { value: v, selected: recipe.tolerance === v }, l)));
@@ -51,8 +55,8 @@ export function openAutoTag(app, ids) {
         h('p.dim', {}, 'Steps run in order on every track. Each step searches with the track as the previous steps left it, so Deezer can search with the title Spotify cleaned. A result is used only when the artist, the title and the duration agree; you check every change before it is saved.'),
         steps,
         h('div.frow', {},
-          h('button.dbtn.small', { type: 'button', onclick: () => { recipe.steps.push({ source: 'deezer', fields: ['genre'], onlyEmpty: false, titleWithMix: true }); render(); } }, '+ Add a step'),
-          h('button.dbtn.small', { type: 'button', onclick: () => { Object.assign(recipe, clone(DEFAULT_RECIPE)); setup(); } }, 'Default recipe (Spotify title + artist, Deezer genre)'),
+          h('button.dbtn.small', { type: 'button', onclick: () => { recipe.steps.push({ source: 'genre', fields: ['genre'], onlyEmpty: false, titleWithMix: true }); render(); } }, '+ Add a step'),
+          h('button.dbtn.small', { type: 'button', onclick: () => { Object.assign(recipe, clone(DEFAULT_RECIPE)); setup(); } }, 'Default recipe (Spotify title + artist, then the genre)'),
           h('span.spacer'), h('label', {}, 'Same duration: ', tol)));
       setButtons([{ label: 'Cancel', onclick: () => close(null) }, { label: 'Find the changes', primary: true, onclick: () => run() }]);
     }
