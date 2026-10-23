@@ -15,6 +15,7 @@ import { lookupPanel } from './track-lookup.js';
 import { openAutoTag, undoAutoTag } from './autotag.js';
 import { openCleanNames } from './clean-names.js';
 import { openTransferExport, openTransferImport } from './transfer.js';
+import { openDuplicates } from './duplicates.js';
 import { addedTime, dateAddedText } from '../../shared/date-added.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 
@@ -314,6 +315,7 @@ export class Browser {
         { label: 'Analyze tracks', action: () => this.app.analyzeTracks(n.trackIds) },
         { label: 'Export as M3U8…', action: () => this.app.exportM3u(n) },
         '-']),
+      ...(n.type !== 'folder' ? [{ label: 'Find duplicates…', action: () => openDuplicates(this.app, n.id) }] : []),
       { label: 'Send to another Reboxed (USB drive)…', action: () => {
         const ids = [];
         const walk = (x) => (x.type === 'folder' ? x.children.forEach(walk) : ids.push(x.id));
@@ -349,6 +351,7 @@ export class Browser {
       { label: 'Send to another Reboxed (USB drive)…', action: () => openTransferExport(this.app) },
       { label: 'Import from another Reboxed…', action: () => openTransferImport(this.app) },
       '-',
+      { label: 'Find duplicates in the collection…', action: () => openDuplicates(this.app) },
       { label: 'Analyze all unanalyzed tracks', action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },
       { label: 'Find missing files', action: () => this.app.findMissing() },
       { label: 'Move my collection to a USB drive…', action: () => openRelink(this.app) },

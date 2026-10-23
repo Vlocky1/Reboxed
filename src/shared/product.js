@@ -5,13 +5,13 @@
 export const PRODUCT = {
   name: 'Reboxed',
   price: '5 €',
-  buyUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/3639fa22-a137-4f19-986e-ad7dbe941e4c',
+  buyUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/7917cede-69b0-411f-990d-169fae665325',
   storeId: null,
   productId: null,
   // Open beta: until this date (local midnight). Beta keys stop working then; beta testers get a discount.
   betaEndsAt: '2026-12-30',
   // Free "Reboxed Beta" product (0 €) whose keys register the testers.
-  betaUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/f508be5f-68f4-4fd3-b365-8206ee56d1c9',
+  betaUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/091a7519-f694-4e80-b2c7-77ef3d3426fa',
   // Does the beta ask for that key? Off until the store can hand out keys; the website's app-config.json
   // (betaKeyRequired) turns it on without a new version.
   betaKeyRequired: false,

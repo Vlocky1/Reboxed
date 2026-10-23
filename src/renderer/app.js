@@ -2830,6 +2830,49 @@ async function smoke(app) {
       try { await app.engine.setMasterCopyDevice('default'); await app.engine.setMasterCopyDevice(''); } catch (err) { copyErr = err.message; }
       step('master also on the computer (second output)', !copyErr && !!app.engine.copyEl, copyErr || 'default device, then off');
 
+      // Duplicate finder on real audio: a song, its copy at another level, its radio edit (starts
+      // 16 s later) and a "VIP Remix" with the same name but other music.
+      {
+        const sr = ctx.sampleRate;
+        const song = (seed, seconds, from = 0, gain = 1) => {
+          const buf = syntheticTrack(ctx, 124, seconds);
+          const sect = (k) => { const x = Math.sin((k + 1) * 12.9898 * seed) * 43758.5453; return 0.12 + 0.88 * (x - Math.floor(x)); };
+          return [0, 1].map((c) => buf.getChannelData(c).map((v, i) => v * 0.7 * gain * sect(Math.floor((i / sr + from) / 4))));
+        };
+        const ddir = `${dir}\\dups`;
+        const files = [['Dup Song', song(1, 96)], ['Dup Song (1)', song(1, 96, 0, 0.55)], ['Dup Song (Radio Edit)', song(1, 72, 16)], ['Dup Song (VIP Remix)', song(2, 96)]];
+        for (const [name, pcm] of files) await window.rb.writeFile(`${ddir}\\${name}.wav`, encodeWav(pcm, sr));
+        await app.importPaths([ddir]);
+        while (app.analyzing || app.queue.length) await wait(100);
+        const dupTracks = files.map(([name]) => lib.all().find((t) => t.path.endsWith(`\\${name}.wav`)));
+        const pl = lib.createNode('playlist', 'Dup set');
+        lib.addToPlaylist(pl.id, [dupTracks[1].id, dupTracks[3].id, dupTracks[1].id]);
+        const { findDuplicates, openDuplicates } = await import('./ui/duplicates.js');
+        const res = await findDuplicates(app, dupTracks);
+        const g = res.groups[0];
+        const kinds = g ? g.pairs.map((p) => `${p.a.title}↔${p.b.title}: ${p.verdict.kind} ${p.verdict.score} (sound ${p.audio?.score}, lag ${p.audio?.lag})`) : [];
+        const groupIds = new Set(g?.tracks.map((t) => t.id));
+        const remixApart = !groupIds.has(dupTracks[3].id) && res.versions.some((p) => [p.a.id, p.b.id].includes(dupTracks[3].id));
+        step('duplicates: same recording at another level and the radio edit found by ear; the remix with the same name is not',
+          res.groups.length === 1 && groupIds.size === 3 && [0, 1, 2].every((i) => groupIds.has(dupTracks[i].id)) && remixApart
+            && g.pairs.some((p) => p.verdict.kind === 'same') && g.pairs.some((p) => p.verdict.kind === 'edit'),
+          `${kinds.join(' | ')} · remix apart ${remixApart} (sound ${res.versions.map((p) => p.audio?.score).join(', ')})`);
+        // The window, then a merge: the kept file replaces the others everywhere.
+        const shown = openDuplicates(app, pl.id);
+        for (let i = 0; i < 100 && !document.querySelector('.dup-group'); i++) await wait(50);
+        const repeats = /more than once/.test(document.querySelector('.dup')?.textContent ?? '');
+        const groupsShown = document.querySelectorAll('.dup-group').length;
+        document.querySelector('.dup-dialog .dialog-buttons button').click();
+        await shown;
+        const before = lib.tracks.size;
+        lib.mergeDuplicates(dupTracks[0].id, [dupTracks[1].id, dupTracks[2].id]);
+        const plIds = lib.findNode(pl.id).node.trackIds;
+        step('duplicates window and merge: the kept version replaces the others in the playlists',
+          repeats && groupsShown >= 1 && lib.tracks.size === before - 2 && plIds.join() === [dupTracks[0].id, dupTracks[3].id].join(),
+          `repeats shown ${repeats} · ${groupsShown} box(es) · tracks ${before} → ${lib.tracks.size} · playlist ${plIds.map((id) => lib.get(id)?.title).join(', ')}`);
+        lib.removeTracks([dupTracks[0].id, dupTracks[3].id]); lib.deleteNode(pl.id);
+      }
+
       // Jog wheels stay round when the height is short (zoomed interface, small screen).
       const jogShape = () => [...document.querySelectorAll('.jog-canvas')].filter((c) => c.offsetParent).map((c) => [c.clientWidth, c.clientHeight]);
       // A short screen (or Windows scaling at 125-150 %) leaves the platter column less height than

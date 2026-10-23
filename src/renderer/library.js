@@ -157,6 +157,45 @@ export class Library extends EventTarget {
   }
 
   /**
+   * Duplicates: `keepId` replaces `dropIds` in every playlist, the Tag List and the histories (a
+   * playlist holding both keeps one entry), takes what it lacks from them (cues, grid, tags, rating,
+   * colour, comments, plays), and they leave the collection (their files are not touched).
+   */
+  mergeDuplicates(keepId, dropIds) {
+    const keep = this.tracks.get(keepId);
+    const drops = dropIds.map((id) => this.tracks.get(id)).filter((t) => t && t.id !== keepId);
+    if (!keep || !drops.length) return null;
+    const gone = new Set(drops.map((t) => t.id));
+    const patch = {};
+    for (const d of drops) {
+      if (!(keep.cues?.length || patch.cues?.length) && d.cues?.length) patch.cues = d.cues;
+      if (!keep.beatgrid && !patch.beatgrid && d.beatgrid) patch.beatgrid = d.beatgrid;
+      for (const k of ['color', 'comments', 'genre', 'label', 'album']) if (!keep[k] && !patch[k] && d[k]) patch[k] = d[k];
+      patch.rating = Math.max(patch.rating ?? keep.rating ?? 0, d.rating ?? 0);
+      patch.playCount = (patch.playCount ?? keep.playCount ?? 0) + (d.playCount ?? 0);
+      patch.myTags = [...new Set([...(patch.myTags ?? keep.myTags ?? []), ...(d.myTags ?? [])])];
+    }
+    const swap = (ids) => {
+      const out = [];
+      for (const id of ids) {
+        const to = gone.has(id) ? keepId : id;
+        if (gone.has(id) && ids.includes(keepId)) continue; // already in the list: one entry
+        if (gone.has(id) && out.includes(keepId)) continue;
+        out.push(to);
+      }
+      return out;
+    };
+    const walk = (nodes) => nodes.forEach((n) => { if (n.type === 'folder') walk(n.children); else if (n.trackIds) n.trackIds = swap(n.trackIds); });
+    walk(this.playlists);
+    this.tagList = swap(this.tagList);
+    this.histories.forEach((x) => { x.trackIds = x.trackIds.map((id) => (gone.has(id) ? keepId : id)); });
+    this.tracks.set(keepId, { ...keep, ...patch });
+    this.removeTracks([...gone]);
+    this.emit('playlists');
+    return { kept: keepId, removed: [...gone] };
+  }
+
+  /**
    * Merge a parsed rekordbox.xml ({tracks with path, playlists with paths}).
    * Existing tracks get metadata/cues/grid updated; playlists go under a dated folder.
    */
