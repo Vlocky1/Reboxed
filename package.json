@@ -1,7 +1,7 @@
 {
   "name": "reboxed",
   "productName": "Reboxed",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "private": true,
   "type": "module",
   "description": "DJ software for Windows: library, 4 decks, AI stems, controllers.",
@@ -48,6 +48,7 @@
     },
     "files": [
       "src/**/*",
+      "vendor/**/*",
       "package.json",
       "!**/*.map",
       "!node_modules/onnxruntime-node/bin/napi-v*/{darwin,linux}/**",

@@ -48,7 +48,9 @@ export class StemService {
     this.root = join(appDir, 'stems'); // legacy cache by track id
     this.queue = [];
     this.busy = false;
-    this.child = null;
+    /** Stem processes: 'ort' (bundled onnxruntime: CPU, WebGPU, DirectML) and 'cuda' (NVIDIA engine). */
+    this.children = {};
+    this.nvidia = null;             // NvidiaEngine, set by main.js
     this.download = null;           // {quality, received, total}
   }
 
@@ -211,14 +213,21 @@ export class StemService {
     });
   }
 
-  ensureChild() {
-    if (this.child) return this.child;
-    this.child = utilityProcess.fork(join(here, 'stems-worker.js'), [], { serviceName: 'Reboxed stems' });
-    this.child.on('message', (m) => this.onChild(m));
-    this.child.on('exit', (code) => {
+  /**
+   * The stem process for an engine. The NVIDIA engine has its own process: it loads another
+   * onnxruntime (with CUDA) than the bundled one, which a process can hold only once.
+   */
+  ensureChild(ep = 'cpu') {
+    const kind = ep === 'cuda' ? 'cuda' : 'ort';
+    if (this.children[kind]) return this.children[kind];
+    const env = kind === 'cuda' ? { ...process.env, ...this.nvidia.workerEnv() } : process.env;
+    const child = utilityProcess.fork(join(here, 'stems-worker.js'), [], { serviceName: kind === 'cuda' ? 'Reboxed stems (NVIDIA)' : 'Reboxed stems', env });
+    this.children[kind] = child;
+    child.on('message', (m) => this.onChild(m));
+    child.on('exit', (code) => {
       const job = this.current;
-      this.child = null;
-      if (!job) return;
+      this.children[kind] = null;
+      if (!job || (job.ep === 'cuda' ? 'cuda' : 'ort') !== kind) return;
       this.current = null;
       this.busy = false;
       if (job.bench) {
@@ -231,7 +240,7 @@ export class StemService {
       }
       this.pump();
     });
-    return this.child;
+    return child;
   }
 
   /**
@@ -273,11 +282,15 @@ export class StemService {
   async pump() {
     if (this.busy || !this.queue.length) return;
     const job = this.queue.shift();
+    if (job.ep === 'cuda' && !(await this.nvidia?.installed())) {
+      if (job.bench) { job.resolve({ error: 'NVIDIA engine not installed' }); this.pump(); return; }
+      job.ep = 'cpu'; // not installed (or removed): the CPU does it
+    }
     if (job.bench) {
       if (!(await this.hasModel(job.quality))) { job.resolve({ error: 'model not downloaded' }); this.pump(); return; }
       this.busy = true;
       this.current = job;
-      this.ensureChild().postMessage({
+      this.ensureChild(job.ep).postMessage({
         type: 'bench', id: job.id, quality: job.quality, ep: job.ep, seconds: job.seconds,
         modelDir: this.overrides.fast ?? join(this.modelDir, 'spleeter'), model: this.overrides.hq ?? join(this.modelDir, MODELS.hq.files[0].name),
       });
@@ -286,7 +299,7 @@ export class StemService {
     if (job.convert) {
       this.busy = true;
       this.current = job;
-      this.ensureChild().postMessage({ type: 'convert', id: job.id, quality: job.quality, ...job.convert, metaFile: STEMS_META });
+      this.ensureChild('cpu').postMessage({ type: 'convert', id: job.id, quality: job.quality, ...job.convert, metaFile: STEMS_META });
       return;
     }
     if (!(await this.hasModel(job.quality))) {
@@ -298,7 +311,7 @@ export class StemService {
     this.current = job;
     job.outDir = await this.outDirFor(job);
     const fastDir = this.overrides.fast ?? join(this.modelDir, 'spleeter');
-    this.ensureChild().postMessage({
+    this.ensureChild(job.ep).postMessage({
       type: 'separate', id: job.id, quality: job.quality, left: job.left, right: job.right, ep: job.ep, startSample: job.startSample,
       modelDir: fastDir, model: this.overrides.hq ?? join(this.modelDir, MODELS.hq.files[0].name), outDir: job.outDir, trackPath: job.trackPath,
       format: job.format, kbps: job.kbps,

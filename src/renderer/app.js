@@ -777,11 +777,13 @@ class App {
    */
   async benchStemEngines(onResult, { seconds } = {}) {
     const status = await window.rb.stems.status();
+    const nvidia = await window.rb.nvidia.status().catch(() => ({ installed: false }));
+    const engines = STEM_ENGINES.filter((ep) => ep !== 'cuda' || nvidia.installed);
     const bench = { ...(this.library.settings.stemsBench ?? {}) };
     for (const q of ['fast', 'hq']) {
       if (!status.models[q]) continue;
       bench[q] = {};
-      for (const ep of STEM_ENGINES) {
+      for (const ep of engines) {
         const r = await window.rb.stems.bench(q, ep, seconds);
         bench[q][ep] = r.crashed ? 'crash' : r.speed ?? 'error';
         onResult?.(q, ep, bench[q][ep]);
@@ -2872,6 +2874,27 @@ async function smoke(app) {
           `repeats shown ${repeats} · ${groupsShown} box(es) · tracks ${before} → ${lib.tracks.size} · playlist ${plIds.map((id) => lib.get(id)?.title).join(', ')}`);
         lib.removeTracks([dupTracks[0].id, dupTracks[3].id]); lib.deleteNode(pl.id);
       }
+
+      // NVIDIA engine (when one is installed here, or REBOXED_NVIDIA_DIR points at one): its speed,
+      // then a real separation through the normal path, in its own process.
+      let nv = await window.rb.nvidia.status();
+      // REBOXED_NVIDIA_INSTALL=1 (with REBOXED_NVIDIA_DIR on an empty folder): the real install, ~1.3 GB.
+      if (!nv.installed && nv.support?.ok && (await window.rb.smokeEnv?.('REBOXED_NVIDIA_INSTALL')) === '1') {
+        const t0 = performance.now();
+        nv = await window.rb.nvidia.install();
+        step('NVIDIA engine: real install (download, checksums, setup)', nv.installed, `${((performance.now() - t0) / 1000).toFixed(0)} s → ${nv.dir}`);
+      }
+      if (nv.installed) {
+        const b = await window.rb.stems.bench('hq', 'cuda', 4);
+        const before = lib.settings.stemsProvider;
+        lib.setSetting('stemsProvider', 'cuda');
+        const t = kicks.find((x) => !x.stems) ?? kicks[1];
+        const t0 = performance.now();
+        const meta = await app.separateStems(t.id, { quality: 'hq', urgent: true });
+        lib.setSetting('stemsProvider', before);
+        step('NVIDIA engine (CUDA): speed and a real HQ separation', typeof b.speed === 'number' && b.speed > 5 && meta?.ep === 'cuda' && meta.stems.length === 4,
+          `${nv.gpu?.name} · HQ ${b.speed?.toFixed?.(1) ?? JSON.stringify(b)}× real time · ${t.title} separated on ${meta?.ep} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+      } else report.steps.push({ name: `NVIDIA engine: not installed here (${nv.gpu?.name ?? 'no NVIDIA card'}${nv.support?.ok ? '' : ` · ${nv.support?.reason}`})`, ok: true, info: '' });
 
       // Jog wheels stay round when the height is short (zoomed interface, small screen).
       const jogShape = () => [...document.querySelectorAll('.jog-canvas')].filter((c) => c.offsetParent).map((c) => [c.clientWidth, c.clientHeight]);

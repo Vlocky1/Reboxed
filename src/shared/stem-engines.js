@@ -1,9 +1,12 @@
 // Engines the stem models can run on, and how Auto picks one.
 
-/** The CPU, or the GPU through WebGPU (Direct3D 12 / Vulkan) or DirectML (Windows). */
-export const STEM_ENGINES = ['cpu', 'webgpu', 'dml'];
+/**
+ * The CPU, or the GPU through WebGPU (Direct3D 12 / Vulkan), DirectML (Windows) or CUDA (NVIDIA
+ * RTX, once the NVIDIA engine is installed: Preferences > Stems).
+ */
+export const STEM_ENGINES = ['cpu', 'webgpu', 'dml', 'cuda'];
 
-export const ENGINE_NAMES = { cpu: 'CPU', webgpu: 'GPU · WebGPU', dml: 'GPU · DirectML' };
+export const ENGINE_NAMES = { cpu: 'CPU', webgpu: 'GPU · WebGPU', dml: 'GPU · DirectML', cuda: 'GPU · NVIDIA CUDA' };
 
 /**
  * The engine to use for a model: the one chosen, or with 'auto' the fastest one measured on this

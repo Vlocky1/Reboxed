@@ -1,5 +1,5 @@
 // Electron utilityProcess: runs the stem models with onnxruntime-node on the CPU or the GPU
-// (WebGPU / DirectML), isolated from the main process (a native crash in a GPU driver only kills
+// (WebGPU / DirectML, or CUDA in the NVIDIA engine's own process), isolated from the main process (a native crash in a GPU driver only kills
 // this process). Results stream back block by block (from the play head), then the full stems are
 // written to the cache. It also times the engines on a test mix ('bench').
 import { createRequire } from 'node:module';
@@ -28,7 +28,8 @@ async function encodeStem(pcm, kbps, path) {
     await writeFile(path, encodeMp3(pcm, STEM_RATE, kbps));
   }
 }
-const ort = require('onnxruntime-node');
+// The NVIDIA engine's process loads its own onnxruntime (with CUDA), installed in the app folder.
+const ort = require(process.env.REBOXED_ORT || 'onnxruntime-node');
 const sessions = new Map();
 
 async function session(path, ep) {
@@ -39,7 +40,8 @@ async function session(path, ep) {
 
 /**
  * Speed of an engine on a model (x real time): FAST separates a short warm-up (shader compilation,
- * driver caches) then `seconds` of the test mix; HQ one 7.8 s segment. Sessions are released after.
+ * driver caches) then `seconds` of the test mix; HQ one 7.8 s segment (after a warm-up one on the
+ * GPU). Sessions are released after.
  */
 async function bench(m) {
   const opened = [];
@@ -57,6 +59,9 @@ async function bench(m) {
     }
     const sess = await open(m.model);
     const mix = benchMix(7.8);
+    // GPU engines set themselves up on the first run (CUDA picks its convolution algorithms then):
+    // a first, untimed pass, as for FAST.
+    if (m.ep !== 'cpu') await separateDemucs(sess, ort, mix.left, mix.right, {});
     const t0 = performance.now();
     await separateDemucs(sess, ort, mix.left, mix.right, {});
     return (mix.left.length / STEM_RATE) / ((performance.now() - t0) / 1000);

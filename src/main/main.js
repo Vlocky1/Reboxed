@@ -12,6 +12,7 @@ import { StemService } from './stems.js';
 import { Storage, migrateLegacyAppDir, hasLibrary, copyDatabase, moveStemsRoot } from './storage.js';
 import { Downloader } from './downloader.js';
 import { GenreSources } from './genres.js';
+import { NvidiaEngine } from './nvidia-engine.js';
 import { ToolInstaller, TOOLS } from './tools.js';
 import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
@@ -95,6 +96,17 @@ function registerIpc(win) {
   // Dev/smoke: point at already-downloaded models instead of fetching them.
   if (process.env.REBOXED_STEM_MODEL) stems.overrides.hq = process.env.REBOXED_STEM_MODEL;
   if (process.env.REBOXED_SPLEETER_DIR) stems.overrides.fast = process.env.REBOXED_SPLEETER_DIR;
+  // NVIDIA stem engine (CUDA), installed on request. REBOXED_NVIDIA_DIR: an engine installed elsewhere (tests).
+  stems.nvidia = new NvidiaEngine({
+    appDir, fetch: (url, opts) => net.fetch(url, opts), version: app.getVersion(), dir: process.env.REBOXED_NVIDIA_DIR,
+    send: (ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); },
+  });
+  ipcMain.handle('nvidia:status', () => stems.nvidia.status());
+  ipcMain.handle('nvidia:install', () => stems.nvidia.install());
+  ipcMain.handle('nvidia:remove', async () => {
+    stems.children.cuda?.kill(); // its DLLs are in use while the process lives
+    return stems.nvidia.remove();
+  });
 
   // Database folder (library, analysis, artwork, captures; may be a USB drive) and stems folder.
   ipcMain.handle('storage:info', () => storage.info());
@@ -386,6 +398,8 @@ async function createWindow() {
   if (smoke) {
     ipcMain.handle('smoke:dir', () => store.dir);
     ipcMain.handle('smoke:dlTest', () => process.env.REBOXED_DL_TEST === '1');
+    // Smoke switches that are not secrets (only REBOXED_* names).
+    ipcMain.handle('smoke:env', (_e, name) => (/^REBOXED_[A-Z_]+$/.test(name) ? process.env[name] ?? null : null));
     // npm run shots: a freely licensed song for the stems shots, "path|Title|Artist" (copied into the test folder).
     ipcMain.handle('smoke:demoSong', async () => {
       const [path, title, artist] = (process.env.REBOXED_DEMO_SONG ?? '').split('|');
