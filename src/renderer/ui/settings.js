@@ -16,7 +16,7 @@ export const FORMAT_LABELS = [['mp3', 'MP3 320 kbps (recommended, plays everywhe
  * Engine choice (Auto / CPU / GPU) and the engine test: speed of each engine on each installed
  * model, measured on this computer; Auto uses the fastest.
  */
-function stemEngineRows(app, library, apply) {
+function stemEngineRows(app, library, apply, nvidia = null) {
   const s = library.settings;
   const table = h('div.engine-table');
   const fmt = (v) => (typeof v === 'number' ? `${v.toFixed(v < 2 ? 2 : 1)}× real time` : v === 'crash' ? 'crashes on this computer' : v === 'error' ? 'failed' : '—');
@@ -24,7 +24,7 @@ function stemEngineRows(app, library, apply) {
     const rows = [['fast', 'FAST'], ['hq', 'HQ']].filter(([q]) => bench?.[q]).map(([q, label]) => {
       const used = pickEngine(library.settings.stemsProvider ?? 'auto', bench[q]);
       return h('div.engine-row', {}, h('b', {}, label),
-        ...STEM_ENGINES.map((ep) => h(`span.engine-cell${ep === used ? '.used' : ''}`, { title: ep === used ? 'Used for this model' : '' }, `${ENGINE_NAMES[ep]}: ${fmt(bench[q][ep])}`)));
+        ...STEM_ENGINES.filter((ep) => ep !== 'cuda' || bench[q][ep] !== undefined).map((ep) => h(`span.engine-cell${ep === used ? '.used' : ''}`, { title: ep === used ? 'Used for this model' : '' }, `${ENGINE_NAMES[ep]}: ${fmt(bench[q][ep])}`)));
     });
     table.replaceChildren(...(rows.length ? rows : [h('span.dim', {}, 'Not tested yet: Auto uses the CPU. Test to let it pick the GPU when it is faster here.')]));
   };
@@ -43,7 +43,8 @@ function stemEngineRows(app, library, apply) {
     } catch (err) { status.textContent = ` Test failed: ${err.message}`; } finally { test.disabled = false; render(); }
   };
   const choice = h('select', { onchange: (e) => { apply('stemsProvider', e.target.value); render(); } },
-    [['auto', 'Auto — the fastest measured here (CPU until tested)'], ['cpu', 'CPU'], ['webgpu', 'GPU · WebGPU (Direct3D 12)'], ['dml', 'GPU · DirectML']]
+    [['auto', 'Auto — the fastest measured here (CPU until tested)'], ['cpu', 'CPU'], ['webgpu', 'GPU · WebGPU (Direct3D 12)'], ['dml', 'GPU · DirectML'],
+      ...(nvidia?.installed || s.stemsProvider === 'cuda' ? [['cuda', `GPU · NVIDIA CUDA${nvidia?.installed ? '' : ' (not installed: CPU)'}`]] : [])]
       .map(([v, l]) => h('option', { value: v, selected: (s.stemsProvider ?? 'auto') === v }, l)));
   render();
   return [
@@ -53,9 +54,69 @@ function stemEngineRows(app, library, apply) {
   ];
 }
 
+/**
+ * NVIDIA engine (CUDA): shown when an NVIDIA card is there. Install (downloads the official
+ * onnxruntime GPU and NVIDIA CUDA / cuDNN files, ~1.3 GB), check its speed, use it, or remove it.
+ */
+function nvidiaRows(app, library, apply, nv, reopen) {
+  if (!nv?.gpu) return [];
+  const gb = (n) => `${(n / 1073741824).toFixed(1)} GB`;
+  const info = h('div.dim');
+  const bar = h('progress', { max: 1, value: 0, hidden: true });
+  const buttons = h('div.frow');
+  const cell = h('div', {}, info, bar, buttons);
+  const install = async () => {
+    buttons.replaceChildren();
+    bar.hidden = false;
+    const off = window.rb.nvidia.onProgress((p) => {
+      bar.value = p.total ? p.received / p.total : 0;
+      info.textContent = p.phase === 'download' ? `Downloading ${p.part}… ${gb(p.received)} / ${gb(p.total)}`
+        : p.phase === 'extract' ? `Unpacking ${p.part}…` : p.phase === 'setup' ? 'Setting up…' : 'Installed';
+    });
+    try {
+      await window.rb.nvidia.install();
+      info.textContent = 'Installed — checking its speed on your card…';
+      bar.hidden = true;
+      // A quick run on each installed model: proves it works here and records its speed for Auto.
+      const status = await window.rb.stems.status();
+      const bench = { ...(library.settings.stemsBench ?? {}) };
+      const speeds = [];
+      for (const q of ['hq', 'fast']) {
+        if (!status.models[q]) continue;
+        const r = await window.rb.stems.bench(q, 'cuda', 4);
+        bench[q] = { ...(bench[q] ?? {}), cuda: r.crashed ? 'crash' : r.speed ?? 'error' };
+        if (typeof r.speed === 'number') speeds.push(`${q.toUpperCase()} ${r.speed.toFixed(1)}× real time`);
+      }
+      library.setSetting('stemsBench', bench);
+      if (speeds.length) { apply('stemsProvider', 'cuda'); toast(`NVIDIA engine ready: ${speeds.join(', ')}`, 7000); }
+      else if (Object.values(bench).some((b) => b?.cuda === 'crash' || b?.cuda === 'error')) toast('The NVIDIA engine is installed but failed on this card: Reboxed keeps the other engines', 8000);
+    } catch (err) {
+      info.textContent = `Not installed: ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')} (what was already downloaded is kept for the next try)`;
+    } finally { off(); bar.hidden = true; reopen(); }
+  };
+  if (!nv.support.ok) {
+    info.textContent = nv.support.reason;
+  } else if (nv.installed) {
+    info.textContent = `✓ Installed — ${nv.gpu.name} (driver ${nv.gpu.driver}). ${library.settings.stemsProvider === 'cuda' ? 'In use.' : 'Choose "GPU · NVIDIA CUDA" above (or Auto after "Test the engines") to use it.'}`;
+    buttons.append(
+      library.settings.stemsProvider === 'cuda' ? '' : h('button.dbtn.small.primary', { onclick: () => { apply('stemsProvider', 'cuda'); reopen(); } }, 'Use it'),
+      h('button.dbtn.small', { onclick: async () => {
+        await window.rb.nvidia.remove();
+        if (library.settings.stemsProvider === 'cuda') apply('stemsProvider', 'auto');
+        toast('NVIDIA engine removed'); reopen();
+      } }, 'Remove (frees about 1.5 GB)'));
+  } else {
+    info.textContent = `${nv.gpu.name}: separates stems with CUDA, many times faster than WebGPU or the CPU (HQ about 30× real time on an RTX 3070 Ti). Downloads about ${gb(nv.downloadSize)} of official files — onnxruntime GPU (Microsoft) and the CUDA, cuBLAS, cuFFT and cuDNN libraries (NVIDIA) — each checked; about 1.5 GB on disk.`;
+    buttons.append(h('button.dbtn.small.primary', { onclick: install }, `Install the NVIDIA engine (${gb(nv.downloadSize)})`));
+    if (nv.installing) { buttons.replaceChildren(); info.textContent = 'Installing…'; }
+  }
+  return [h('label', {}, 'NVIDIA engine (CUDA)'), cell];
+}
+
 /** Stem model status/download, quality, processing engine and cache. */
-export async function stemsSection(library, apply, app) {
+export async function stemsSection(library, apply, app, reopen = () => {}) {
   const status = await window.rb.stems.status();
+  const nv = await window.rb.nvidia.status().catch(() => null);
   const s = library.settings;
   const modelRow = (quality, name, size) => {
     const ready = `Installed — ${name}, ${size}.`;
@@ -90,7 +151,8 @@ export async function stemsSection(library, apply, app) {
     h('label', {}, 'Separate on load'), h('input', { type: 'checkbox', checked: !!s.stemsOnLoad, onchange: (e) => apply('stemsOnLoad', e.target.checked) }),
     h('label', {}, 'Stem waveform'), sel('stemWaveform', [
       ['muted', 'Colour by stem, dim muted stems'], ['always', 'Always colour by stem'], ['off', 'Classic waveform']]),
-    ...stemEngineRows(app, library, apply),
+    ...stemEngineRows(app, library, apply, nv),
+    ...nvidiaRows(app, library, apply, nv, reopen),
     h('label', {}, 'Stem files'), sel('stemsFormat', [
       ['mp3', 'MP3 256 kbps (about 9 MB per stem for 5 min)'], ['mp3-320', 'MP3 320 kbps (about 12 MB)'], ['wav', 'WAV (lossless, about 53 MB)']]),
     h('label', {}, ''), (() => {
@@ -287,7 +349,7 @@ export async function openSettings(library, engine, apply, midi, app) {
       h('label', {}, 'Output channels'), sel('outputLayout', [['stereo', 'Stereo (headphones on a 2nd device)'], ['quad', '4 channels: master 1/2, headphones 3/4 (DJ controller)']]),
       h('label', {}, 'Use controller sound card automatically'), check('controllerAudioAuto'))],
     ['library', 'Library', () => librarySection(app)],
-    ['stems', 'Stems', () => stemsSection(library, apply, app)],
+    ['stems', 'Stems', () => stemsSection(library, apply, app, () => show('stems'))],
     ['downloads', 'Downloads', () => downloadsSection(app, library)],
     ['midi', 'MIDI', () => (midi ? midi.renderSettings() : h('p.dim', {}, 'MIDI not initialised'))],
     ['plugins', 'Plugins', () => pluginsSection(app)],

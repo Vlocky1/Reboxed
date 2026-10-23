@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('rb', {
   smokeDir: () => ipcRenderer.invoke('smoke:dir'),
   smokeShot: (name) => ipcRenderer.invoke('smoke:shot', name),
   smokeDlTest: () => ipcRenderer.invoke('smoke:dlTest'),
+  smokeEnv: (name) => ipcRenderer.invoke('smoke:env', name),
   smokeDemoSong: () => ipcRenderer.invoke('smoke:demoSong'),
   rbMapping: (deviceName) => ipcRenderer.invoke('controller:rbMapping', deviceName),
   dl: {
@@ -104,6 +105,12 @@ contextBridge.exposeInMainWorld('rb', {
       ipcRenderer.on('tools:progress', listener);
       return () => ipcRenderer.off('tools:progress', listener);
     },
+  },
+  nvidia: {
+    status: () => ipcRenderer.invoke('nvidia:status'),
+    install: () => ipcRenderer.invoke('nvidia:install'),
+    remove: () => ipcRenderer.invoke('nvidia:remove'),
+    onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('nvidia:progress', l); return () => ipcRenderer.off('nvidia:progress', l); },
   },
   stems: {
     status: () => ipcRenderer.invoke('stems:status'),
