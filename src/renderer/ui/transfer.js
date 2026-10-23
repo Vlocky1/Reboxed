@@ -2,7 +2,7 @@
 // Reboxed" (copy that music into a local folder, keep cues, grids, tags and playlists).
 import { h, modal, toast } from './dom.js';
 import { exportRekordboxXml, importRekordboxXml } from '../../shared/rekordbox-xml.js';
-import { collectForTransfer, needsCopy, transferCandidates, pickFound, TRANSFER_MUSIC } from '../../shared/transfer.js';
+import { collectForTransfer, needsCopy, transferCandidates, pickFound, TRANSFER_MUSIC, TRANSFER_STEMS } from '../../shared/transfer.js';
 import { today } from '../library.js';
 
 /**
@@ -43,7 +43,8 @@ export async function openTransferExport(app, preselect = null, opts = {}) {
   const folder = `${dir.replace(/[\\/]+$/, '')}\\Reboxed Transfer`;
   const { tracks, playlists } = collectForTransfer(lib, scope.value === 'some' ? picked : null);
   const out = [];
-  let failed = 0;
+  let failed = 0; let withStems = 0;
+  const stemDirs = new Set();
   const status = toast(`Copying 0 / ${tracks.length}…`, 600000);
   for (const [i, t] of tracks.entries()) {
     status.textContent = `Copying the music ${i + 1} / ${tracks.length}…`;
@@ -51,14 +52,26 @@ export async function openTransferExport(app, preselect = null, opts = {}) {
     if (copy.checked && needsCopy(t.path, folder)) {
       try { path = await window.rb.copyInto(t.path, `${folder}\\${TRANSFER_MUSIC}`); } catch { failed++; continue; }
     }
-    out.push({ ...t, path });
+    // Stems already separated go along (Stems\<track name>), so the other Reboxed needs no new separation.
+    const entry = { ...t, path };
+    if (t.stems) {
+      const base = path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+      let name = base;
+      for (let n = 2; stemDirs.has(name.toLowerCase()); n++) name = `${base} (${n})`;
+      stemDirs.add(name.toLowerCase());
+      try {
+        const r = await window.rb.stems.exportTo(t.id, t.path, `${folder}\\${TRANSFER_STEMS}\\${name}`);
+        if (r) { entry.rbStems = r.quality; entry.rbStemsDir = `${TRANSFER_STEMS}\\${name}`; withStems++; }
+      } catch { /* the track still goes, without its stems */ }
+    }
+    out.push(entry);
   }
   const xmlPath = `${folder}\\reboxed-transfer.xml`;
   await window.rb.writeFile(xmlPath, exportRekordboxXml({ tracks: out, playlists }, { productVersion: await window.rb.version() }));
   status.remove();
-  toast(`${out.length} track(s) and ${countPlaylists(playlists)} playlist(s) sent to ${folder}${failed ? ` · ${failed} file(s) could not be copied` : ''}`, 8000);
+  toast(`${out.length} track(s)${withStems ? ` (${withStems} with their stems)` : ''} and ${countPlaylists(playlists)} playlist(s) sent to ${folder}${failed ? ` · ${failed} file(s) could not be copied` : ''}`, 8000);
   if (!opts.dir) window.rb.showItem(xmlPath);
-  return { xmlPath, tracks: out.length, failed };
+  return { xmlPath, tracks: out.length, failed, withStems };
 }
 
 const countPlaylists = (nodes) => nodes.reduce((n, x) => n + (x.type === 'folder' ? countPlaylists(x.children) : 1), 0);
@@ -95,9 +108,25 @@ export async function openTransferImport(app, opts = {}) {
   status.remove();
   const missing = new Set(paths.filter((p) => !relocated.has(p.toLowerCase()) && !relocated.has(p)).map((p) => (/^[A-Za-z]:\\/.test(p) ? p.toLowerCase() : p)));
   const report = app.library.importRekordbox(parsed, { placement: 'new', metadata: 'overwrite', cues: 'replace', relocated, missing });
+  // Stems that came along: put where this Reboxed keeps stems; the tracks join the Stems list (HQ / FAST).
+  report.stems = 0;
+  const xmlDir = xmlPath.replace(/[\\/][^\\/]*$/, '');
+  const withStems = parsed.tracks.filter((x) => x.rbStems && x.rbStemsDir);
+  const stemStatus = withStems.length ? toast('Bringing the stems…', 600000) : null;
+  for (const [i, x] of withStems.entries()) {
+    stemStatus.textContent = `Bringing the stems ${i + 1} / ${withStems.length}…`;
+    const path = relocated.get(/^[A-Za-z]:\\/.test(x.path) ? x.path.toLowerCase() : x.path);
+    const id = path && app.library.idForPath(path);
+    if (!id) continue;
+    try {
+      const r = await window.rb.stems.adopt(id, path, `${xmlDir}\\${x.rbStemsDir}`);
+      if (r) { app.library.update(id, { stems: r.quality === 'hq' || app.library.get(id)?.stems === 'hq' ? 'hq' : 'fast' }); report.stems++; }
+    } catch { /* separated again later if needed */ }
+  }
+  stemStatus?.remove();
   const fresh = app.library.all().filter((t) => !t.analyzed && [...relocated.values()].includes(t.path)).map((t) => t.id);
   if (fresh.length && app.library.settings.autoAnalyze) app.analyzeTracks(fresh);
   if (report.folderId) app.browser.select(report.folderId);
-  toast(`Imported ${today()}: ${report.added} new, ${report.updated} updated, ${report.playlists} playlist(s)${report.missing ? ` · ${report.missing} track(s) not found on the drive` : ''}`, 8000);
+  toast(`Imported ${today()}: ${report.added} new, ${report.updated} updated, ${report.playlists} playlist(s)${report.stems ? `, ${report.stems} with their stems` : ''}${report.missing ? ` · ${report.missing} track(s) not found on the drive` : ''}`, 8000);
   return report;
 }

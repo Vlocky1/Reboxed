@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { collectForTransfer, needsCopy, transferCandidates, pickFound } from '../src/shared/transfer.js';
 import { exportRekordboxXml, importRekordboxXml } from '../src/shared/rekordbox-xml.js';
 import { wavePreview, base64ToU8, PREVIEW_COLS } from '../src/shared/dsp/waveform.js';
-import { relabelPhrase, splitPhrase, mergePhrase, phraseAt } from '../src/shared/dsp/phrase.js';
+import { relabelPhrase, splitPhrase, mergePhrase, phraseAt, moveBoundary, shiftPhrases } from '../src/shared/dsp/phrase.js';
 
 const lib = (() => {
   const tracks = new Map([['a', { id: 'a', path: 'C:\\Music\\a.mp3' }], ['b', { id: 'b', path: 'C:\\Music\\b.mp3' }], ['c', { id: 'c', path: 'E:\\DJ\\c.mp3' }]]);
@@ -36,9 +36,26 @@ test('music already on the drive is not copied; the other computer finds it unde
   assert.deepEqual([...found], [['e:\\x\\1.mp3', 'F:\\x\\1.mp3']]);
 });
 
-test('transfer XML keeps My Tags', () => {
-  const xml = exportRekordboxXml({ tracks: [{ id: 'a', path: 'E:\\a.mp3', title: 'A', myTags: ['warm-up', 'vocal'], cues: [] }], playlists: [] });
-  assert.deepEqual(importRekordboxXml(xml).tracks[0].myTags, ['warm-up', 'vocal']);
+test('transfer XML keeps My Tags and the stems sent along', () => {
+  const xml = exportRekordboxXml({ tracks: [
+    { id: 'a', path: 'E:\\a.mp3', title: 'A', myTags: ['warm-up', 'vocal'], cues: [], rbStems: 'hq', rbStemsDir: 'Stems\\a' },
+    { id: 'b', path: 'E:\\b.mp3', title: 'B', cues: [] }], playlists: [] });
+  const [a, b] = importRekordboxXml(xml).tracks;
+  assert.deepEqual(a.myTags, ['warm-up', 'vocal']);
+  assert.deepEqual([a.rbStems, a.rbStemsDir, b.rbStems], ['hq', 'Stems\\a', undefined]);
+});
+
+test('phrases: move a start to a beat, shift them all', () => {
+  const ph = [
+    { start: 0, end: 16, startBar: 0, bars: 8, label: 'INTRO', num: 1 },
+    { start: 16, end: 48, startBar: 8, bars: 16, label: 'CHORUS', num: 1 },
+  ];
+  const m = moveBoundary(ph, 1, 20);
+  assert.deepEqual(m.map((p) => [p.start, p.end, p.bars, p.startBar]), [[0, 20, 10, 0], [20, 48, 14, 10]]);
+  assert.equal(moveBoundary(ph, 1, 47.9), ph, 'leaves the phrase too short');
+  assert.equal(moveBoundary(ph, 0, 3), ph, 'the first phrase has no previous one');
+  assert.deepEqual(shiftPhrases(ph, 0.5).map((p) => [p.start, p.end]), [[0.5, 16.5], [16.5, 48.5]]);
+  assert.deepEqual(shiftPhrases(ph, -2).map((p) => [p.start, p.end]), [[0, 14], [14, 46]]);
 });
 
 test('waveform preview: PREVIEW_COLS columns of 3 band peaks', () => {

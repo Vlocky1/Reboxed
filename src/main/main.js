@@ -259,6 +259,8 @@ function registerIpc(win) {
   ipcMain.handle('stems:status', () => stems.status());
   ipcMain.handle('stems:download', (_e, quality) => stems.downloadModel(quality));
   ipcMain.handle('stems:meta', (_e, id, trackPath) => stems.meta(id, trackPath));
+  ipcMain.handle('stems:exportTo', (_e, id, trackPath, dest) => stems.exportTo(id, trackPath, dest));
+  ipcMain.handle('stems:adopt', (_e, id, trackPath, src) => stems.adopt(id, trackPath, src));
   ipcMain.handle('stems:separate', (_e, id, left, right, opts) => stems.separate(id, left, right, opts));
   ipcMain.handle('stems:delete', (_e, id, trackPath) => stems.remove(id, trackPath));
   ipcMain.handle('stems:deleteAll', () => stems.removeAll());

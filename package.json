@@ -1,7 +1,7 @@
 {
   "name": "reboxed",
   "productName": "Reboxed",
-  "version": "1.21.0",
+  "version": "1.21.1",
   "private": true,
   "type": "module",
   "description": "DJ software for Windows: library, 4 decks, AI stems, controllers.",

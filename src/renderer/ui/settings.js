@@ -336,7 +336,7 @@ export async function openSettings(library, engine, apply, midi, app) {
       h('label', {}, 'Decks'), sel('deckCount', [[2, '2 decks'], [4, '4 decks']], Number),
       h('label', {}, 'Sync mode'), sel('syncMode', [['beat', 'BEAT SYNC (tempo + phase)'], ['bpm', 'BPM SYNC (tempo only)']]),
       h('label', {}, 'Sync double/half BPM'), check('syncDoubleHalf'),
-      h('label', {}, 'Load a track onto a playing deck'), h('div', {}, check('loadOnPlaying'), h('small', {}, 'Off: a playing deck is protected (pause it to load another track), a load lock.')),
+      h('label', {}, 'Load while playing'), h('div', {}, check('loadOnPlaying'), h('small', {}, 'On: a track can be loaded onto a playing deck. Off: a playing deck is protected (pause it to load another track), a load lock. Also in each deck\'s menu (⋯).')),
       h('label', {}, 'Default tempo range'), sel('defaultTempoRange', [[6, '±6%'], [10, '±10%'], [16, '±16%'], [100, 'WIDE']], Number),
       h('label', {}, 'Auto gain'), check('autoGain'),
       h('label', {}, 'Channel fader curve'), sel('faderCurve', [['linear', 'Linear'], ['exp', 'Exponential'], ['log', 'Logarithmic']]),

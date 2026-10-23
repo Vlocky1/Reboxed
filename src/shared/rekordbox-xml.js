@@ -118,6 +118,7 @@ export function importRekordboxXml(text) {
       mixName: a.Mix ?? '',
       color: colourName(a.Colour),
       ...(a.RbMyTags ? { myTags: a.RbMyTags.split(',').map((x) => x.trim()).filter(Boolean) } : {}),
+      ...(a.RbStems ? { rbStems: a.RbStems, rbStemsDir: a.RbStemsDir ?? '' } : {}),
       source: 'rekordbox',
       xmlId: a.TrackID ?? '',
       // One TEMPO = constant grid; several = dynamic grid (a beat list is rebuilt from them).
@@ -208,6 +209,8 @@ export function exportRekordboxXml(library, { productVersion = '0.2.0' } = {}) {
       Label: t.label ?? '', Mix: t.mixName ?? '', Colour: HEX_BY_COLOR.get(t.color),
       // Reboxed's own fields (other software ignores unknown attributes).
       RbMyTags: t.myTags?.length ? t.myTags.join(', ') : undefined,
+      // Stems sent along (another Reboxed): their quality and folder, relative to the XML.
+      RbStems: t.rbStems || undefined, RbStemsDir: t.rbStemsDir || undefined,
     }, children };
   });
 

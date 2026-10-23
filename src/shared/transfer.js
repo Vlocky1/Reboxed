@@ -9,6 +9,8 @@ const baseOf = (p) => p.split(/[\\/]/).pop();
 
 /** Folder of the music copied next to the XML. */
 export const TRANSFER_MUSIC = 'Music';
+/** Folder of the stems sent along, one sub-folder per track. */
+export const TRANSFER_STEMS = 'Stems';
 
 /**
  * What to export. selected: ids of playlists / intelligent playlists (null = the whole collection

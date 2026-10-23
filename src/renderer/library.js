@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS = {
   syncMode: 'beat',            // 'beat' (tempo + phase) | 'bpm' (tempo only)
   syncDoubleHalf: true,
   loadOnPlaying: false,        // allow loading a track onto a playing deck (load lock off)
+  gridQuick: ['downbeat'],     // beatgrid actions pinned as icons on the deck bars (drag from the beatgrid menu)
   related: DEFAULT_RELATED,
   relatedSeed: 'master',       // 'master' | 'deck1'..'deck4' | 'selected'
   colorFx: 'FILTER',
