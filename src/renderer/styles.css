@@ -659,6 +659,26 @@ code.path { background: var(--bg); padding: 2px 6px; border-radius: 3px; font-si
 
 /* Export to USB for CDJ / XDJ */
 .cdjx-dialog { width: min(1000px, 95vw); }
+/* Duplicate finder */
+.dup-dialog { width: min(900px, 94vw); }
+.dup { overflow-y: auto; padding: 12px 18px; display: flex; flex-direction: column; gap: 10px; min-height: 160px; }
+.dup progress { width: 100%; }
+.dup-group { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.dup-head { display: flex; align-items: center; gap: 8px; }
+.dup-head .spacer { flex: 1; }
+.dup-verdict { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dup-score { display: inline-block; min-width: 42px; text-align: center; padding: 1px 6px; border-radius: 6px; font-size: 11px; color: #fff;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--green) 70%, #000) var(--s), var(--panel-3) var(--s)); }
+.dup-track { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+.dup-track:hover { background: var(--panel-2); }
+.dup-track:has(input:checked) { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.dup-info { flex: 1; min-width: 0; }
+.dup-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dup-sub { font-size: 11px; color: var(--text-2); }
+.dup-path { font-size: 10.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dup-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; margin-top: 2px; }
+.dup-versions summary { cursor: pointer; color: var(--text-2); font-size: 12px; }
+.dup-versions .dup-sub { padding: 2px 0 2px 14px; }
 /* Setup assistant (first launch) */
 .setup-dialog { width: min(720px, 92vw); }
 .setup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-right: 18px; }
