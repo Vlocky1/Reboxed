@@ -21,6 +21,24 @@ export class JogWheel {
       h('div.jog-center', {}, this.bpm, this.pct, h('div.jog-ranges', {}, this.ranges)));
     this.touched = false;
     this.install();
+    this.keepRound();
+  }
+
+  /**
+   * The platter is as wide as its column, but its height is capped (room for CUE / PLAY): on a
+   * short or zoomed screen the box got wider than tall and the circle was stretched into an
+   * ellipse. When that happens the box is narrowed to its height, so it stays round (centred).
+   */
+  keepRound() {
+    const fit = () => {
+      const el = this.el;
+      el.style.width = '';
+      const w = el.clientWidth; const hgt = el.clientHeight;
+      if (w && hgt && w - hgt > 1) el.style.width = `${hgt}px`;
+    };
+    // Its column only changes size with the window / layout; resizing the jog does not resize it.
+    new ResizeObserver(() => requestAnimationFrame(fit)).observe(this.el);
+    queueMicrotask(() => { if (this.el.parentElement) new ResizeObserver(() => requestAnimationFrame(fit)).observe(this.el.parentElement); });
   }
 
   install() {
@@ -58,7 +76,7 @@ export class JogWheel {
     const d = this.deck;
     const c = this.canvas;
     const dpr = devicePixelRatio || 1;
-    const size = Math.round(c.clientWidth * dpr);
+    const size = Math.round(Math.min(c.clientWidth, c.clientHeight || c.clientWidth) * dpr);
     if (!size) return;
     if (c.width !== size || c.height !== size) { c.width = size; c.height = size; }
     const g = c.getContext('2d');

@@ -6,6 +6,7 @@ import { h, toast, fmtTime } from './dom.js';
 import { icon } from './icons.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 import { cleanTrackName, parseKeywords } from '../../shared/clean-name.js';
+import { findOnYoutube } from '../../shared/yt-match.js';
 
 const FORMAT_NAMES = { m4a: 'M4A', mp3: 'MP3 320', flac: 'FLAC', wav: 'WAV' };
 const PLATFORMS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
@@ -129,9 +130,16 @@ export class DownloadCenter {
       const clean = cleanTrackName({ title: t.title || item.title, artist: t.artist }, parseKeywords(this.cfg.cleanKeywords));
       if (clean.title !== t.title || clean.artist !== (t.artist ?? '')) lib.update(id, clean);
     }
+    // From a Spotify playlist: Spotify's clean title and artist rather than the video's.
+    if (id && item.meta) lib.update(id, item.meta);
     if (id && this.cfg.playlist) {
       let pl = lib.playlists.find((n) => n.src === 'downloads');
       if (!pl) { pl = lib.createNode('playlist', 'Downloads'); pl.src = 'downloads'; }
+      if (!pl.trackIds.includes(id)) lib.addToPlaylist(pl.id, [id]);
+    }
+    if (id && item.addTo) {
+      let pl = lib.playlists.find((n) => n.src === item.addTo.src);
+      if (!pl) { pl = lib.createNode('playlist', item.addTo.name); pl.src = item.addTo.src; }
       if (!pl.trackIds.includes(id)) lib.addToPlaylist(pl.id, [id]);
     }
     this.save({ done: { ...this.cfg.done, [item.id]: file } });
@@ -187,7 +195,7 @@ export class DownloadCenter {
 
   open(tab = 'search') {
     if (this.overlay) { this.showTab(tab); return; }
-    const tabs = [['search', 'Search'], ['link', 'Link'], ['feeds', 'New releases'], ['queue', 'Queue']];
+    const tabs = [['search', 'Search'], ['link', 'Link'], ['spotify', 'Spotify playlist'], ['feeds', 'New releases'], ['queue', 'Queue']];
     this.tabBtns = new Map(tabs.map(([id, label]) => [id, h('button.seg-btn', { onclick: () => this.showTab(id) }, label)]));
     this.body = h('div.dlc-body');
     this.toolsLine = h('div.dlc-tools');
@@ -229,6 +237,7 @@ export class DownloadCenter {
     const scroll = this.body.scrollTop;
     if (this.tab === 'search') this.renderSearch();
     else if (this.tab === 'link') this.renderLink();
+    else if (this.tab === 'spotify') this.renderSpotify();
     else if (this.tab === 'feeds') this.renderFeeds();
     else this.renderQueue();
     this.body.scrollTop = scroll;
@@ -331,6 +340,114 @@ export class DownloadCenter {
     const el = h('div', {}, h('div.dlc-bar', {}, input, badge, get), results);
     this.body.replaceChildren(el);
     setTimeout(() => input.focus());
+  }
+
+  // ---- Spotify playlist -> YouTube ----------------------------------------------------------------
+
+  /** Read a Spotify playlist / album link: its tracks, each to be found on YouTube. */
+  async readSpotify(url) {
+    const r = await window.rb.spotify.playlist(url);
+    const link = /(playlist|album)[/:]([A-Za-z0-9]+)/.exec(url);
+    this.sp = { url, name: r.name, via: r.via, src: `spotify:${link?.[2] ?? r.name}`, tracks: r.tracks.map((t) => ({ ...t, status: 'waiting', match: null })) };
+    return this.sp;
+  }
+
+  /**
+   * Find every track of the read playlist on YouTube (two searches at a time) and, when asked,
+   * download each one as soon as it is found.
+   */
+  async findSpotifyOnYoutube({ download = true, addToPlaylist = true, search = (q) => window.rb.dl.search(q, 6, 'youtube') } = {}) {
+    const sp = this.sp;
+    if (!sp || sp.running) return;
+    sp.running = true; sp.stop = false;
+    this.changed(true);
+    const todo = sp.tracks.filter((t) => t.status === 'waiting' || t.status === 'error');
+    const worker = async () => {
+      while (todo.length && !sp.stop) {
+        const t = todo.shift();
+        t.status = 'searching'; this.changed();
+        try {
+          const best = await findOnYoutube(t, search);
+          t.match = best?.item ?? null;
+          t.longer = !!best?.longer;
+          t.status = best ? 'found' : 'none';
+          if (best && download) this.enqueueSpotify(t, addToPlaylist);
+        } catch (err) { t.status = 'error'; t.error = err.message; }
+        this.changed();
+      }
+    };
+    await Promise.all([worker(), worker()]);
+    sp.running = false;
+    this.changed(true);
+    const found = sp.tracks.filter((t) => t.match).length;
+    toast(`${sp.name}: ${found} / ${sp.tracks.length} found on YouTube${download ? ', downloading' : ''}`, 6000);
+  }
+
+  enqueueSpotify(t, addToPlaylist = true) {
+    if (!t.match || this.isDone(t.match.id)) return;
+    this.enqueue([{ ...t.match, meta: { title: t.title, artist: t.artist }, addTo: addToPlaylist ? { name: this.sp.name, src: this.sp.src } : null }]);
+  }
+
+  renderSpotify() {
+    const sp = this.sp;
+    const input = h('input.text', { placeholder: 'Paste a Spotify playlist or album link (open.spotify.com/playlist/…)', value: sp?.url ?? '', spellcheck: false });
+    const opts = this.spOpts ??= { download: true, addToPlaylist: true };
+    const read = h('button.dbtn.dlc-primary', {}, 'Read');
+    const status = h('p.dim', {}, sp ? '' : 'Every track of the playlist is searched on YouTube (same title, artist and length; no live, cover or sped-up versions), then downloaded with its Spotify title and artist. Works without a Spotify account; with your Spotify keys (Preferences > Library) playlists of any length.');
+    const go = async () => {
+      const url = input.value.trim();
+      if (!/spotify/.test(url)) { status.textContent = 'Not a Spotify link'; return; }
+      read.disabled = true; status.textContent = 'Reading the playlist…';
+      try { await this.readSpotify(url); this.renderTab(false); this.findSpotifyOnYoutube(opts); } catch (err) {
+        status.className = 'rbi-error';
+        status.textContent = err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+      } finally { read.disabled = false; }
+    };
+    read.onclick = go;
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    const check = (key, label) => h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: opts[key], onchange: (e) => { opts[key] = e.target.checked; } }), ` ${label}`);
+    this.rows = [];
+    const parts = [h('div.dlc-bar', {}, input, read), h('div.dlc-bar.dlc-filters', {}, check('download', 'Download as soon as found'), check('addToPlaylist', `Add to a playlist named after it`)), status];
+    if (sp) {
+      const found = sp.tracks.filter((t) => t.match).length;
+      const left = sp.tracks.filter((t) => t.match && !this.isDone(t.match.id) && !this.jobs.has(t.match.id)).length;
+      parts.push(h('div.dlc-bar', {},
+        h('b', {}, sp.name), h('span.dim', {}, ` ${sp.tracks.length} tracks · ${found} found${sp.via === 'embed' && sp.tracks.length >= 100 ? ' · only the first 100 without Spotify keys' : ''}`),
+        h('span.spacer'),
+        sp.running ? h('button.dbtn', { onclick: () => { sp.stop = true; } }, 'Stop') : h('button.dbtn', { onclick: () => this.findSpotifyOnYoutube(opts) }, 'Search again (not found)'),
+        left ? h('button.dbtn.dlc-primary', { onclick: () => sp.tracks.forEach((t) => this.enqueueSpotify(t, opts.addToPlaylist)) }, `Download ${left}`) : null));
+      parts.push(h('div.dlc-list', {}, sp.tracks.map((t) => this.spotifyRow(t))));
+    }
+    this.body.replaceChildren(h('div', {}, ...parts));
+    if (!sp) setTimeout(() => input.focus());
+  }
+
+  /** One Spotify track and what was found for it on YouTube. */
+  spotifyRow(t) {
+    const right = h('div.dlc-match');
+    const action = h('div.dlc-action');
+    const update = () => {
+      const m = t.match;
+      right.replaceChildren(...(t.status === 'searching' ? [h('span.dim', {}, 'Searching YouTube…')]
+        : t.status === 'none' ? [h('span.rbi-error', {}, 'Not found on YouTube')]
+          : t.status === 'error' ? [h('span.rbi-error', { title: t.error }, 'Search failed')]
+            : m ? [t.longer ? h('span.dlc-new', { title: 'The playlist has the short edit: this is the longer club version of the same track' }, 'EXTENDED') : null,
+              h('a.dlc-yt', { href: '#', title: m.url, onclick: (e) => { e.preventDefault(); window.rb.openExternal(m.url); } }, m.title), h('span.dim', {}, ` · ${m.channel ?? ''} · ${m.duration ? fmtTime(m.duration) : ''}`)].filter(Boolean)
+              : [h('span.dim', {}, 'Waiting')]));
+      const job = m ? this.jobs.get(m.id) : null;
+      if (job && ACTIVE.has(job.state)) {
+        const pct = Math.round(job.pct ?? 0);
+        action.replaceChildren(h('div.dlc-prog', { style: { '--p': `${pct}%` } }, job.state === 'queued' ? 'Queued' : job.state === 'converting' ? 'Converting…' : `${pct}%`));
+      } else if (m && (job?.state === 'done' || this.isDone(m.id))) action.replaceChildren(h('span.dlc-done', {}, '✓'));
+      else if (m) action.replaceChildren(h('button.dbtn.small.dlc-get', { onclick: () => this.enqueueSpotify(t, this.spOpts?.addToPlaylist !== false) }, icon('download')));
+      else action.replaceChildren();
+    };
+    update();
+    this.rows.push(update);
+    return h('div.dlc-row.dlc-sprow', {},
+      h('div.dlc-info', {}, h('div.dlc-title', { title: t.title }, t.title), h('div.dlc-sub', {}, t.artist, t.duration ? ` · ${fmtTime(t.duration)}` : '')),
+      h('div.dlc-arrow', {}, '→'),
+      right, action);
   }
 
   renderFeeds() {

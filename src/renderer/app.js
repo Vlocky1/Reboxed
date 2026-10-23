@@ -2476,7 +2476,7 @@ async function smoke(app) {
       const sc = badgeFor('https://soundcloud.com/indochineofficiel/3-nuits-par-semaine');
       await window.rb.smokeShot('dl-link');
       step('download centre: search platforms + link detection',
-        tabs.join('|') === 'Search|Link|New releases|Queue' && /SoundCloud/.test(scPlaceholder) && remembered === 'soundcloud'
+        tabs.join('|') === 'Search|Link|Spotify playlist|New releases|Queue' && /SoundCloud/.test(scPlaceholder) && remembered === 'soundcloud'
           && yt[0] === 'YouTube link' && !yt[1] && other[1] && /Not a YouTube/.test(other[0]) && sc[0] === 'SoundCloud link' && !sc[1],
         `tabs ${tabs.join('|')} · ${scPlaceholder} · yt ${yt} · other ${other} · sc ${sc}`);
       const tools = await dlc.tools();
@@ -2830,7 +2830,46 @@ async function smoke(app) {
       try { await app.engine.setMasterCopyDevice('default'); await app.engine.setMasterCopyDevice(''); } catch (err) { copyErr = err.message; }
       step('master also on the computer (second output)', !copyErr && !!app.engine.copyEl, copyErr || 'default device, then off');
 
-      const settingsOpen = app.openSettings('general'); await wait(300);
+      // Jog wheels stay round when the height is short (zoomed interface, small screen).
+      const jogShape = () => [...document.querySelectorAll('.jog-canvas')].filter((c) => c.offsetParent).map((c) => [c.clientWidth, c.clientHeight]);
+      // A short screen (or Windows scaling at 125-150 %) leaves the platter column less height than
+      // width: forced here with a short column, in 2 and 4 decks.
+      const decksBefore = lib.settings.deckCount;
+      const short = []; const normal = [];
+      for (const n of [2, 4]) {
+        lib.setSetting('deckCount', n); app.applyLayout(); await wait(200);
+        const cols = [...document.querySelectorAll('.deck-transport')].filter((c) => c.offsetParent);
+        cols.forEach((c) => { c.style.height = n === 2 ? '160px' : '120px'; c.parentElement.style.alignItems = 'start'; });
+        await wait(300);
+        short.push(...jogShape());
+        cols.forEach((c) => { c.style.height = ''; c.parentElement.style.alignItems = ''; });
+        await wait(300);
+        normal.push(...jogShape());
+      }
+      lib.setSetting('deckCount', decksBefore); app.applyLayout();
+      step('jog wheels stay round (short screen and normal)', [...short, ...normal].length > 0 && [...short, ...normal].every(([w, hh]) => Math.abs(w - hh) <= 1),
+        `short: ${short.map((x) => x.join('×')).join(' ')} · normal: ${normal.map((x) => x.join('×')).join(' ')}`);
+
+      // Spotify playlist → YouTube (offline: a canned search), shown in the download window.
+      const dc = app.downloads;
+      dc.sp = { url: 'https://open.spotify.com/playlist/x', name: 'Smoke list', src: 'spotify:x', via: 'embed', tracks: [
+        { title: 'Obsidian', artist: 'Kevin de Vries, Juan Elvadin', duration: 203, status: 'waiting', match: null },
+        { title: 'Nowhere', artist: 'Nobody', duration: 100, status: 'waiting', match: null }] };
+      await dc.findSpotifyOnYoutube({ download: false, search: async (q) => (/Obsidian/.test(q) ? [{ id: 'yt1', url: 'https://www.youtube.com/watch?v=yt1', title: 'Obsidian', channel: 'Kevin de Vries - Topic', duration: 203 }] : []) });
+      dc.open('spotify'); await wait(150);
+      const spRows = [...document.querySelectorAll('.dlc-sprow')].map((r) => r.querySelector('.dlc-match').textContent);
+      document.querySelector('.dlc-x').click();
+      step('Spotify playlist: each track found on YouTube (or not), listed in the download window',
+        dc.sp.tracks[0].match?.id === 'yt1' && dc.sp.tracks[1].status === 'none' && spRows.length === 2 && /Obsidian/.test(spRows[0]) && /Not found/.test(spRows[1]),
+        spRows.join(' | '));
+      dc.sp = null;
+      if (await window.rb.smokeDlTest()) {
+        const r = await window.rb.spotify.playlist('https://open.spotify.com/album/4m2880jivSbbyEGAKfITCa');
+        step('Spotify album read without an account', r.tracks.length > 5 && !!r.tracks[0].artist, `${r.name} · ${r.tracks.length} tracks via ${r.via}`);
+      }
+
+      const settingsOpen = app.openSettings('general');
+      for (let i = 0; i < 60 && !document.querySelector('.settings-content .form-grid'); i++) await wait(50);
       const grid = document.querySelector('.settings-content .form-grid');
       const cells = [...grid.children];
       const uneven = cells.filter((c, i) => i % 2 === 0 && cells[i + 1] && Math.abs(c.getBoundingClientRect().height - cells[i + 1].getBoundingClientRect().height) > 0.5).length;

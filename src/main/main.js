@@ -153,6 +153,8 @@ function registerIpc(win) {
     return { clientId: storage.cfg.spotify?.clientId ?? '', hasSecret: !!storage.cfg.spotify?.secret };
   });
   ipcMain.handle('spotify:lookup', (_e, q) => spotify.lookup(q));
+  // Tracks of a Spotify playlist / album (to find each one on YouTube): the Web API when set up, else the public embed page.
+  ipcMain.handle('spotify:playlist', (_e, url) => spotify.playlist(url, !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret)));
   // Deezer (no account) + Spotify (when set up), merged: Deezer brings the genres Spotify lacks.
   // Genre: Discogs styles (personal token, stored encrypted) + MusicBrainz + Deezer, voted.
   const discogsToken = () => {

@@ -39,6 +39,29 @@ export function toFields(tr, genres = []) {
   };
 }
 
+/** A Spotify playlist / album link (or spotify:playlist:… URI) -> {kind, id}, or null. */
+export function spotifyLink(url) {
+  const m = /(?:open\.spotify\.com\/(?:intl-[a-z-]+\/)?(?:embed\/)?|spotify:)(playlist|album)[/:]([A-Za-z0-9]{16,})/.exec(String(url ?? '').trim());
+  return m ? { kind: m[1], id: m[2] } : null;
+}
+
+/**
+ * Tracks of a playlist / album from Spotify's public embed page (no account; also the playlists
+ * Spotify itself makes, which the Web API refuses to new apps).
+ * @param {string} html the embed page
+ */
+export function embedTracks(html) {
+  const m = /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
+  if (!m) throw new Error('Spotify page not understood');
+  const entity = JSON.parse(m[1])?.props?.pageProps?.state?.data?.entity;
+  if (!entity?.trackList) throw new Error('No tracks on this Spotify page');
+  return {
+    name: entity.name ?? entity.title ?? 'Spotify playlist',
+    tracks: entity.trackList.map((t) => ({ title: t.title ?? '', artist: (t.subtitle ?? '').replace(/ /g, ' '), duration: (t.duration ?? 0) / 1000, spotifyId: String(t.uri ?? '').split(':').pop() }))
+      .filter((t) => t.title),
+  };
+}
+
 export class Spotify {
   /** @param {{get: () => {clientId, secret}|null, fetch?: typeof fetch}} opts */
   constructor({ credentials, fetch: f = fetch }) {
@@ -70,6 +93,40 @@ export class Spotify {
     if (res.status === 429) throw new Error('Spotify: too many requests, wait a moment');
     if (!res.ok) throw new Error(`Spotify error ${res.status}`);
     return res.json();
+  }
+
+  /**
+   * Every track of a playlist or album: title, artists, duration (Web API when the credentials are
+   * set, else / when it refuses, the public embed page, which may stop at 100 tracks).
+   * @param {string} url Spotify link
+   * @param {boolean} [useApi]
+   * @returns {Promise<{name: string, tracks: {title: string, artist: string, duration: number, spotifyId: string, isrc?: string}[], via: string}>}
+   */
+  async playlist(url, useApi = true) {
+    const link = spotifyLink(url);
+    if (!link) throw new Error('Not a Spotify playlist or album link');
+    if (useApi) {
+      try {
+        const head = await this.get(`/${link.kind}s/${link.id}?fields=name`);
+        const tracks = [];
+        let next = `/${link.kind}s/${link.id}/tracks?limit=${link.kind === 'album' ? 50 : 100}`;
+        while (next && tracks.length < 2000) {
+          const page = await this.get(next.replace(API, ''));
+          for (const it of page.items ?? []) {
+            const tr = it.track ?? it; // playlist items wrap the track, album items are the track
+            if (!tr?.name || tr.is_local || tr.type === 'episode') continue;
+            tracks.push({ title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000, spotifyId: tr.id ?? '', isrc: tr.external_ids?.isrc ?? '' });
+          }
+          next = page.next;
+        }
+        return { name: head.name ?? 'Spotify playlist', tracks, via: 'api' };
+      } catch (err) {
+        if (/not set up|refused/.test(err.message) === false && !/40[34]/.test(err.message)) throw err;
+      }
+    }
+    const res = await this.fetch(`https://open.spotify.com/embed/${link.kind}/${link.id}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36' } });
+    if (!res.ok) throw new Error(res.status === 404 ? 'This Spotify playlist is private or does not exist' : `Spotify error ${res.status}`);
+    return { ...embedTracks(await res.text()), via: 'embed' };
   }
 
   /**
