@@ -7,7 +7,7 @@
 //   hq   : HT-Demucs v4 ONNX (166 MB, MIT)
 import { utilityProcess, net } from 'electron';
 import { createWriteStream } from 'node:fs';
-import { access, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, copyFile, cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -186,6 +186,38 @@ export class StemService {
     const { dir, ...meta } = m;
     if (meta.format !== 'pcm') await writeFile(join(target, STEMS_META), JSON.stringify({ ...meta, track: newPath }));
     return target;
+  }
+
+  /**
+   * Copy a track's stems folder to `dest` (sending the collection to another Reboxed).
+   * @returns {Promise<{quality: string}|null>} null when the track has no stems
+   */
+  async exportTo(id, trackPath, dest) {
+    const m = await this.meta(id, trackPath);
+    if (!m || m.format === 'pcm') return null; // the old raw cache is not portable
+    await mkdir(dest, { recursive: true });
+    for (const f of await readdir(m.dir)) await copyFile(join(m.dir, f), join(dest, f));
+    return { quality: m.quality ?? 'hq' };
+  }
+
+  /**
+   * Take stems that came with a track from another Reboxed (folder `src`): copied to where this
+   * library keeps stems, linked to the track's new path.
+   * @returns {Promise<{quality: string, dir: string}|null>}
+   */
+  async adopt(id, trackPath, src) {
+    const m = await this.readMeta(src);
+    if (!m || m.format === 'pcm') return null;
+    const quality = m.quality ?? 'hq';
+    const target = await this.outDirFor({ id, trackPath, quality });
+    if (target.toLowerCase() !== src.toLowerCase()) {
+      await rm(target, { recursive: true, force: true });
+      await mkdir(target, { recursive: true });
+      for (const f of await readdir(src)) await copyFile(join(src, f), join(target, f));
+    }
+    const { dir, ...meta } = m;
+    await writeFile(join(target, STEMS_META), JSON.stringify({ ...meta, track: trackPath }));
+    return { quality, dir: target };
   }
 
   /** Delete a track's stems everywhere. */

@@ -1,4 +1,5 @@
 // Tiny DOM helpers and shared widgets (knob, context menu, dialogs, toasts).
+import { icon } from './icons.js';
 
 /**
  * h('div.cls#id', {attrs/props/on*}, ...children)
@@ -98,16 +99,24 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(
 /**
  * @param {number} x
  * @param {number} y
- * @param {({label: string, action?: () => void, submenu?: any[], disabled?: boolean, checked?: boolean} | '-')[]} items
+ * @param {({label: string, action?: () => void, submenu?: any[], disabled?: boolean, checked?: boolean, icon?: string,
+ *   drag?: {type: string, value: string}} | '-')[]} items icon: an icons.js name shown before the label;
+ *   drag: the item can be dragged out of the menu (e.g. onto the deck bar) with that data
  */
 export function contextMenu(x, y, items) {
   closeMenu();
   const build = (list) => h('ul.menu', {}, list.map((it) => {
     if (it === '-') return h('li.sep');
     const li = h(`li${it.disabled ? '.disabled' : ''}${it.submenu ? '.has-sub' : ''}`, {},
-      h('span.check', {}, it.checked ? '✓' : ''), h('span', {}, it.label));
+      h('span.check', {}, it.checked ? '✓' : ''), it.icon ? icon(it.icon, 'menu-ico') : null, h('span', {}, it.label));
     if (it.submenu) li.append(build(it.submenu));
     else if (!it.disabled) li.addEventListener('click', () => { closeMenu(); it.action?.(); });
+    if (it.drag) {
+      li.draggable = true;
+      li.classList.add('draggable');
+      li.addEventListener('dragstart', (e) => { e.dataTransfer.setData(it.drag.type, it.drag.value); e.dataTransfer.effectAllowed = 'copyMove'; document.body.classList.add('gq-dragging'); });
+      li.addEventListener('dragend', () => { document.body.classList.remove('gq-dragging'); closeMenu(); });
+    }
     return li;
   }));
   openMenu = build(items);

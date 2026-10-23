@@ -4,7 +4,7 @@
 /** Fields where an empty / 0 value in rekordbox means "unknown", never "cleared by the DJ". */
 const UNKNOWN_WHEN_EMPTY = new Set(['duration', 'fileSize', 'bitrate', 'sampleRate', 'kind', 'bpm', 'key', 'dateAdded']);
 /** Import bookkeeping, not track metadata. */
-const NOT_FIELDS = new Set(['path', 'cues', 'beatgrid', 'xmlId', 'source']);
+const NOT_FIELDS = new Set(['path', 'cues', 'beatgrid', 'xmlId', 'source', 'rbStems', 'rbStemsDir']);
 
 const isEmpty = (v) => v === undefined || v === null || v === '' || v === 0;
 const keyOf = (p) => (/^[A-Za-z]:\\/.test(p) ? p.toLowerCase() : p);

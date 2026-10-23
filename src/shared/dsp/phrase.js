@@ -48,6 +48,27 @@ export function mergePhrase(phrases, i) {
   return renumberPhrases([...phrases.slice(0, i), { ...a, end: b.end, bars: a.bars + b.bars }, ...phrases.slice(i + 2)]);
 }
 
+const r3 = (x) => Math.round(x * 1000) / 1000;
+
+/**
+ * Move the start of phrase i to time t (the previous phrase ends there). Bar counts follow the
+ * phrases' own bar length. Unchanged when t would leave a phrase shorter than a beat.
+ */
+export function moveBoundary(phrases, i, t) {
+  const p = phrases[i]; const prev = phrases[i - 1];
+  if (!p || !prev) return phrases;
+  const barOf = (x) => (x.end - x.start) / (x.bars || 1);
+  if (t <= prev.start + barOf(prev) / 4 || t >= p.end - barOf(p) / 4) return phrases;
+  const a = { ...prev, end: r3(t), bars: Math.max(1, Math.round((t - prev.start) / barOf(prev))) };
+  const b = { ...p, start: r3(t), bars: Math.max(1, Math.round((p.end - t) / barOf(p))), startBar: a.startBar + a.bars };
+  return [...phrases.slice(0, i - 1), a, b, ...phrases.slice(i + 1)];
+}
+
+/** Shift every phrase by dt seconds (a beat, a bar…): the analysis put the sections a bit off. */
+export function shiftPhrases(phrases, dt) {
+  return phrases.map((p) => ({ ...p, start: r3(Math.max(0, p.start + dt)), end: r3(Math.max(0, p.end + dt)) })).filter((p) => p.end > p.start);
+}
+
 /** Per-bar features: overall energy, low band (kick/bass), high band (hats/air). */
 function barFeatures(samples, sampleRate, barStarts) {
   const fftSize = 2048;

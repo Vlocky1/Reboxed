@@ -38,6 +38,21 @@ export const ICONS = {
   grid: svg('<path d="M3 2v12M6.5 2v12M10 2v12M13.5 2v12" stroke-width="1.2"/><path d="M1.5 8h13" stroke-dasharray="1.5 1.5"/>'),
   note: svg('<path d="M6 12V3.5l7-1.5v8.5"/><circle cx="4.4" cy="12" r="1.8"/><circle cx="11.4" cy="10.5" r="1.8"/>'),
   filter: svg('<path d="M2 3h12l-4.5 5.5V13l-3-1.5v-3z"/>'),
+  // Beatgrid actions (deck bar quick buttons): a bar line with its flag, beats as ticks.
+  'grid-downbeat': svg('<path d="M5 2.5v11" stroke-width="2"/><path d="M5 2.5h4.5L8 4.2l1.5 1.8H5" fill="currentColor"/><path d="M9.5 9v4.5M12.5 9v4.5" stroke-width="1.1"/>'),
+  'grid-nudge-left': svg('<path d="M10 3v10" stroke-width="1.1" stroke-dasharray="1.5 1.3"/><path d="M7.5 5.5L5 8l2.5 2.5"/>'),
+  'grid-nudge-right': svg('<path d="M6 3v10" stroke-width="1.1" stroke-dasharray="1.5 1.3"/><path d="M8.5 5.5L11 8l-2.5 2.5"/>'),
+  'grid-beat-left': svg('<path d="M13 3v10" stroke-width="1.1"/><path d="M7 5L4 8l3 3M11 5L8 8l3 3"/>'),
+  'grid-beat-right': svg('<path d="M3 3v10" stroke-width="1.1"/><path d="M5 5l3 3-3 3M9 5l3 3-3 3"/>'),
+  'grid-double': svg('<path d="M2.5 4v8M5.5 4v8M8.5 4v8M11.5 4v8M14 4v8" stroke-width="1.2"/><path d="M1.5 14h13" stroke-width="1"/>'),
+  'grid-half': svg('<path d="M3 4v8M8 4v8M13 4v8" stroke-width="1.2"/><path d="M1.5 14h13" stroke-width="1"/>'),
+  'grid-bpm-down': svg('<path d="M3 3v10M7 3v10M11.5 3v10" stroke-width="1.1"/><path d="M9.5 8h5" stroke-width="1.8"/>'),
+  'grid-bpm-up': svg('<path d="M2 3v10M5.5 3v10M9 3v10" stroke-width="1.1"/><path d="M10.5 8h4.5M12.75 5.75v4.5" stroke-width="1.8"/>'),
+  'grid-tap': svg('<circle cx="8" cy="7" r="4.5" stroke-width="1.1"/><circle cx="8" cy="7" r="1.8" fill="currentColor" stroke="none"/><path d="M8 11.5v3" />'),
+  'grid-constant': svg('<path d="M3 3v10M6.3 3v10M9.6 3v10M12.9 3v10" stroke-width="1.2"/><path d="M1.5 8h13" />'),
+  'grid-lock': svg('<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>'),
+  'grid-unlock': svg('<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1"/>'),
+  pin: svg('<path d="M6 2.5h4l-.7 4 2.2 2H4.5l2.2-2zM8 8.5V14"/>'),
 };
 
 /** <span class="ico"> containing an icon. */

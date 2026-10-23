@@ -116,6 +116,8 @@ contextBridge.exposeInMainWorld('rb', {
     status: () => ipcRenderer.invoke('stems:status'),
     download: (quality) => ipcRenderer.invoke('stems:download', quality),
     meta: (id, trackPath) => ipcRenderer.invoke('stems:meta', id, trackPath),
+    exportTo: (id, trackPath, dest) => ipcRenderer.invoke('stems:exportTo', id, trackPath, dest),
+    adopt: (id, trackPath, src) => ipcRenderer.invoke('stems:adopt', id, trackPath, src),
     separate: (id, left, right, opts) => ipcRenderer.invoke('stems:separate', id, left, right, opts),
     remove: (id, trackPath) => ipcRenderer.invoke('stems:delete', id, trackPath),
     relocate: (id, oldPath, newPath) => ipcRenderer.invoke('stems:relocate', id, oldPath, newPath),

@@ -2,7 +2,7 @@ import { Library } from './library.js';
 import { AudioEngine } from './audio/engine.js';
 import { Analyzer, mediaUrl, waveformArrays } from './analysis/analyzer.js';
 import { wavePreview } from '../shared/dsp/waveform.js';
-import { PHRASE_LABELS, phraseAt, relabelPhrase, splitPhrase, mergePhrase } from '../shared/dsp/phrase.js';
+import { PHRASE_LABELS, phraseAt, relabelPhrase, splitPhrase, mergePhrase, moveBoundary, shiftPhrases } from '../shared/dsp/phrase.js';
 import { DeckView } from './ui/deck-view.js';
 import { MixerView, FxView, deckOrder } from './ui/mixer-view.js';
 import { Browser } from './ui/browser.js';
@@ -27,7 +27,7 @@ import { createCues } from '../shared/autocues.js';
 import { transposeKey } from '../shared/keys.js';
 import { RELEASE_FX } from './audio/deck.js';
 import { STEM_ENGINES, ENGINE_NAMES, pickEngine } from '../shared/stem-engines.js';
-import { h, toast, fmtTime, contextMenu, modal } from './ui/dom.js';
+import { h, toast, fmtTime, contextMenu, closeMenu, modal } from './ui/dom.js';
 import { icon } from './ui/icons.js';
 import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.js';
 import { openRekordboxImport } from './ui/rekordbox-import.js';
@@ -35,7 +35,9 @@ import { DownloadCenter } from './ui/downloads.js';
 import { openRelink } from './ui/relink.js';
 import { openSetup } from './ui/setup.js';
 
-const fmtLoopBeats = (b) => (b >= 1 ? String(Math.round(b * 100) / 100) : `1/${Math.round(1 / b)}`);
+/** Drag data type of a beatgrid action (menu item or deck bar button). */
+const GRID_BTN_TYPE = 'application/x-rb-gridbtn';
+const fmtLoopBeats =(b) => (b >= 1 ? String(Math.round(b * 100) / 100) : `1/${Math.round(1 / b)}`);
 
 /** One cached stem as interleaved 16-bit stereo: WAV beside the track (skip the 44-byte header) or legacy raw PCM. */
 async function readStem(meta, name) {
@@ -102,13 +104,18 @@ class App {
     this.engine.decks.forEach((d) => d.addEventListener('change', (e) => {
       if (e.detail !== 'load') return;
       if (this.browser?.seedDependent) this.browser.refreshRows(); else this.browser?.renderBody();
+      this.renderGridQuick();
     }));
     this.engine.addEventListener('master', () => { if (this.browser?.seedDependent) this.browser.refreshRows(); });
-    this.deckViews.forEach((v, i) => {
-      v.el.querySelector('.deck-headbtns').append(
+    // Deck bar: [MASTER BEAT SYNC KEY SYNC] [pinned beatgrid buttons] [beatgrid menu] [deck menu].
+    this.gridQuickBars = this.deckViews.map((v, i) => {
+      const bar = this.gridQuickBar();
+      v.el.querySelector('.deck-headbtns').append(bar,
         h('button.dbtn.small.icon-btn', { title: 'Beatgrid', onclick: (e) => this.gridMenu(e, i) }, icon('grid')),
         h('button.dbtn.small.icon-btn', { title: 'Deck menu', onclick: (e) => this.deckMenu(e, i) }, icon('more')));
+      return bar;
     });
+    this.renderGridQuick();
     this.mixer = new MixerView(this.engine, {
       // Color FX starts off (plain FILTER on the COLOR knobs), like the controller; the last type
       // chosen is remembered for CFX ON.
@@ -329,7 +336,7 @@ class App {
     const track = this.library.get(trackId);
     if (!deck || !track) return;
     // Load lock (Preferences ▸ Decks & Mixer): by default a playing deck cannot be replaced by mistake.
-    if (deck.playing && !this.library.settings.loadOnPlaying) { toast(`Deck ${deckIndex + 1} is playing — pause it first (or allow it in Preferences ▸ Decks & Mixer)`, 3500); return; }
+    if (deck.playing && !this.library.settings.loadOnPlaying) { toast(`Deck ${deckIndex + 1} is playing — pause it first, or turn on "Load while playing" (deck menu ⋯)`, 4000); return; }
     deck.loading = true;
     try {
       const buffer = await this.analyzer.decode(track.path);
@@ -463,6 +470,12 @@ class App {
       const results = await window.rb.scanPaths(paths);
       const added = this.library.addScanned(results);
       this.browser.setStatus(`${added.length} track(s) added`);
+      // Stems already there (beside the track, or in the stems folder): the track joins the Stems list.
+      for (const id of added) {
+        const t = this.library.get(id);
+        const m = t && await window.rb.stems.meta(id, t.path).catch(() => null);
+        if (m && m.format !== 'pcm') this.library.update(id, { stems: m.quality === 'hq' ? 'hq' : 'fast' }, { silent: true });
+      }
       toast(`${added.length} track(s) added to the collection`);
       if (added.length && this.library.settings.autoAnalyze) this.analyzeTracks(added);
       return added;
@@ -700,7 +713,16 @@ class App {
       { label: 'Clear mix points', disabled: !d.mixPoint('mixin') && !d.mixPoint('mixout'), action: () => d.setCues(d.track.cues.filter((c) => c.kind !== 'mixin' && c.kind !== 'mixout')) },
       '-',
       { label: 'Eject', disabled: !d.loaded || d.playing, action: () => d.unload() },
+      '-',
+      { label: 'Load while playing (all decks)', checked: !!this.library.settings.loadOnPlaying, action: () => this.toggleLoadOnPlaying() },
     ]);
+  }
+
+  /** Load lock on / off: may a track be loaded onto a playing deck (also Preferences ▸ Decks & Mixer). */
+  toggleLoadOnPlaying() {
+    const on = !this.library.settings.loadOnPlaying;
+    this.library.setSetting('loadOnPlaying', on);
+    toast(on ? 'Load while playing: on — a playing deck can take another track' : 'Load while playing: off — pause a deck to load it (load lock)', 4000);
   }
 
   /** Load the same track on `to` at the same position, tempo and play state as `from`. */
@@ -1063,15 +1085,43 @@ class App {
 
   // ---- beatgrid editing ------------------------------------------------------------------------
 
+  /**
+   * Beatgrid actions of a deck: the beatgrid menu, and the icon buttons the DJ pins on the deck bar
+   * (between KEY SYNC and the beatgrid button, Settings: gridQuick).
+   */
+  gridActions(d) {
+    const ready = d.loaded && d.grid;
+    const g = d.grid;
+    const locked = !!d.track?.gridLocked;
+    const set = (make) => () => {
+      if (!d.loaded || !d.grid) { toast('Load an analyzed track first'); return; }
+      if (d.track.gridLocked) { toast('Beatgrid is locked'); return; }
+      this.setTrackGrid(d, make(d.grid));
+    };
+    const off = !ready || locked;
+    return [
+      { id: 'downbeat', icon: 'grid-downbeat', label: 'Set downbeat (bar start) at play head', disabled: off, run: set((x) => setDownbeatAt(x, d.position())) },
+      { id: 'nudgeLeft', icon: 'grid-nudge-left', label: 'Shift grid ← 10 ms', disabled: off, run: set((x) => shiftGrid(x, -0.01)) },
+      { id: 'nudgeRight', icon: 'grid-nudge-right', label: 'Shift grid → 10 ms', disabled: off, run: set((x) => shiftGrid(x, 0.01)) },
+      { id: 'beatLeft', icon: 'grid-beat-left', label: 'Shift grid ← 1 beat', disabled: off, run: set((x) => shiftGrid(x, -d.period)) },
+      { id: 'beatRight', icon: 'grid-beat-right', label: 'Shift grid → 1 beat', disabled: off, run: set((x) => shiftGrid(x, d.period)) },
+      { id: 'double', icon: 'grid-double', label: 'BPM × 2', disabled: off, run: set((x) => doubleGrid(x)) },
+      { id: 'half', icon: 'grid-half', label: 'BPM ÷ 2', disabled: off, run: set((x) => halveGrid(x)) },
+      { id: 'bpmDown', icon: 'grid-bpm-down', label: 'BPM − 0.01', disabled: off || !!g?.beats, run: set((x) => ({ ...x, bpm: Math.round((x.bpm - 0.01) * 100) / 100 })) },
+      { id: 'bpmUp', icon: 'grid-bpm-up', label: 'BPM + 0.01', disabled: off || !!g?.beats, run: set((x) => ({ ...x, bpm: Math.round((x.bpm + 0.01) * 100) / 100 })) },
+      { id: 'tap', icon: 'grid-tap', label: 'Tap tempo…', disabled: off, run: () => { if (d.loaded && d.grid && !d.track.gridLocked) this.tapTempo(d); } },
+      { id: 'constant', icon: 'grid-constant', label: 'Convert to constant grid', disabled: off || !g?.beats,
+        run: set((x) => constantGridAt(x.bpm, d.bg.snap(d.position()), d.bg.barPos(Math.round(d.bg.indexAt(d.position()))) + 1)) },
+      { id: 'lock', icon: locked ? 'grid-unlock' : 'grid-lock', label: locked ? 'Unlock beatgrid' : 'Lock beatgrid', disabled: !d.loaded,
+        run: () => { if (!d.track) return; const l = !!d.track.gridLocked; this.library.update(d.track.id, { gridLocked: !l }); toast(l ? 'Beatgrid unlocked' : 'Beatgrid locked'); this.renderGridQuick(); } },
+    ];
+  }
+
   gridMenu(e, deckIndex) {
     const d = this.engine.decks[deckIndex];
     if (!d.loaded || !d.grid) { toast('Load an analyzed track first'); return; }
     const g = d.grid;
     const locked = !!d.track.gridLocked;
-    const set = (grid) => {
-      if (locked) { toast('Beatgrid is locked'); return; }
-      this.setTrackGrid(d, grid);
-    };
     const reanalyze = async (mode) => {
       const t = this.library.update(d.track.id, { beatgrid: locked ? d.track.beatgrid : null });
       this.modeOverride.set(t.id, mode);
@@ -1079,27 +1129,77 @@ class App {
       this.analyzeTracks([t.id]);
       toast(`Re-analyzing (${mode === 'dynamic' ? 'dynamic' : 'normal'} grid)…`);
     };
-    const beat = d.period;
+    const pinned = this.library.settings.gridQuick ?? [];
+    const actions = this.gridActions(d);
+    // Every action can be dragged onto the deck bar (or ticked in "Buttons on the deck bar").
+    const item = (a) => ({ label: a.label, icon: a.icon, disabled: a.disabled, action: a.run, drag: { type: GRID_BTN_TYPE, value: a.id } });
     const r = e.currentTarget.getBoundingClientRect();
     contextMenu(r.left, r.bottom, [
       { label: `${toBeatgrid(g).dynamic ? 'Dynamic' : 'Constant'} grid · ${g.bpm.toFixed(2)} BPM${locked ? ' · locked' : ''}`, disabled: true },
       '-',
-      { label: 'Set downbeat (bar start) at play head', disabled: locked, action: () => set(setDownbeatAt(g, d.position())) },
-      { label: 'Shift grid ← 10 ms', disabled: locked, action: () => set(shiftGrid(g, -0.01)) },
-      { label: 'Shift grid → 10 ms', disabled: locked, action: () => set(shiftGrid(g, 0.01)) },
-      { label: 'Shift grid ← 1 beat', disabled: locked, action: () => set(shiftGrid(g, -beat)) },
-      { label: 'Shift grid → 1 beat', disabled: locked, action: () => set(shiftGrid(g, beat)) },
-      { label: 'BPM × 2', disabled: locked, action: () => set(doubleGrid(g)) },
-      { label: 'BPM ÷ 2', disabled: locked, action: () => set(halveGrid(g)) },
-      { label: 'BPM − 0.01', disabled: locked || !!g.beats, action: () => set({ ...g, bpm: Math.round((g.bpm - 0.01) * 100) / 100 }) },
-      { label: 'BPM + 0.01', disabled: locked || !!g.beats, action: () => set({ ...g, bpm: Math.round((g.bpm + 0.01) * 100) / 100 }) },
-      { label: 'Tap tempo…', disabled: locked, action: () => this.tapTempo(d) },
-      { label: 'Convert to constant grid', disabled: locked || !g.beats, action: () => set(constantGridAt(g.bpm, d.bg.snap(d.position()), d.bg.barPos(Math.round(d.bg.indexAt(d.position()))) + 1)) },
+      ...actions.filter((a) => a.id !== 'lock').map(item),
       '-',
-      { label: locked ? 'Unlock beatgrid' : 'Lock beatgrid', action: () => { this.library.update(d.track.id, { gridLocked: !locked }); toast(locked ? 'Beatgrid unlocked' : 'Beatgrid locked'); } },
+      item(actions.find((a) => a.id === 'lock')),
       { label: 'Re-analyze (normal grid)', action: () => reanalyze('normal') },
       { label: 'Re-analyze (dynamic grid)', action: () => reanalyze('dynamic') },
+      '-',
+      { label: 'Buttons on the deck bar', submenu: [
+        { label: 'Drag an item above onto the deck bar, or tick it here', disabled: true },
+        ...actions.map((a) => ({ label: a.label, icon: a.icon, checked: pinned.includes(a.id),
+          action: () => this.setGridQuick(pinned.includes(a.id) ? pinned.filter((x) => x !== a.id) : [...pinned, a.id]) })),
+      ] },
     ]);
+  }
+
+  setGridQuick(ids) {
+    this.library.setSetting('gridQuick', [...new Set(ids)]);
+    this.renderGridQuick();
+  }
+
+  /** The pinned beatgrid buttons on every deck bar (icons; drag to reorder, drag away or right-click to remove). */
+  renderGridQuick() {
+    const ids = this.library.settings.gridQuick ?? [];
+    this.gridQuickBars?.forEach((bar, i) => {
+      const d = this.engine.decks[i];
+      const byId = new Map(this.gridActions(d).map((a) => [a.id, a]));
+      bar.replaceChildren(...ids.filter((id) => byId.has(id)).map((id) => {
+        const a = byId.get(id);
+        const b = h('button.dbtn.small.icon-btn.gq-btn', { title: `${a.label} — drag to move, drag off the bar to remove`, draggable: true, dataset: { id }, disabled: a.disabled && id !== 'lock' && !d.loaded },
+          icon(a.icon));
+        b.onclick = () => this.gridActions(d).find((x) => x.id === id)?.run();
+        b.addEventListener('dragstart', (e) => { e.dataTransfer.setData(GRID_BTN_TYPE, id); e.dataTransfer.effectAllowed = 'move'; document.body.classList.add('gq-dragging'); });
+        b.addEventListener('dragend', (e) => {
+          document.body.classList.remove('gq-dragging');
+          if (e.dataTransfer.dropEffect === 'none') this.setGridQuick((this.library.settings.gridQuick ?? []).filter((x) => x !== id)); // dropped off the bar
+        });
+        b.addEventListener('contextmenu', (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, [{ label: 'Remove from the deck bar', action: () => this.setGridQuick(ids.filter((x) => x !== id)) }]); });
+        return b;
+      }));
+      bar.classList.toggle('empty', !bar.children.length);
+    });
+  }
+
+  /** Drop zone of the pinned beatgrid buttons on a deck bar: a dropped action goes where it falls. */
+  gridQuickBar() {
+    const bar = h('div.grid-quick', { title: 'Beatgrid buttons: drag them here from the beatgrid menu' });
+    const at = (e) => [...bar.children].findIndex((c) => e.clientX < c.getBoundingClientRect().left + c.offsetWidth / 2);
+    bar.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes(GRID_BTN_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; bar.classList.add('drop'); } });
+    bar.addEventListener('dragleave', () => bar.classList.remove('drop'));
+    bar.addEventListener('drop', (e) => {
+      bar.classList.remove('drop');
+      const id = e.dataTransfer.getData(GRID_BTN_TYPE);
+      if (!id) return;
+      e.preventDefault();
+      const ids = (this.library.settings.gridQuick ?? []).filter((x) => x !== id);
+      const before = [...bar.children].map((c) => c.dataset.id).filter((x) => x !== id);
+      const i = at(e);
+      const anchor = i < 0 ? null : bar.children[i]?.dataset.id;
+      const pos = anchor && anchor !== id ? before.indexOf(anchor) : before.length;
+      ids.splice(pos < 0 ? ids.length : pos, 0, id);
+      this.setGridQuick(ids);
+      closeMenu();
+    });
+    return bar;
   }
 
   setTrackGrid(deck, grid) {
@@ -1169,6 +1269,16 @@ class App {
         { label: 'Change to', submenu: PHRASE_LABELS.map((l) => ({ label: l, checked: l === p.label, action: () => save(relabelPhrase(phrases, i, l)) })) },
         { label: 'Cut the phrase here (at the nearest bar)', disabled: !(p.bars > 1), action: () => save(splitPhrase(phrases, i, t)) },
         { label: 'Join with the next phrase', disabled: i >= phrases.length - 1, action: () => save(mergePhrase(phrases, i)) },
+        '-',
+        // Move a boundary to the beat under the mouse, or slide the whole structure.
+        { label: `Start ${p.label}${p.num > 1 ? ` ${p.num}` : ''} here (at the beat)`, disabled: i === 0,
+          action: () => { const next = moveBoundary(phrases, i, deck.bg ? deck.bg.snap(t) : t); if (next === phrases) toast('Too close to another phrase'); else save(next); } },
+        { label: 'Shift all phrases', submenu: [
+          { label: '← 1 bar', action: () => save(shiftPhrases(phrases, -4 * deck.period)) },
+          { label: '← 1 beat', action: () => save(shiftPhrases(phrases, -deck.period)) },
+          { label: '→ 1 beat', action: () => save(shiftPhrases(phrases, deck.period)) },
+          { label: '→ 1 bar', action: () => save(shiftPhrases(phrases, 4 * deck.period)) },
+        ] },
         '-',
         { label: 'Back to the analysed phrases', disabled: !deck.analysis.phrases.edited, action: () => this.resetPhrases(deck) },
       ]);
@@ -2798,7 +2908,10 @@ async function smoke(app) {
       const { openTransferExport, openTransferImport } = await import('./ui/transfer.js');
       lib.update(kicks[0].id, { myTags: ['peak', 'smoke'] });
       const send = lib.createNode('playlist', 'To the other PC');
-      lib.addToPlaylist(send.id, kicks.slice(0, 2).map((t) => t.id));
+      // One track with its stems (they go along), one without.
+      const withSt = lib.all().find((t) => t.stems && kicks.some((k) => k.id === t.id)) ?? kicks[0];
+      const sendTracks = [withSt, kicks.find((t) => t.id !== withSt.id && !t.stems) ?? kicks.find((t) => t.id !== withSt.id)];
+      lib.addToPlaylist(send.id, sendTracks.map((t) => t.id));
       const clickPrimary = async () => { for (let i = 0; i < 40 && !document.querySelector('.transfer'); i++) await wait(25); document.querySelector('.dialog:has(.transfer) .dialog-buttons button.primary').click(); };
       const exp = openTransferExport(app, [send.id], { dir: `${dir}\\usb` });
       await clickPrimary();
@@ -2810,12 +2923,35 @@ async function smoke(app) {
       const got = folder?.children?.[0]?.trackIds.map((id) => lib.get(id)) ?? [];
       // Same computer here: the tracks are already in the collection, so they are updated (moved to
       // the copies) instead of added; on another computer they are added.
-      step('send to another Reboxed and import there: music copied, playlist, tags and cues kept',
+      const stemmed = got.find((t) => t.id === withSt.id);
+      const adopted = stemmed ? await window.rb.stems.meta(stemmed.id, stemmed.path) : null;
+      step('send to another Reboxed and import there: music copied, playlist, tags, cues and stems kept',
         sent?.tracks === 2 && rep?.added + rep?.updated === 2 && got.length === 2 && got.every((t) => t.path.startsWith(`${dir}\\other-pc\\`)) && got.some((t) => t.myTags?.join() === 'peak,smoke')
-          && got.every((t) => t.beatgrid),
-        `sent ${sent?.tracks} · import ${JSON.stringify(rep)} · ${got.map((t) => `${t.title} ${t.path.split('\\').slice(-2).join('\\')} [${t.myTags}]`).join(' | ')}`);
-      kicks.slice(0, 2).forEach((t) => lib.relink(t.id, t.path)); // back to the original files
+          && got.every((t) => t.beatgrid) && (!withSt.stems || (sent.withStems === 1 && rep.stems === 1 && !!stemmed?.stems && adopted?.track === stemmed.path)),
+        `sent ${sent?.tracks} (${sent?.withStems} with stems) · import ${JSON.stringify(rep)} · ${got.map((t) => `${t.title} ${t.path.split('\\').slice(-2).join('\\')} [${t.myTags}] stems=${t.stems ?? '-'}`).join(' | ')} · stems at ${adopted?.dir}`);
+      sendTracks.forEach((t) => lib.relink(t.id, t.path)); // back to the original files
       lib.deleteNode(folder.id); lib.deleteNode(send.id);
+
+      // Beatgrid buttons pinned on the deck bar (Set downbeat by default), the beatgrid menu's list,
+      // and the load-while-playing switch of the deck menu.
+      {
+        const bar = app.gridQuickBars[0];
+        const firstIcon = bar.querySelector('.gq-btn')?.dataset.id;
+        app.setGridQuick(['downbeat', 'double', 'half']);
+        const pinned = [...bar.querySelectorAll('.gq-btn')].map((b) => b.dataset.id).join();
+        const placed = bar.previousElementSibling === app.deckViews[0].keySyncBtn && bar.nextElementSibling?.title === 'Beatgrid';
+        const g0 = d1.grid ? { ...d1.grid } : null;
+        bar.querySelector('[data-id="double"]').click(); await wait(50);
+        const doubled = g0 && Math.abs(d1.grid.bpm - g0.bpm * 2) < 0.01;
+        bar.querySelector('[data-id="half"]').click(); await wait(50);
+        app.setGridQuick(['downbeat']);
+        const before = !!lib.settings.loadOnPlaying;
+        app.toggleLoadOnPlaying(); const flipped = lib.settings.loadOnPlaying === !before;
+        app.toggleLoadOnPlaying();
+        step('beatgrid buttons on the deck bar (icons) and the load-while-playing switch',
+          firstIcon === 'downbeat' && pinned === 'downbeat,double,half' && placed && doubled && flipped && lib.settings.loadOnPlaying === before,
+          `default ${firstIcon} · pinned ${pinned} · between KEY SYNC and the beatgrid menu ${placed} · ×2 ${g0?.bpm} → ${doubled} · load while playing ${before} → ${flipped}`);
+      }
 
       lib.setSetting('setupDone', false);
       const setup = openSetup(app); await wait(200);
@@ -2892,7 +3028,8 @@ async function smoke(app) {
         const t0 = performance.now();
         const meta = await app.separateStems(t.id, { quality: 'hq', urgent: true });
         lib.setSetting('stemsProvider', before);
-        step('NVIDIA engine (CUDA): speed and a real HQ separation', typeof b.speed === 'number' && b.speed > 5 && meta?.ep === 'cuda' && meta.stems.length === 4,
+        // The speed is reported, not required: other programs may be using the card meanwhile.
+        step('NVIDIA engine (CUDA): speed and a real HQ separation', typeof b.speed === 'number' && b.speed > 0 && meta?.ep === 'cuda' && meta.stems.length === 4,
           `${nv.gpu?.name} · HQ ${b.speed?.toFixed?.(1) ?? JSON.stringify(b)}× real time · ${t.title} separated on ${meta?.ep} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
       } else report.steps.push({ name: `NVIDIA engine: not installed here (${nv.gpu?.name ?? 'no NVIDIA card'}${nv.support?.ok ? '' : ` · ${nv.support?.reason}`})`, ok: true, info: '' });
 
