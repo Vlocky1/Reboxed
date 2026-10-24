@@ -31,7 +31,7 @@ import { h, toast, fmtTime, contextMenu, closeMenu, modal } from './ui/dom.js';
 import { icon } from './ui/icons.js';
 import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.js';
 import { openRekordboxImport } from './ui/rekordbox-import.js';
-import { DownloadCenter } from './ui/downloads.js';
+import { DownloadCenter, platformOf } from './ui/downloads.js';
 import { openRelink } from './ui/relink.js';
 import { openSetup } from './ui/setup.js';
 
@@ -520,10 +520,21 @@ class App {
   }
 
   installFileDrop() {
-    window.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); });
-    window.addEventListener('drop', (e) => {
-      if (!e.dataTransfer.files.length) return;
+    // Everything dropped on the window is handled here: files are imported, a YouTube / SoundCloud
+    // link opens in the download window, anything else is ignored (never loaded in the window).
+    window.addEventListener('dragover', (e) => {
+      if (e.defaultPrevented) return; // a drop zone (playlist, deck…) handles it
       e.preventDefault();
+      e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('text/uri-list') ? 'copy' : 'none';
+    });
+    window.addEventListener('drop', (e) => {
+      if (e.defaultPrevented) return;
+      e.preventDefault();
+      if (!e.dataTransfer.files.length) {
+        const url = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').split(/\r?\n/).find((l) => l && !l.startsWith('#'))?.trim();
+        if (url && platformOf(url)) { this.downloads.link = url; this.downloads.open('link'); }
+        return;
+      }
       const paths = [...e.dataTransfer.files].map((f) => window.rb.pathForFile(f)).filter(Boolean);
       const xml = paths.find((p) => p.toLowerCase().endsWith('.xml'));
       if (xml) {
@@ -3078,6 +3089,17 @@ async function smoke(app) {
       const uneven = cells.filter((c, i) => i % 2 === 0 && cells[i + 1] && Math.abs(c.getBoundingClientRect().height - cells[i + 1].getBoundingClientRect().height) > 0.5).length;
       document.querySelector('.settings-close').click(); await settingsOpen;
       step('preferences rows: label and value cells as tall (straight lines)', uneven === 0, `${uneven} uneven row(s) of ${cells.length / 2}`);
+    }
+
+    // Security: the window never opens or navigates to another page (a dropped link, window.open…).
+    {
+      const popup = window.open('https://example.com/');
+      const before = location.href;
+      try { location.assign('https://example.com/'); } catch { /* refused */ }
+      await new Promise((r) => setTimeout(r, 800));
+      step('security: no new window, no navigation away from Reboxed, bridge still here',
+        popup === null && location.href === before && typeof window.rb?.version === 'function',
+        `window.open → ${popup} · still on ${location.href}`);
     }
 
     if (!d1.hotCue(0)) d1.hotCuePress(0); // automix replaced deck 1's track

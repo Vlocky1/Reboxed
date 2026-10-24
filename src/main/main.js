@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, safeStorage, session, shell } from 'electron';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { basename, dirname, extname, join, normalize, sep } from 'node:path';
@@ -23,6 +23,13 @@ import { Updater } from './updater.js';
 import { LicenseManager } from './license.js';
 import { PRODUCT } from '../shared/product.js';
 import { hostname } from 'node:os';
+import { guardIpc, hardenContents, hardenSession } from './security.js';
+
+// Security: only Reboxed's own pages (app://rb) reach the main process, run in a window or get
+// permissions. Set up before any IPC handler is registered.
+const securityLog = (msg) => console.warn(`[security] ${msg}`);
+guardIpc(ipcMain, { log: securityLog });
+app.on('web-contents-created', (_e, contents) => hardenContents(contents, { log: securityLog }));
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = normalize(join(here, '..'));
@@ -483,6 +490,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('license:deactivate', () => license.deactivate());
   protocol.handle('app', serveApp);
   protocol.handle('media', serveMedia);
+  hardenSession(session.defaultSession);
   createWindow();
 });
 

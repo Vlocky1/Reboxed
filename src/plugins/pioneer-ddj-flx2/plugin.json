@@ -4,7 +4,7 @@
   "version": "1.1.0",
   "author": "Reboxed",
   "kind": "controller",
-  "description": "2-deck controller, from the manufacturer's MIDI mapping: HOT CUE, PAD FX, BEAT LOOP, SAMPLER pads, SHIFT + jog search, Smart CFX. Every mapped control is handled; not yet tried on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
+  "description": "2-deck controller, from the manufacturer's MIDI mapping: HOT CUE, PAD FX, BEAT LOOP, SAMPLER pads, SHIFT + jog search, Smart CFX. Every mapped control is handled, tested on the hardware.",
   "match": [
     "DDJ-FLX2"
   ],
