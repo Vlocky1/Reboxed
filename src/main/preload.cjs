@@ -1,6 +1,10 @@
 const { contextBridge, ipcRenderer, webUtils, webFrame } = require('electron');
 
-contextBridge.exposeInMainWorld('rb', {
+// The bridge to the main process exists only on Reboxed's own pages (app://rb). Any other page that
+// would end up in the window gets nothing (the main process also refuses its IPC calls).
+const trusted = location.protocol === 'app:' && location.host === 'rb';
+
+const api = {
   /** Interface size (Preferences > Appearance). */
   setZoom: (f) => webFrame.setZoomFactor(Math.min(1.5, Math.max(0.7, Number(f) || 1))),
   loadLibrary: () => ipcRenderer.invoke('library:load'),
@@ -132,4 +136,6 @@ contextBridge.exposeInMainWorld('rb', {
       return () => ipcRenderer.off(channel, listener);
     },
   },
-});
+};
+
+if (trusted) contextBridge.exposeInMainWorld('rb', api);
