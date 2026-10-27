@@ -231,7 +231,33 @@ async function librarySection(app) {
     h('p.dim', {}, 'Move the collection to a folder you choose on your drive: each track is linked to the same music there — same name, another format, or a similar name confirmed by tags and duration — or copied there. You check every doubtful match first. Cues, tags, analysis and playlists are kept, stems move along, and the local files can go to the Recycle Bin.'),
     h('button.dbtn', { onclick: () => openRelink(app) }, 'Move my collection to a USB drive…'),
     await spotifySection(),
-    await discogsSection());
+    await discogsSection(),
+    await aiSection());
+}
+
+/** Track suggestion: the optional Gemini key (stored encrypted, never shown again). */
+export async function aiSection() {
+  const st = await window.rb.ai.status();
+  const key = h('input.text', { type: 'password', placeholder: st.hasKey ? `${st.keyHint} (saved — type to replace)` : 'Gemini API key (optional)', spellcheck: false });
+  const model = h('input.text', { value: st.model, spellcheck: false, title: 'Model name (default: gemini-flash-latest)' });
+  const status = h('span.dim', {}, st.hasKey ? '✓ Set up' : 'Not set up: suggestions stay local');
+  const err = (e) => `✗ ${String(e.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`;
+  const save = async () => {
+    try {
+      const r = await window.rb.ai.configure({ ...(key.value.trim() ? { key: key.value.trim() } : {}), model: model.value.trim() });
+      key.value = '';
+      key.placeholder = r.hasKey ? `${r.keyHint} (saved — type to replace)` : 'Gemini API key (optional)';
+      status.textContent = r.hasKey ? '✓ Saved' : 'No key: suggestions stay local';
+    } catch (e) { status.textContent = err(e); }
+  };
+  return h('div', {},
+    h('h4', {}, 'Track suggestion (AI)'),
+    h('p.dim', {}, 'Browser ▸ Track Suggestion works without any account: it listens to your tracks (sound, key, tempo, energy) and learns from your histories what you play next. Optionally, a free Gemini API key (aistudio.google.com ▸ Get API key) adds "✦ Ask Gemini": it re-ranks the best matches and names tracks to discover. Only titles, artists, BPM, keys and genres are sent to Google, never your audio. The key is stored encrypted on this computer.'),
+    h('div.form-grid', {},
+      h('label', {}, 'API key'), key,
+      h('label', {}, 'Model'), model,
+      h('label', {}, ''), h('div', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
+        h('button.dbtn.small', { onclick: async () => { try { await window.rb.ai.configure({ key: '' }); key.placeholder = 'Gemini API key (optional)'; status.textContent = 'Removed'; } catch (e) { status.textContent = err(e); } } }, 'Remove'), ' ', status)));
 }
 
 /** Discogs personal token: precise styles (Tech House, Deep House…) for the Genre auto-tag source. */

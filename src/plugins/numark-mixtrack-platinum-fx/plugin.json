@@ -1,0 +1,28 @@
+{
+  "id": "numark-mixtrack-platinum-fx",
+  "name": "Numark Mixtrack Platinum FX",
+  "version": "1.0.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "4-deck controller: 8 pads (CUES, AUTO LOOP, FADER CUTS, SAMPLE), decks 3/4 with the layer buttons, jog scratch, FX paddles, filter knobs.",
+  "match": [
+    "Mixtrack Platinum FX",
+    "Platinum FX"
+  ],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 4,
+  "init": [
+    "F0 7E 00 06 01 F7",
+    "F0 00 20 7F 03 01 F7"
+  ],
+  "tempoInvert": true,
+  "padModes": {
+    "1": "HOT CUE",
+    "2": "BEAT LOOP",
+    "3": "PAD FX",
+    "4": "SAMPLER",
+    "5": "BEAT JUMP",
+    "6": "SLICER"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "numark-mixtrack-go",
+  "name": "Numark MixTrack Go",
+  "version": "1.0.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "2-deck controller: 4 pads per deck (one PAD MODE button: CUES, LOOPS, SAMPLER, STEMS), ACAPELLA / INSTRUMENTAL stem buttons, FADE FX, touch jogs.",
+  "match": [
+    "Mixtrack Go"
+  ],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 2,
+  "init": [
+    "F0 7E 7F 06 01 F7",
+    "F0 00 20 7F 03 01 F7"
+  ],
+  "tempoInvert": true,
+  "padModes": {
+    "1": "HOT CUE",
+    "2": "BEAT LOOP",
+    "3": "SAMPLER",
+    "4": "STEMS"
+  },
+  "padModeCycle": [
+    "HOT CUE",
+    "BEAT LOOP",
+    "SAMPLER",
+    "STEMS"
+  ]
+}

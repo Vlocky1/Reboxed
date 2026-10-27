@@ -1,0 +1,27 @@
+{
+  "id": "numark-mixtrack-pro-fx",
+  "name": "Numark Mixtrack Pro FX",
+  "version": "1.0.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "2-deck controller: 8 pads (CUES, AUTO LOOP, FADER CUTS, SAMPLE), jog scratch, 14-bit pitch faders, FX paddles, filter knobs.",
+  "match": [
+    "Mixtrack Pro FX"
+  ],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 2,
+  "init": [
+    "F0 7E 00 06 01 F7",
+    "F0 00 20 7F 03 01 F7"
+  ],
+  "tempoInvert": true,
+  "padModes": {
+    "1": "HOT CUE",
+    "2": "BEAT LOOP",
+    "3": "PAD FX",
+    "4": "SAMPLER",
+    "5": "BEAT JUMP",
+    "6": "SLICER"
+  }
+}

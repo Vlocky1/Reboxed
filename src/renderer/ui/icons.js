@@ -53,6 +53,8 @@ export const ICONS = {
   'grid-lock': svg('<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>'),
   'grid-unlock': svg('<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1"/>'),
   pin: svg('<path d="M6 2.5h4l-.7 4 2.2 2H4.5l2.2-2zM8 8.5V14"/>'),
+  pads: svg('<rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M5.8 1.5v13M10.2 1.5v13M1.5 5.8h13M1.5 10.2h13" stroke-width="1"/><rect x="6.6" y="6.6" width="2.8" height="2.8" fill="currentColor" stroke="none"/>'),
+  sparkle: svg('<path d="M8 1.5v4M8 10.5v4M1.5 8h4M10.5 8h4M3.5 3.5l2.2 2.2M10.3 10.3l2.2 2.2M12.5 3.5l-2.2 2.2M5.7 10.3l-2.2 2.2"/>'),
 };
 
 /** <span class="ico"> containing an icon. */

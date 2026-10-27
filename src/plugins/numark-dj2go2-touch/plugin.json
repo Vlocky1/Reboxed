@@ -1,0 +1,24 @@
+{
+  "id": "numark-dj2go2-touch",
+  "name": "Numark DJ2GO2 Touch",
+  "version": "1.0.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "Pocket 2-deck controller: touch jogs, 4 pads per deck (CUES, AUTO LOOP, MANUAL LOOP, SAMPLER), level knobs, browse.",
+  "match": [
+    "DJ2GO2"
+  ],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 2,
+  "init": [
+    "F0 00 01 3F 3C 48 F7"
+  ],
+  "padsSetMode": true,
+  "tempoInvert": true,
+  "padModes": {
+    "1": "HOT CUE",
+    "2": "BEAT LOOP",
+    "4": "SAMPLER"
+  }
+}

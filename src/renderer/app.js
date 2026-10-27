@@ -18,6 +18,9 @@ import { checkForUpdates, openUpdateDialog } from './ui/updates.js';
 import { openLicenseGate } from './ui/license.js';
 import { Sampler } from './audio/sampler.js';
 import { SamplerView } from './ui/sampler-view.js';
+import { PadSampler } from './audio/pad-sampler.js';
+import { PadSurface } from './controller/launchpad.js';
+import { PadSamplerView } from './ui/pad-sampler-view.js';
 import { Automix } from './automix.js';
 import { DrumSwap } from './audio/groove.js';
 import { BeatFxUnit, PAD_FX } from './audio/fx.js';
@@ -82,6 +85,11 @@ class App {
     this.engine.onCuesChanged = (id, cues) => this.library.update(id, { cues });
     this.engine.onTrackPlayed = (deck) => this.library.addToHistory(deck.track.id);
     this.sampler = new Sampler(this.engine);
+    // PADS: 64-pad sampler / instrument / light show, on screen and on a Launchpad X.
+    this.pads = new PadSampler(this.engine, (path) => this.analyzer.decode(path));
+    this.pads.load(this.library.settings.padKits?.kits, this.library.settings.padKits?.index ?? 0);
+    this.pads.setVolume(this.library.settings.padVolume ?? 0.9);
+    this.padSurface = new PadSurface(this, this.pads);
     this.automix = new Automix(this);
     // Groove Circuit DRUM SWAP per deck (loops enter the channel before trim/EQ) and PAD FX units.
     this.groove = this.engine.decks.map((d, i) => new DrumSwap(d, this.engine.channels[i].trim));
@@ -153,7 +161,9 @@ class App {
     this.samplerView.el.hidden = !s.showSampler;
     this.samplerBtn = gtoggle('sampler', 'SAMPLER', 'Show/hide the sampler', () => this.toggleSampler());
     this.samplerBtn.classList.toggle('on', !this.samplerView.el.hidden);
-    this.fxBtn = gtoggle('fx', 'FX', 'Show/hide the Beat FX panel', () => this.togglePanel('fx'));
+    this.padView = new PadSamplerView(this, this.padSurface);
+    this.padsBtn = gtoggle('pads', 'PADS', 'Pad sampler: 64 pads, instrument and light show (Launchpad X)', () => this.togglePads());
+    this.fxBtn =gtoggle('fx', 'FX', 'Show/hide the Beat FX panel', () => this.togglePanel('fx'));
     this.mixerBtn = gtoggle('mixer', 'MIXER', 'Show/hide the mixer', () => this.togglePanel('mixer'));
     this.automixBtn = gtoggle('automix', 'AUTOMIX', 'Automix the current list', (e) => this.automixMenu(e));
     this.automixStatus = h('span.automix-status');
@@ -184,7 +194,7 @@ class App {
           this.modeSel,
           h('div.lbtns', {}, this.layoutBtns)),
         h('div.gbar-center', {},
-          h('div.ggroup', { title: 'Panels' }, this.fxBtn, this.mixerBtn, this.samplerBtn),
+          h('div.ggroup', { title: 'Panels' }, this.fxBtn, this.mixerBtn, this.samplerBtn, this.padsBtn),
           h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
           h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.recBtn, this.recTime)),
         h('div.gbar-right', {}, this.trialPill, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
@@ -194,7 +204,9 @@ class App {
       (this.wavesEl = h('section.waves')),
       (this.decksEl = h('section.decks')),
       this.samplerView.el,
+      this.padView.el,
       this.browser.el);
+    if (s.showPads) this.togglePads(true);
     document.body.replaceChildren(root);
     applyTheme(this.library.settings);
     this.applyPanels();
@@ -546,6 +558,25 @@ class App {
   }
 
   // ---- sampler ---------------------------------------------------------------------------------
+
+  /** PADS panel shown / hidden (on: force). */
+  togglePads(on = this.padView.el.hidden) {
+    this.padView.show(on);
+    this.padsBtn.classList.toggle('on', on);
+    document.body.classList.toggle('pads-open', on);
+    if (!!this.library.settings.showPads !== on) {
+      this.library.settings = { ...this.library.settings, showPads: on };
+      this.library.scheduleSave();
+    }
+  }
+
+  /** Launchpad CAPTURE / pad menu: the deck loop into a pad. */
+  capturePad(i = null) { return this.padView.capture(i); }
+
+  /** A Launchpad X came or went: the panel shows it (PADS is opened from the top bar). */
+  onPadControllerChange() {
+    this.padView.refresh();
+  }
 
   toggleSampler() {
     this.samplerView.el.hidden = !this.samplerView.el.hidden;
@@ -1371,6 +1402,10 @@ class App {
     if (this.midi?.controllers && !(ledNow - (this.lastLeds ?? 0) < 33)) { this.lastLeds = ledNow; for (const c of this.midi.controllers.values()) c.updateLeds(); }
     lap('leds');
     if (!this.samplerView.el.hidden) this.samplerView.frame();
+    this.pads.followTempo();
+    this.padView.frame();
+    for (const lp of this.midi?.launchpads?.values() ?? []) lp.frame(ledNow);
+    lap('pads');
     const style = this.library.settings.waveformColor;
     if (!document.body.classList.contains('browse-full')) {
       const stemMode = this.library.settings.stemWaveform;
@@ -3089,6 +3124,49 @@ async function smoke(app) {
       const uneven = cells.filter((c, i) => i % 2 === 0 && cells[i + 1] && Math.abs(c.getBoundingClientRect().height - cells[i + 1].getBoundingClientRect().height) > 0.5).length;
       document.querySelector('.settings-close').click(); await settingsOpen;
       step('preferences rows: label and value cells as tall (straight lines)', uneven === 0, `${uneven} uneven row(s) of ${cells.length / 2}`);
+    }
+
+    // PADS with a virtual Launchpad X: Programmer mode, pads play, RGB LEDs, instrument, capture.
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sent = [];
+      const lp = app.midi.attachLaunchpad('virtual-lpx', (b) => sent.push([...b]), 'Launchpad X (virtual)');
+      app.togglePads(true);
+      const programmer = sent[0]?.join(',') === '240,0,32,41,2,12,14,1,247';
+      const rgb = sent.filter((m) => m[6] === 3);
+      const panel = !app.padView.el.hidden && app.padView.el.querySelectorAll('.lp-pad').length === 64;
+      app.pads.selectKit(0);
+      app.padSurface.setMode('sampler');
+      lp.receive([0x90, 11, 127]); // bottom-left pad: KICK
+      await wait(150);
+      const kickPlaying = app.pads.kit.pads[56]?.src.drum === 'kick' && app.pads.isPlaying(56);
+      sent.length = 0;
+      lp.frame(performance.now(), true);
+      const lit = sent.flatMap((m) => { const e = []; for (let k = 7; k + 4 < m.length; k += 5) e.push(m.slice(k, k + 5)); return e; });
+      const kickLed = lit.find((e) => e[1] === 11);
+      lp.receive([0xb0, 96, 127]); // Note: instrument mode
+      lp.receive([0x90, 11, 100]);
+      await wait(120);
+      const noteOn = app.pads.notes.size === 1;
+      const heldBefore = JSON.stringify([...app.padSurface.heldNotes]);
+      lp.receive([0x90, 11, 0]);
+      await wait(150);
+      const noteOff = app.pads.notes.size === 0;
+      const noteInfo = `held ${heldBefore} → notes ${JSON.stringify([...app.pads.notes.keys()])} mode ${app.padSurface.mode}/${app.pads.kit.instrument.mode}`;
+      lp.receive([0xb0, 95, 127]); // Session: back to the pads
+      const emptyBefore = app.pads.kit.pads.filter((p) => !p).length;
+      const slot = await app.capturePad();
+      const captured = slot !== null && !!app.pads.kit.pads[slot]?.src.path && app.pads.kit.pads.filter((p) => !p).length === emptyBefore - 1;
+      const saved = app.library.settings.padKits?.kits?.[0]?.pads?.[slot]?.src?.path === app.pads.kit.pads[slot]?.src.path;
+      sent.length = 0;
+      lp.close();
+      const live = sent.at(-1)?.join(',') === '240,0,32,41,2,12,14,0,247';
+      if (slot !== null) app.pads.setPad(slot, null);
+      app.midi.launchpads.delete('virtual-lpx');
+      app.togglePads(false);
+      step('pads: Launchpad X in Programmer mode, pads play and light up (RGB SysEx), instrument notes, capture into a pad, back to Live mode',
+        programmer && rgb.length > 0 && panel && kickPlaying && kickLed?.[2] > 60 && noteOn && noteOff && captured && saved && live,
+        `programmer ${programmer} · ${rgb.length} RGB msg · panel ${panel} · kick ${kickPlaying} led ${kickLed?.slice(2)} · note on/off ${noteOn}/${noteOff} (${noteInfo}) · capture → pad ${slot} saved ${saved} · live ${live}`);
     }
 
     // Security: the window never opens or navigates to another page (a dropped link, window.open…).
