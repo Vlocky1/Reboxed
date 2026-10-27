@@ -4,7 +4,7 @@ import { IndexedTrack, compileQuery, SEARCH_FIELDS, SearchController, compileTra
 import { displayKey, compatibleKeys } from '../../shared/keys.js';
 import { TRACK_COLORS } from '../../shared/rekordbox-xml.js';
 import { findRelated } from '../../shared/related.js';
-import { suggest } from '../../shared/dsp/features.js';
+import { suggestNext, aiPrompt, parseAiAnswer, MOODS } from '../../shared/suggest-ai.js';
 import { icon } from './icons.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 import { base64ToU8 } from '../../shared/dsp/waveform.js';
@@ -400,12 +400,24 @@ export class Browser {
   renderRelated() {
     const s = this.lib.settings;
     if (this.source === 'suggest') {
-      const seedSel = h('select', { onchange: (e) => { this.lib.settings = { ...this.lib.settings, relatedSeed: e.target.value }; this.lib.scheduleSave(); this.refreshRows(); } },
+      const set = (patch) => { this.lib.settings = { ...this.lib.settings, ...patch }; this.lib.scheduleSave(); this.refreshRows(); };
+      const seedSel = h('select', { onchange: (e) => set({ relatedSeed: e.target.value }) },
         [['master', 'Master deck'], ...Array.from({ length: s.deckCount }, (_, i) => [`deck${i + 1}`, `Deck ${i + 1}`]), ['selected', 'Selected track']]
           .map(([v, l]) => h('option', { value: v, selected: s.relatedSeed === v }, l)));
-      this.relatedEl.replaceChildren(h('div.filter-panel.related-panel', {}, h('div.frow', {},
-        h('span.ftoggle', {}, 'SOUNDS LIKE'), seedSel,
-        h('span.dim', {}, 'Ranked by audio fingerprint (timbre, harmony, energy, groove) with compatible tempo. Tracks analyzed before this version need re-analysis.'))));
+      const moodSel = h('select', { title: 'Where the set goes next', onchange: (e) => { this.aiResult = null; set({ suggestMood: e.target.value }); } },
+        Object.entries(MOODS).map(([v, l]) => h('option', { value: v, selected: (s.suggestMood ?? 'keep') === v }, l)));
+      this.aiBtn = h('button.dbtn.small', { title: 'Ask Gemini to re-rank the best matches and name tracks to discover (titles, artists, BPM and keys only are sent)', onclick: () => this.askAi() }, '✦ ASK GEMINI');
+      this.aiStatus = h('span.dim');
+      this.whyEl = h('div.suggest-why');
+      this.discoverEl = h('div.suggest-discover');
+      window.rb.ai?.status().then((st) => {
+        if (!st?.hasKey) { this.aiBtn.disabled = true; this.aiBtn.title = 'Optional: add a Gemini API key in Preferences > Library > Track suggestion'; }
+      }).catch(() => {});
+      this.relatedEl.replaceChildren(h('div.filter-panel.related-panel.suggest-panel', {},
+        h('div.frow', {}, h('span.ftoggle', {}, 'SUGGEST'), seedSel, moodSel, this.aiBtn, this.aiStatus,
+          h('span.dim', {}, 'Sound, key, tempo, energy and what you usually play next. Works offline.')),
+        this.whyEl, this.discoverEl));
+      this.renderDiscover();
       return;
     }
     if (this.source !== 'related') { this.relatedEl.replaceChildren(); return; }
@@ -424,12 +436,62 @@ export class Browser {
     return deck?.track ? this.lib.get(deck.track.id) ?? deck.track : null;
   }
 
+  /** Local suggestions after the seed (see shared/suggest-ai.js), with their reasons. */
+  localSuggestions(seed, limit = 50) {
+    const loaded = new Set(this.app.engine.decks.filter((d) => d.loaded).map((d) => d.track.id));
+    return suggestNext(seed, this.lib.all().filter((t) => t.analyzed || t.features), {
+      mood: this.lib.settings.suggestMood ?? 'keep', histories: this.lib.histories, playedToday: this.lib.playedToday(), onDeck: loaded, limit,
+    });
+  }
+
   suggestRows() {
     const seed = this.relatedSeedTrack();
-    this.count.title = seed ? `Sounds like: ${seed.title}` : '';
-    if (!seed?.features) return [];
-    return suggest(seed, seed.features, this.lib.all().map((t) => ({ track: t, features: t.features })))
-      .map((r) => ({ track: r.track, pos: -1 }));
+    this.count.title = seed ? `Next after: ${seed.artist ? `${seed.artist} - ` : ''}${seed.title}` : 'Load a track (or pick "Selected track")';
+    if (!seed) { this.whyEl?.replaceChildren(); return []; }
+    let list = this.localSuggestions(seed);
+    const ai = this.aiResult?.seedId === seed.id ? this.aiResult : null;
+    if (ai) {
+      const picked = new Set(ai.picks.map((p) => p.track.id));
+      list = [...ai.picks.map((p) => ({ track: p.track, reasons: [`Gemini: ${p.why}`] })), ...list.filter((r) => !picked.has(r.track.id))];
+    }
+    this.whyEl?.replaceChildren(...list.slice(0, 5).map((r) => h('span.suggest-chip', { title: r.reasons.join(' · ') },
+      h('b', {}, r.track.title), r.reasons.length ? ` — ${r.reasons.slice(0, 3).join(', ')}` : '')));
+    return list.map((r) => ({ track: r.track, pos: -1 }));
+  }
+
+  /** Gemini: re-rank the 60 best local matches and name tracks to discover. */
+  async askAi() {
+    const seed = this.relatedSeedTrack();
+    if (!seed || !this.aiBtn) return;
+    const candidates = this.localSuggestions(seed, 60).map((r) => r.track);
+    const ids = (this.lib.histories[0]?.trackIds ?? []).slice(-8);
+    const recent = ids.map((id) => this.lib.get(id)).filter((t) => t && t.id !== seed.id);
+    this.aiBtn.disabled = true;
+    this.aiStatus.textContent = 'Asking Gemini…';
+    try {
+      const text = await window.rb.ai.ask(aiPrompt(seed, candidates, recent, this.lib.settings.suggestMood ?? 'keep'));
+      this.aiResult = { seedId: seed.id, ...parseAiAnswer(text, candidates) };
+      this.aiStatus.textContent = `Gemini: ${this.aiResult.picks.length} picks, ${this.aiResult.discover.length} to discover`;
+      this.renderDiscover();
+      this.refreshRows();
+    } catch (err) {
+      this.aiStatus.textContent = String(err.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+    } finally {
+      this.aiBtn.disabled = false;
+    }
+  }
+
+  /** Tracks Gemini suggests that are not in the collection: search them in the download window. */
+  renderDiscover() {
+    const seed = this.relatedSeedTrack();
+    const ai = this.aiResult?.seedId === seed?.id ? this.aiResult : null;
+    if (!this.discoverEl) return;
+    if (!ai?.discover.length) { this.discoverEl.replaceChildren(); return; }
+    const dl = this.app.downloads;
+    this.discoverEl.replaceChildren(h('span.ftoggle', {}, 'DISCOVER'), ...ai.discover.map((d) => h('button.suggest-chip.discover', {
+      title: `${d.why} — search it to download`,
+      onclick: () => { dl.query = `${d.artist} ${d.title}`.trim(); dl.open('search'); setTimeout(() => dl.body?.querySelector('.dlc-primary')?.click(), 60); },
+    }, `${d.artist ? `${d.artist} – ` : ''}${d.title}`)));
   }
 
   relatedRows() {

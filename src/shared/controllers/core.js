@@ -4,6 +4,7 @@
 // Control types (rekordbox mapping "type" column):
 //   Button / Pad / JogTouch : note on (vel > 0) = press, note off / vel 0 = release
 //   KnobSliderHiRes         : 14-bit CC, MSB on data1, LSB on data1 + 0x20
+//   KnobSlider              : 7-bit CC
 //   Rotary                  : relative encoder, 1..63 = +n, 65..127 = -(128 - n)
 //   JogRotate / Difference  : relative jog centred on 64 (65 = +1, 63 = -1)
 import { addrKey } from './rbcsv.js';
@@ -65,6 +66,10 @@ export class ControllerCore {
           ev.value01 = ev.value / 16383;
           break;
         }
+        case 'KnobSlider': // 7-bit knob / fader (Numark)
+          ev.value = d2;
+          ev.value01 = d2 / 127;
+          break;
         case 'Rotary':
           ev.delta = d2 === 0 || d2 === 64 ? 0 : d2 < 64 ? d2 : d2 - 128;
           break;

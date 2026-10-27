@@ -21,6 +21,7 @@ import { Deezer } from './deezer.js';
 import { MetadataLookup } from './metadata.js';
 import { Updater } from './updater.js';
 import { LicenseManager } from './license.js';
+import { AiClient } from './ai.js';
 import { PRODUCT } from '../shared/product.js';
 import { hostname } from 'node:os';
 import { guardIpc, hardenContents, hardenSession } from './security.js';
@@ -306,6 +307,22 @@ function registerIpc(win) {
       : [{ name: 'Audio', extensions: [...AUDIO_EXTENSIONS].map((x) => x.slice(1)) }];
     const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters });
     return r.canceled ? [] : r.filePaths;
+  });
+  // Track suggestion with Gemini (optional, the user's key, kept here).
+  let aiClient = null;
+  const ai = () => (aiClient ??= new AiClient(join(store.dir, 'ai.json'), (url, opts) => net.fetch(url, opts), {
+    encrypt: (text) => (safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(text).toString('base64') : null),
+    decrypt: (b64) => safeStorage.decryptString(Buffer.from(b64, 'base64')),
+  }));
+  ipcMain.handle('ai:status', () => ai().status());
+  ipcMain.handle('ai:configure', (_e, cfg) => ai().configure(cfg));
+  ipcMain.handle('ai:ask', (_e, prompt) => ai().ask(prompt));
+  // A pad sampler kit chosen by the user (JSON text; media:// only serves audio).
+  ipcMain.handle('dialog:openKit', async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Reboxed pad kit', extensions: ['json'] }] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    if ((await stat(r.filePaths[0])).size > 4e6) throw new Error('file too large for a kit');
+    return readFile(r.filePaths[0], 'utf8');
   });
   ipcMain.handle('dialog:saveFile', async (_e, defaultName, ext) => {
     const r = await dialog.showSaveDialog(win, { defaultPath: defaultName, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });

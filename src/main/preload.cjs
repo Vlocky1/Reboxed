@@ -13,6 +13,7 @@ const api = {
   putAnalysis: (id, data) => ipcRenderer.invoke('analysis:put', id, data),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   openFiles: (kind) => ipcRenderer.invoke('dialog:openFiles', kind),
+  openKit: () => ipcRenderer.invoke('dialog:openKit'),
   saveFileDialog: (name, ext) => ipcRenderer.invoke('dialog:saveFile', name, ext),
   scanPaths: (paths) => ipcRenderer.invoke('scan:paths', paths),
   onScanProgress: (cb) => {
@@ -58,6 +59,11 @@ const api = {
     onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cdj:progress', l); return () => ipcRenderer.off('cdj:progress', l); },
   },
   version: () => ipcRenderer.invoke('app:version'),
+  ai: {
+    status: () => ipcRenderer.invoke('ai:status'),
+    configure: (cfg) => ipcRenderer.invoke('ai:configure', cfg),
+    ask: (prompt) => ipcRenderer.invoke('ai:ask', prompt),
+  },
   license: {
     status: () => ipcRenderer.invoke('license:status'),
     activate: (key) => ipcRenderer.invoke('license:activate', key),

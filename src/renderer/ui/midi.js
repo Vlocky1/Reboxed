@@ -5,6 +5,8 @@ import { BEAT_FX } from '../audio/fx.js';
 import { decodeMessage } from '../../shared/midi.js';
 import { parseRekordboxMapping } from '../../shared/controllers/rbcsv.js';
 import { PioneerController } from '../controller/pioneer.js';
+import { LaunchpadDriver } from '../controller/launchpad.js';
+import { isLpxPort } from '../../shared/launchpad.js';
 
 /** All mappable targets: id -> {label, kind: 'button'|'abs'|'rel', run(msg)} */
 export function buildTargets(app) {
@@ -59,6 +61,8 @@ export class MidiController {
     this.learnTarget = null;
     this.onLearn = null;
     this.targets = new Map();
+    /** @type {Map<string, LaunchpadDriver>} input id -> Launchpad X (pad sampler) */
+    this.launchpads = new Map();
   }
 
   get mappings() { return this.app.library.settings.midiMappings ?? []; }
@@ -69,7 +73,8 @@ export class MidiController {
     this.controllers = new Map();
     if (!navigator.requestMIDIAccess) return;
     try {
-      this.access = await navigator.requestMIDIAccess({ sysex: false });
+      // SysEx: the Launchpad X takes its Programmer mode and RGB colours as SysEx.
+      this.access = await navigator.requestMIDIAccess({ sysex: true }).catch(() => navigator.requestMIDIAccess({ sysex: false }));
     } catch (err) {
       console.warn('MIDI unavailable', err);
       return;
@@ -83,7 +88,12 @@ export class MidiController {
         const port = this.access.inputs.get(id);
         if (!port || port.state !== 'connected') { this.controllers.delete(id); this.app.onControllerChange?.(); }
       }
+      for (const [id] of this.launchpads) {
+        const port = this.access.inputs.get(id);
+        if (!port || port.state !== 'connected') { this.launchpads.delete(id); this.app.onPadControllerChange?.(); }
+      }
     };
+    window.addEventListener('beforeunload', () => { for (const lp of this.launchpads.values()) lp.close(); });
     bind();
     this.access.onstatechange = (e) => {
       bind();
@@ -106,7 +116,13 @@ export class MidiController {
   }
 
   async attach(input) {
-    if (this.controllers.has(input.id) || this.pending?.has(input.id)) return;
+    if (this.controllers.has(input.id) || this.launchpads.has(input.id) || this.pending?.has(input.id)) return;
+    if (isLpxPort(input.name)) {
+      const output = [...this.access.outputs.values()].find((o) => isLpxPort(o.name) && o.state === 'connected');
+      if (!output || !this.access.sysexEnabled) { toast(`${input.name}: SysEx is not allowed, the pad lights stay off`, 5000); }
+      this.attachLaunchpad(input.id, (bytes) => { try { output?.send(bytes); } catch { /* port closed */ } }, 'Launchpad X');
+      return;
+    }
     (this.pending ??= new Set()).add(input.id);
     try {
       const { plugin, profile } = (await this.profileFor(input.name)) ?? {};
@@ -124,12 +140,18 @@ export class MidiController {
   async reattach() {
     if (!this.access) return;
     this.controllers.clear();
+    this.launchpads.clear();
     this.app.onControllerChange?.();
     for (const input of this.access.inputs.values()) if (input.state === 'connected') await this.attach(input);
   }
 
   /** Also used by the smoke test with a virtual port. */
   attachDriver(id, profile, send, name = profile.device, plugin = {}) {
+    // Plugin "init": hex messages sent on connection (e.g. Numark: leave the demo light show).
+    for (const hex of plugin.init ?? []) {
+      const bytes = String(hex).trim().split(/\s+/).map((x) => parseInt(x, 16));
+      if (bytes.every((b) => b >= 0 && b <= 255) && (bytes[0] !== 0xf0 || this.access?.sysexEnabled !== false)) send(bytes);
+    }
     const driver = new PioneerController(this.app, profile, send, plugin);
     this.controllers.set(id, driver);
     driver.updateLeds(true);
@@ -138,7 +160,19 @@ export class MidiController {
     return driver;
   }
 
+  /** Launchpad X as the pad sampler's surface (also used by the smoke test with a virtual port). */
+  attachLaunchpad(id, send, name = 'Launchpad X') {
+    const lp = new LaunchpadDriver(this.app.padSurface, send, name);
+    this.launchpads.set(id, lp);
+    lp.frame(performance.now(), true);
+    toast(`${name}: pad sampler ready (Session = pads, Note = instrument, Custom = light show)`, 5000);
+    this.app.onPadControllerChange?.(lp);
+    return lp;
+  }
+
   onMessage(data, input) {
+    const lp = input ? this.launchpads?.get(input.id) : null;
+    if (lp) { lp.receive(data); return; }
     const driver = input ? this.controllers.get(input.id) : null;
     if (driver && !this.learnTarget) driver.receive(data);
     const msg = decodeMessage(data);
@@ -181,7 +215,7 @@ export class MidiController {
     this.onLearn = (target, key) => { learnBtn.classList.remove('on'); status.textContent = `${this.targets.get(target).label} ← ${key}`; render(); };
     render();
     const devices = this.inputs();
-    const drivers = [...(this.controllers?.values() ?? [])];
+    const drivers = [...(this.controllers?.values() ?? []), ...this.launchpads.values()];
     // Live MIDI monitor: last messages and the functions they triggered.
     const monitor = h('pre.midi-monitor', {}, '—');
     const tick = setInterval(() => {

@@ -161,6 +161,25 @@ export async function runShots(app) {
 
     // ---- sampler and library view ----
     await attempt('sampler', async () => { app.toggleSampler(); await wait(300); await shot('05-sampler'); app.toggleSampler(); });
+    // ---- PADS: the EDM kit with a pad open in the editor and light effects running ----
+    await attempt('pads', async () => {
+      app.togglePads(true);
+      app.pads.selectKit(1);
+      app.padSurface.setMode('sampler');
+      app.padView.select(19, true); // a PLUCK pad in the editor
+      for (const [x, y] of [[0, 7], [3, 4], [6, 2]]) { app.padSurface.press(x, y, 110); setTimeout(() => app.padSurface.press(x, y, 0), 200); await wait(120); }
+      await wait(150);
+      await shot('24-pads');
+      app.padSurface.selected = null;
+      app.togglePads(false);
+    });
+    // ---- track suggestion after the master deck ----
+    await attempt('suggest', async () => {
+      app.browser.select('suggest');
+      await wait(300);
+      await shot('25-suggest');
+      app.browser.select('collection');
+    });
     await attempt('library', async () => {
       app.modeSel.value = 'library'; app.modeSel.dispatchEvent(new Event('change'));
       app.browser.select(peak.id);

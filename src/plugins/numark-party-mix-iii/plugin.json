@@ -1,0 +1,25 @@
+{
+  "id": "numark-party-mix-iii",
+  "name": "Numark Party Mix III",
+  "version": "1.0.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "2-deck party controller: 8 pads (CUES, SAMPLER, AUTO LOOP, EFFECTS), stem buttons, filter and EQ, touch jogs. From the Party Mix II layout: not yet checked on the hardware.",
+  "match": [
+    "Party Mix",
+    "PartyMix"
+  ],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 2,
+  "init": [
+    "F0 00 20 7F 03 01 F7"
+  ],
+  "tempoInvert": true,
+  "padModes": {
+    "1": "HOT CUE",
+    "2": "SAMPLER",
+    "3": "BEAT LOOP",
+    "4": "PAD FX"
+  }
+}

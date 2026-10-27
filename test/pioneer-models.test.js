@@ -75,7 +75,8 @@ const pioneerPlugins = readdirSync(PLUGINS).filter((id) => {
 });
 
 test('every built-in Pioneer controller: all mapped inputs are handled, LEDs update', () => {
-  assert.deepEqual(pioneerPlugins.sort(), ['pioneer-ddj-flx10', 'pioneer-ddj-flx2', 'pioneer-ddj-flx4', 'pioneer-ddj-flx6', 'pioneer-ddj-grv6']);
+  assert.deepEqual(pioneerPlugins.sort(), ['numark-dj2go2-touch', 'numark-mixtrack-go', 'numark-mixtrack-platinum-fx', 'numark-mixtrack-pro-fx', 'numark-ns4fx', 'numark-party-mix-iii',
+    'pioneer-ddj-flx10', 'pioneer-ddj-flx2', 'pioneer-ddj-flx4', 'pioneer-ddj-flx6', 'pioneer-ddj-grv6']);
   const errors = [];
   const origError = console.error;
   console.error = (...a) => errors.push(a.map(String).join(' '));
@@ -96,8 +97,36 @@ test('every built-in Pioneer controller: all mapped inputs are handled, LEDs upd
   assert.deepEqual(errors, []);
 });
 
+test('Numark: pads follow the deck’s pad mode, 7-bit knobs, jog in two’s complement, pitch fader up = slower', () => {
+  for (const id of ['numark-mixtrack-pro-fx', 'numark-mixtrack-platinum-fx', 'numark-ns4fx']) {
+    const r = rig(id);
+    r.press('PadMode2', 0); // AUTO LOOP
+    assert.equal(r.ctrl.decks[0].mode, 'BEAT LOOP', `${id}: mode button`);
+    r.press('PadMode1', 0); // CUES
+    r.press('PAD1_Current', 0);
+    assert.equal(r.calls('deck0.hotCuePress').length, 1, `${id}: pad 1 = hot cue A in CUES mode`);
+    const [gs, gd] = r.addr('ChannelFader', 0);
+    r.ctrl.receive([gs, gd, 127]);
+    assert.deepEqual(r.calls('app.mixer.controls.get().apply').at(-1)?.args ?? r.log.filter((c) => /apply$/.test(c.path)).at(-1).args, [1]);
+    const [js, jd] = r.addr('JogScratch', 0);
+    r.ctrl.receive([js, jd, 0x7e]); // two's complement: -2
+    assert.deepEqual(r.calls('deck0.jogBend').at(-1).args, [-2], `${id}: jog`);
+  }
+  const go = rig('numark-mixtrack-go');
+  go.press('PadModeSelect', 1);
+  assert.equal(go.ctrl.decks[1].mode, 'BEAT LOOP', 'MixTrack Go PAD MODE cycles its own modes');
+  const dj = rig('numark-dj2go2-touch');
+  dj.press('PAD2_PadMode4', 0);
+  assert.equal(dj.ctrl.decks[0].mode, 'SAMPLER', 'DJ2GO2 Touch: the pad pressed sets the page');
+  dj.decks[0].tempoRange = 10;
+  const [ts, td] = dj.addr('TempoSlider', 0);
+  dj.ctrl.receive([ts, td, 64]); // centre: soft takeover catches the deck's tempo
+  dj.ctrl.receive([ts, td, 127]); // then the top
+  assert.ok(dj.log.some((c) => c.path.startsWith('deck0.') && typeof c.args[0] === 'number' && c.args[0] < -5), 'top of the pitch fader = slower');
+});
+
 test('SHIFT + jog searches on every model (FLX10 SHIFT rows carry no deck column)', () => {
-  for (const id of pioneerPlugins) {
+  for (const id of pioneerPlugins.filter((x) => x.startsWith('pioneer-'))) {
     const r = rig(id);
     const deck = id.includes('flx2') || id.includes('flx4') ? 1 : 2;
     const shift = r.mapping.entries.filter((e) => e.name === 'Shift').flatMap((e) => e.inputs).find((a) => a.deck === deck || (a.deck === null && (a.status & 0x0f) === deck));

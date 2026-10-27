@@ -1,0 +1,29 @@
+{
+  "id": "numark-ns4fx",
+  "name": "Numark NS4FX",
+  "version": "1.0.0",
+  "author": "Reboxed",
+  "kind": "controller",
+  "description": "4-deck controller: 4 performance pads with 8 modes, 4 transport pads, decks 3/4, jog scratch, key up/down with SHIFT + pitch bend.",
+  "match": [
+    "NS4FX"
+  ],
+  "driver": "pioneer",
+  "mapping": "mapping.json",
+  "decks": 4,
+  "init": [
+    "F0 00 01 3F 7F 3A 60 00 04 04 01 00 00 F7",
+    "F0 00 20 7F 03 01 F7"
+  ],
+  "tempoInvert": true,
+  "padModes": {
+    "1": "HOT CUE",
+    "2": "BEAT LOOP",
+    "3": "PAD FX",
+    "4": "SAMPLER",
+    "5": "KEYBOARD",
+    "6": "PAD FX2",
+    "7": "SLICER",
+    "8": "BEAT JUMP"
+  }
+}

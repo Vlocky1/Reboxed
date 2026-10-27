@@ -123,7 +123,17 @@ export class PioneerController {
     if (pad && d) { this.padEvent(i, Number(pad[1]), pad[2], !!pad[3], press); return; }
     // Generic pads: PADn_PadModeM, their meaning comes from the plugin's padModes.
     const gpad = /^PAD(\d+)_PadMode(\d)(\+Shift)?$/.exec(name);
-    if (gpad && d) { const kind = MODE_KIND[this.padModes[gpad[2]]]; if (kind) this.padEvent(i, Number(gpad[1]), kind, !!gpad[3], press); return; }
+    if (gpad && d) {
+      const mode = this.padModes[gpad[2]];
+      const kind = MODE_KIND[mode];
+      // Pads with one note per mode and no mode messages (DJ2GO2 Touch): the page follows the pads.
+      if (kind && press && s.mode !== mode && this.plugin.padsSetMode) this.setMode(i, mode);
+      if (kind) this.padEvent(i, Number(gpad[1]), kind, !!gpad[3], press);
+      return;
+    }
+    // Pads that send the same note in every mode (Numark): the mode the deck is in decides.
+    const cpad = /^PAD(\d+)_Current(\+Shift)?$/.exec(name);
+    if (cpad && d) { const kind = MODE_KIND[s.mode]; if (kind) this.padEvent(i, Number(cpad[1]), kind, !!cpad[2], press); return; }
     const gmode = /^PadMode(\d)$/.exec(name);
     if (gmode && d) { if (press && this.padModes[gmode[1]]) this.setMode(i, this.padModes[gmode[1]]); return; }
     const gpage = /^Page(Left|Right)_PadMode\d$/.exec(name);
@@ -248,7 +258,7 @@ export class PioneerController {
       case 'SearchFwd': if (press) d.seek(d.position() + 4); break;
       case 'VinylState': d.vinyl = !!press; break;
       case '4BeatLoopToggle': if (press) { if (d.loop) d.exitLoop(); else d.beatLoop(4); } break;
-      case 'PadModeSelect': if (press) { const cycle = ['HOT CUE', 'PAD FX', 'BEAT JUMP', 'SAMPLER']; this.setMode(i, cycle[(cycle.indexOf(s.mode) + 1) % cycle.length]); } break;
+      case 'PadModeSelect': if (press) { const cycle = this.plugin.padModeCycle ?? ['HOT CUE', 'PAD FX', 'BEAT JUMP', 'SAMPLER']; this.setMode(i, cycle[(cycle.indexOf(s.mode) + 1) % cycle.length]); } break;
       case 'TempoSlider': this.tempo(i, ev.value01); break;
       case 'MasterTempo': if (press) d.toggleKeyLock(); break;
       case 'TempoRange': if (press) { const r = [6, 10, 16, 100]; d.setTempoRange(r[(r.indexOf(d.tempoRange) + 1) % r.length]); s.tempoCaught = false; } break;
@@ -310,6 +320,11 @@ export class PioneerController {
       case 'FX1TapBeat': if (press) { this.fxTaps.push(performance.now()); const bpm = tapBpm(this.fxTaps.slice(-8)); if (bpm) fx.setTapBpm(bpm); } break;
       case 'FX1-1': fx.setDepth(ev.value01); break;
       case 'FX1-1On': if (press) fx.setOn(!fx.on); break;
+      // Numark FX paddle (CC: 0 off, 1 latched on, 2 held on) and beats encoder.
+      case 'FXPaddle': fx.setOn(ev.value > 0); break;
+      case 'FXBeats': if (ev.delta) this.fxBeat(Math.sign(ev.delta)); break;
+      case 'PitchBendUp': case 'PitchBendDown': d.setBend(press ? (name === 'PitchBendUp' ? 1.04 : 0.96) : 1); break;
+      case 'KeyUp': case 'KeyDown': if (press) d.setKeyShift(Math.max(-12, Math.min(12, (d.keyShift ?? 0) + (name === 'KeyUp' ? 1 : -1)))); break;
       case 'FX1ReleaseFXOn': fx.release(press); break;
       default: this.unknown.add(name); break; // listed by the plugin tests
     }
@@ -445,7 +460,8 @@ export class PioneerController {
   tempo(i, v01) {
     const d = this.deck(i);
     const s = this.decks[i];
-    const sign = this.app.library.settings.controllerTempoInvert ? -1 : 1;
+    // Plugin "tempoInvert": faders whose value grows toward the top (Numark).
+    const sign = (!!this.app.library.settings.controllerTempoInvert !== !!this.plugin.tempoInvert) ? -1 : 1;
     const pct = sign * (v01 * 2 - 1) * d.tempoRange;
     if (!s.tempoCaught) {
       const prev = s.lastTempo;
@@ -592,15 +608,14 @@ export class PioneerController {
     o('ActivePartDrums', d.stemsReady && d.stemGains[0] > 0);
     // FX PART SELECT LEDs (raw: these rows carry no deck), Vocal / Inst / Bass / Drums.
     [3, 2, 1, 0].forEach((stem, k) => { if (this.padStatus[i] !== undefined) this.core.sendRaw(this.padStatus[i], 0x14 + k, !!d.fxParts?.[stem], force); });
-    // Generic pad LEDs (PADn_PadModeM): show the state of the current mode.
+    // Generic pad LEDs (PADn_PadModeM, PADn_Current): show the state of the current mode.
     const m = Object.entries(this.padModes).find(([, v]) => v === s.mode)?.[0];
-    if (m) {
-      for (let n = 1; n <= 8; n++) {
-        const slot = n - 1;
-        const on = s.mode === 'HOT CUE' ? !!d.hotCue(slot) : s.mode === 'SAMPLER' ? !!this.app.sampler.slots[this.samplerSlot(i, slot)]?.buffer
-          : s.mode === 'BEAT LOOP' ? d.loop?.beats === padValue('BEAT LOOP', this.page(i), slot) : s.mode === 'KEY SHIFT' || s.mode === 'KEYBOARD' ? d.keyShift === padValue(s.mode, this.page(i), slot) : d.loaded;
-        o(`PAD${n}_PadMode${m}`, on);
-      }
+    for (let n = 1; n <= 8; n++) {
+      const slot = n - 1;
+      const on = s.mode === 'HOT CUE' ? !!d.hotCue(slot) : s.mode === 'SAMPLER' ? !!this.app.sampler.slots[this.samplerSlot(i, slot)]?.buffer
+        : s.mode === 'BEAT LOOP' ? d.loop?.beats === padValue('BEAT LOOP', this.page(i), slot) : s.mode === 'KEY SHIFT' || s.mode === 'KEYBOARD' ? d.keyShift === padValue(s.mode, this.page(i), slot) : d.loaded;
+      if (m) o(`PAD${n}_PadMode${m}`, on);
+      o(`PAD${n}_Current`, on);
     }
     for (const [k, v] of Object.entries(this.padModes)) o(`PadMode${k}`, s.mode === v);
   }
