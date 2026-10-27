@@ -37,6 +37,30 @@ function saw(phase, dt) {
 const lp = () => { let y = 0; return (x, a) => (y += a * (x - y)); };
 const cutoffA = (hz, rate) => 1 - Math.exp((-2 * Math.PI * Math.min(hz, rate * 0.45)) / rate);
 
+/** Sustained notes: seconds of steady sound after the attack, looped while the pad is held. */
+const SUSTAIN_LOOP = 2;
+const SUSTAIN_XFADE = 0.25;
+/** When each instrument's sound stops changing (end of attack / decay to its sustain level). */
+const SUSTAIN_AT = { sub: 0.15, reese: 0.3, acid: 0.12, pluck: 0.12, lead: 0.3, stab: 0.1, keys: 0.25, pad: 0.8 };
+
+/**
+ * A note that lasts as long as the pad is held: the attack, then a steady part made seamless so it
+ * can loop (its end is crossfaded into what comes before the loop start).
+ * @returns {{samples: Float32Array, loopStart: number, loopEnd: number}} loop points in seconds
+ */
+export function synthSustain(kind, note, rate = 44100) {
+  const hold = SUSTAIN_AT[kind] ?? 0.2;
+  const a = synthNote(kind, note, rate, hold);
+  const x = Math.round(SUSTAIN_XFADE * rate);
+  const ls = Math.round((hold + SUSTAIN_XFADE + 0.05) * rate);
+  const le = a.length;
+  for (let i = 0; i < x; i++) {
+    const w = i / x; // equal-power crossfade of the loop's last x samples with the x before the loop start
+    a[le - x + i] = a[le - x + i] * Math.cos((w * Math.PI) / 2) + a[ls - x + i] * Math.sin((w * Math.PI) / 2);
+  }
+  return { samples: a, loopStart: ls / rate, loopEnd: le / rate };
+}
+
 /**
  * A note of a built-in instrument: attack/decay/sustain then a release tail (the caller fades it
  * out on note off when the pad is held).
@@ -45,8 +69,8 @@ const cutoffA = (hz, rate) => 1 - Math.exp((-2 * Math.PI * Math.min(hz, rate * 0
  * @param {number} rate sample rate
  * @returns {Float32Array}
  */
-export function synthNote(kind, note, rate = 44100) {
-  const dur = { sub: 1.6, reese: 2.4, acid: 0.6, pluck: 0.9, lead: 2.4, stab: 0.7, keys: 1.8, pad: 4 }[kind] ?? 1.5;
+export function synthNote(kind, note, rate = 44100, hold = null) {
+  const dur = hold !== null ? hold + SUSTAIN_LOOP : { sub: 1.6, reese: 2.4, acid: 0.6, pluck: 0.9, lead: 2.4, stab: 0.7, keys: 1.8, pad: 4 }[kind] ?? 1.5;
   const len = Math.round(dur * rate);
   const out = new Float32Array(len);
   const f = midiHz(note);
@@ -56,7 +80,9 @@ export function synthNote(kind, note, rate = 44100) {
   const phases = chord.flatMap(() => voices.map(() => Math.abs(rnd())));
   const filt = lp(); const filt2 = lp();
   for (let i = 0; i < len; i++) {
-    const t = i / rate;
+    const tt = i / rate;
+    // Sustained note: the envelope and filter stop moving at `hold` (LFOs keep running).
+    const t = hold !== null ? Math.min(tt, hold) : tt;
     let v = 0; let k = 0;
     for (const semi of chord) {
       const fc = f * 2 ** (semi / 12);
@@ -72,19 +98,19 @@ export function synthNote(kind, note, rate = 44100) {
     let env; let cut;
     switch (kind) {
       case 'sub': env = Math.min(1, t / 0.005) * Math.exp(-t * 0.9); v = Math.tanh(v * 1.4); cut = 0; break;
-      case 'reese': env = Math.min(1, t / 0.01) * Math.exp(-t * 0.5); cut = 500 + 300 * Math.sin(2 * Math.PI * 0.6 * t); break;
+      case 'reese': env = Math.min(1, t / 0.01) * Math.exp(-t * 0.5); cut = 500 + 300 * Math.sin(2 * Math.PI * 0.6 * tt); break;
       case 'acid': env = Math.min(1, t / 0.003) * Math.exp(-t * 4); cut = 300 + 3200 * Math.exp(-t * 12); v = Math.tanh(v * 2); break;
       case 'pluck': env = Math.min(1, t / 0.002) * Math.exp(-t * 6); cut = 600 + 7000 * Math.exp(-t * 18); break;
       case 'lead': env = Math.min(1, t / 0.01) * (0.75 + 0.25 * Math.exp(-t * 3)); cut = 5200; break;
       case 'stab': env = Math.min(1, t / 0.003) * Math.exp(-t * 7); cut = 900 + 5000 * Math.exp(-t * 14); break;
       case 'keys': env = Math.min(1, t / 0.003) * Math.exp(-t * 1.6); cut = 0; break;
-      case 'pad': env = Math.min(1, t / 0.6) * (t > 3 ? Math.max(0, 1 - (t - 3)) : 1); cut = 1400 + 600 * Math.sin(2 * Math.PI * 0.25 * t); break;
+      case 'pad': env = Math.min(1, t / 0.6) * (t > 3 ? Math.max(0, 1 - (t - 3)) : 1); cut = 1400 + 600 * Math.sin(2 * Math.PI * 0.25 * tt); break;
       default: env = Math.exp(-t * 3); cut = 0;
     }
     if (cut) { const a = cutoffA(cut, rate); v = filt2(filt(v, a), a); }
     out[i] = v * env * 0.6;
   }
-  fadeTail(out, rate);
+  if (hold === null) fadeTail(out, rate);
   return out;
 }
 

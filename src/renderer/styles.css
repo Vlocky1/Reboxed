@@ -1013,3 +1013,4 @@ select.pads-kit, input.pads-kit { min-width: 150px; max-width: 220px; height: 22
 .suggest-chip b { color: var(--text); font-weight: 600; }
 button.suggest-chip.discover { cursor: pointer; border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
 button.suggest-chip.discover:hover { color: #fff; background: var(--accent-bg); }
+.lbtn.help-btn { font-weight: 800; font-size: 13px; font-family: inherit; }
