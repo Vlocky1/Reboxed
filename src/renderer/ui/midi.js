@@ -119,8 +119,12 @@ export class MidiController {
     if (this.controllers.has(input.id) || this.launchpads.has(input.id) || this.pending?.has(input.id)) return;
     if (isLpxPort(input.name)) {
       const output = [...this.access.outputs.values()].find((o) => isLpxPort(o.name) && o.state === 'connected');
+      // Windows can list the same pad port twice ("LPX MIDI", "MIDIIN2 (LPX MIDI)"): one driver per output.
+      const same = output && [...this.launchpads.values()].find((lp) => lp.outputId === output.id);
+      if (same) { (this.lpAliases ??= new Map()).set(input.id, same); return; }
       if (!output || !this.access.sysexEnabled) { toast(`${input.name}: SysEx is not allowed, the pad lights stay off`, 5000); }
-      this.attachLaunchpad(input.id, (bytes) => { try { output?.send(bytes); } catch { /* port closed */ } }, 'Launchpad X');
+      const lp = this.attachLaunchpad(input.id, (bytes) => { try { output?.send(bytes); } catch { /* port closed */ } }, 'Launchpad X');
+      lp.outputId = output?.id ?? null;
       return;
     }
     (this.pending ??= new Set()).add(input.id);
@@ -141,6 +145,7 @@ export class MidiController {
     if (!this.access) return;
     this.controllers.clear();
     this.launchpads.clear();
+    this.lpAliases?.clear();
     this.app.onControllerChange?.();
     for (const input of this.access.inputs.values()) if (input.state === 'connected') await this.attach(input);
   }
@@ -165,13 +170,13 @@ export class MidiController {
     const lp = new LaunchpadDriver(this.app.padSurface, send, name);
     this.launchpads.set(id, lp);
     lp.frame(performance.now(), true);
-    toast(`${name}: pad sampler ready (Session = pads, Note = instrument, Custom = light show)`, 5000);
+    toast(`${name}: pad sampler ready — PADS in the top bar (Session = pads, Note = instrument, Custom = light show)`, 6000);
     this.app.onPadControllerChange?.(lp);
     return lp;
   }
 
   onMessage(data, input) {
-    const lp = input ? this.launchpads?.get(input.id) : null;
+    const lp = input ? this.launchpads?.get(input.id) ?? this.lpAliases?.get(input.id) : null;
     if (lp) { lp.receive(data); return; }
     const driver = input ? this.controllers.get(input.id) : null;
     if (driver && !this.learnTarget) driver.receive(data);

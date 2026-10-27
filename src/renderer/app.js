@@ -563,6 +563,7 @@ class App {
   togglePads(on = this.padView.el.hidden) {
     this.padView.show(on);
     this.padsBtn.classList.toggle('on', on);
+    document.body.classList.toggle('pads-open', on);
     if (!!this.library.settings.showPads !== on) {
       this.library.settings = { ...this.library.settings, showPads: on };
       this.library.scheduleSave();
@@ -572,9 +573,8 @@ class App {
   /** Launchpad CAPTURE / pad menu: the deck loop into a pad. */
   capturePad(i = null) { return this.padView.capture(i); }
 
-  /** A Launchpad X came or went: the panel shows it, and opens the first time one is plugged in. */
-  onPadControllerChange(lp) {
-    if (lp && this.padView.el.hidden && !this.padsShownForLp) { this.padsShownForLp = true; this.togglePads(true); }
+  /** A Launchpad X came or went: the panel shows it (PADS is opened from the top bar). */
+  onPadControllerChange() {
     this.padView.refresh();
   }
 
@@ -3131,6 +3131,7 @@ async function smoke(app) {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const sent = [];
       const lp = app.midi.attachLaunchpad('virtual-lpx', (b) => sent.push([...b]), 'Launchpad X (virtual)');
+      app.togglePads(true);
       const programmer = sent[0]?.join(',') === '240,0,32,41,2,12,14,1,247';
       const rgb = sent.filter((m) => m[6] === 3);
       const panel = !app.padView.el.hidden && app.padView.el.querySelectorAll('.lp-pad').length === 64;

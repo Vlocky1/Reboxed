@@ -194,6 +194,7 @@ export class PadSamplerView {
       { label: 'Synth note', submenu: Object.entries(INSTRUMENTS).map(([id, ins]) => ({ label: ins.label, action: () => set({ synth: id, note: 12 * (ins.octave + 1) + 9 }, { name: `${ins.label.toUpperCase()} A`, color: ins.color, mode: ['lead', 'pad', 'reese', 'sub'].includes(id) ? 'gate' : 'oneshot' }) })) },
       { label: 'DJ effect', submenu: Object.entries(FX_SOUNDS).map(([id, label]) => ({ label, action: () => set({ fx: id, beats: ['riser', 'snareroll'].includes(id) ? 8 : 4 }, { name: label.toUpperCase() }) })) },
       { label: 'Audio file…', action: () => this.pickFile(i) },
+      { label: 'Selected track in the browser', disabled: !this.app.browser?.currentTrackId(), action: () => this.loadTrack(i, this.app.browser.currentTrackId()) },
       { label: 'Capture the deck loop here', action: () => this.capture(i) },
       '-',
       { label: 'Copy', disabled: !p, action: () => { this.clipboard = JSON.parse(JSON.stringify(p)); } },
