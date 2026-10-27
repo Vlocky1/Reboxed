@@ -198,6 +198,7 @@ class App {
           h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
           h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.recBtn, this.recTime)),
         h('div.gbar-right', {}, this.trialPill, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
+          h('button.lbtn.help-btn', { onclick: () => window.rb.openExternal('https://reboxed.github.io/manuel.html'), title: 'Manual: every menu explained (opens in your browser)' }, '?'),
           h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: 'Appearance: themes, colours, size' }, icon('palette')),
           h('button.lbtn', { onclick: () => this.openSettings(), title: 'Preferences' }, icon('gear')))),
       this.fxPanel,
@@ -3153,6 +3154,15 @@ async function smoke(app) {
       await wait(150);
       const noteOff = app.pads.notes.size === 0;
       const noteInfo = `held ${heldBefore} → notes ${JSON.stringify([...app.pads.notes.keys()])} mode ${app.padSurface.mode}/${app.pads.kit.instrument.mode}`;
+      // Endless note: held longer than the sub's own sound, it still plays; released, it stops.
+      app.pads.kit.instrument.mode = 'sustain';
+      lp.receive([0x90, 11, 100]);
+      await wait(2200);
+      const held = [...app.pads.notes.values()][0];
+      const endless = app.pads.notes.size === 1 && held?.src.loop === true && held.src.loopEnd > held.src.loopStart;
+      lp.receive([0x90, 11, 0]);
+      await wait(150);
+      const endlessOff = app.pads.notes.size === 0;
       lp.receive([0xb0, 95, 127]); // Session: back to the pads
       const emptyBefore = app.pads.kit.pads.filter((p) => !p).length;
       const slot = await app.capturePad();
@@ -3165,8 +3175,8 @@ async function smoke(app) {
       app.midi.launchpads.delete('virtual-lpx');
       app.togglePads(false);
       step('pads: Launchpad X in Programmer mode, pads play and light up (RGB SysEx), instrument notes, capture into a pad, back to Live mode',
-        programmer && rgb.length > 0 && panel && kickPlaying && kickLed?.[2] > 60 && noteOn && noteOff && captured && saved && live,
-        `programmer ${programmer} · ${rgb.length} RGB msg · panel ${panel} · kick ${kickPlaying} led ${kickLed?.slice(2)} · note on/off ${noteOn}/${noteOff} (${noteInfo}) · capture → pad ${slot} saved ${saved} · live ${live}`);
+        programmer && rgb.length > 0 && panel && kickPlaying && kickLed?.[2] > 60 && noteOn && noteOff && endless && endlessOff && captured && saved && live,
+        `programmer ${programmer} · ${rgb.length} RGB msg · panel ${panel} · kick ${kickPlaying} led ${kickLed?.slice(2)} · note on/off ${noteOn}/${noteOff} (${noteInfo}) · endless note ${endless}/${endlessOff} · capture → pad ${slot} saved ${saved} · live ${live}`);
     }
 
     // Security: the window never opens or navigates to another page (a dropped link, window.open…).

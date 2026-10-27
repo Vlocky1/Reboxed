@@ -2,7 +2,7 @@
 // grid is a keyboard playing a built-in synth or a sample pitched chromatically. Pads start
 // quantized to the master's beat or bar, synced loops follow the master tempo, choke groups cut
 // each other, held pads release with a short fade.
-import { drumSound, fxSound, synthNote } from '../../shared/padsynth.js';
+import { drumSound, fxSound, synthNote, synthSustain } from '../../shared/padsynth.js';
 import { normalizeKit, defaultKits, quantizeDelay, padRate, PAD_COUNT } from '../../shared/padkit.js';
 
 export class PadSampler extends EventTarget {
@@ -96,6 +96,19 @@ export class PadSampler extends EventTarget {
     return buf;
   }
 
+  /** A synth note made to last while held: {buffer, loopStart, loopEnd} (seconds). */
+  sustainFor(synth, note) {
+    const key = `sustain:${synth}:${note}`;
+    if (!this.buffers.has(key)) {
+      const ctx = this.engine.ctx;
+      const s = synthSustain(synth, note, ctx.sampleRate);
+      const buffer = ctx.createBuffer(1, s.samples.length, ctx.sampleRate);
+      buffer.copyToChannel(s.samples, 0);
+      this.buffers.set(key, { buffer, loopStart: s.loopStart, loopEnd: s.loopEnd });
+    }
+    return this.buffers.get(key);
+  }
+
   isPlaying(i) { return this.voices.has(i); }
 
   /** 0..1 position of a playing pad (loops wrap). */
@@ -141,12 +154,13 @@ export class PadSampler extends EventTarget {
     return { started: true, delay };
   }
 
-  start(buffer, { gain = 1, rate = 1, loop = false, delay = 0 }) {
+  start(buffer, { gain = 1, rate = 1, loop = false, delay = 0, loopStart = 0, loopEnd = 0 }) {
     const ctx = this.engine.ctx;
     this.engine.resume?.();
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.loop = loop;
+    if (loop && loopEnd > loopStart) { src.loopStart = loopStart; src.loopEnd = loopEnd; }
     src.playbackRate.value = rate;
     const g = ctx.createGain();
     g.gain.value = gain;
@@ -200,19 +214,22 @@ export class PadSampler extends EventTarget {
     this.noteOff(note, 0.004);
     const token = {};
     (this.starting ??= new Map()).set(note, token);
-    let buf; let rate = 1;
+    // "sustain": the note lasts as long as the pad is held (synths loop their steady part, samples loop).
+    const sustain = this.kit.instrument.mode === 'sustain' && !pad.src.drum;
+    let buf; let rate = 1; let loop = null;
     try {
-      if (pad.src.synth) buf = await this.bufferFor(pad, note);
+      if (pad.src.synth && sustain) { const s = this.sustainFor(pad.src.synth, note); buf = s.buffer; loop = s; } else if (pad.src.synth) buf = await this.bufferFor(pad, note);
       else {
         // A sample: its own pitch is the kit's root note in octave 3.
         buf = await this.bufferFor(pad);
         rate = 2 ** ((note - (48 + this.kit.instrument.root) + (pad.pitch ?? 0)) / 12);
+        if (sustain) loop = { loopStart: 0, loopEnd: buf.duration };
       }
     } catch { this.starting.delete(note); return; }
     if (this.starting.get(note) !== token) return; // a newer press of the same note
     const releasedEarly = !!token.released;
     this.starting.delete(note);
-    const v = this.start(buf, { gain: (pad.gain ?? 1) * (0.35 + 0.65 * (velocity / 127)), rate });
+    const v = this.start(buf, { gain: (pad.gain ?? 1) * (0.35 + 0.65 * (velocity / 127)), rate, loop: !!loop, loopStart: loop?.loopStart, loopEnd: loop?.loopEnd });
     v.onEnd = () => { if (this.notes.get(note) === v) { this.notes.delete(note); this.emit({ note, playing: false }); } };
     this.notes.set(note, v);
     this.emit({ note, playing: true });

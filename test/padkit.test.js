@@ -108,3 +108,25 @@ test('light show: pad colours, playing pads, press effects that fade', () => {
   const show = ls.frame(0, { cells, active: Array(64).fill(false), idle: 'rainbow', cover: true });
   assert.ok(show.every((c) => c.every((v) => v >= 0 && v <= 127)));
 });
+
+test('endless notes: every synth loops a steady part without a click; kits default to it', async () => {
+  const { synthSustain } = await import('../src/shared/padsynth.js');
+  const rate = 22050;
+  for (const id of Object.keys(INSTRUMENTS)) {
+    const { samples: a, loopStart, loopEnd } = synthSustain(id, 45, rate);
+    const ls = Math.round(loopStart * rate); const le = Math.round(loopEnd * rate);
+    assert.ok(ls > 0 && le === a.length && le - ls > rate, `${id}: loop of more than a second`);
+    // The jump from the loop end back to its start is no bigger than the sound's own steps.
+    let step = 0;
+    for (let i = ls + 1; i < le; i++) step = Math.max(step, Math.abs(a[i] - a[i - 1]));
+    assert.ok(Math.abs(a[ls] - a[le - 1]) <= step * 1.5 + 1e-6, `${id}: seamless loop`);
+    // No decay: the second half of the loop is not quieter than the first (detuned voices beat,
+    // so the level may swing, not fade).
+    const rms = (s, e) => Math.sqrt(a.subarray(s, e).reduce((x, v) => x + v * v, 0) / (e - s));
+    const mid = (ls + le) >> 1;
+    const r = rms(ls, mid) / rms(mid, le);
+    assert.ok(r > 0.5 && r < 1.3, `${id}: no decay (${r.toFixed(2)})`);
+  }
+  assert.equal(normalizeKit({}).instrument.mode, 'sustain');
+  assert.equal(normalizeKit({ instrument: { mode: 'gate' } }).instrument.mode, 'gate');
+});
