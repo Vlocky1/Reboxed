@@ -1014,3 +1014,18 @@ select.pads-kit, input.pads-kit { min-width: 150px; max-width: 220px; height: 22
 button.suggest-chip.discover { cursor: pointer; border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
 button.suggest-chip.discover:hover { color: #fff; background: var(--accent-bg); }
 .lbtn.help-btn { font-weight: 800; font-size: 13px; font-family: inherit; }
+
+/* ---------- built-in manual ---------- */
+.dialog.manual-dialog { width: min(1100px, 94vw); height: 86vh; display: flex; flex-direction: column; padding: 12px 16px; }
+.manual-head { display: flex; align-items: center; justify-content: space-between; }
+.manual-head h2 { margin: 0; }
+.manual-win { flex: 1; min-height: 0; display: grid; grid-template-columns: 190px 1fr; gap: 16px; margin-top: 8px; }
+.manual-win .manual-toc { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.manual-win .manual-toc a { color: var(--text-2); padding: 4px 8px; border-radius: var(--radius); text-decoration: none; }
+.manual-win .manual-toc a:hover { background: var(--panel-2); color: #fff; }
+.manual-win .manual-body { overflow-y: auto; padding-right: 8px; position: relative; user-select: text; }
+.manual-win .manual-body h2 { font-size: 16px; margin: 18px 0 6px; color: var(--accent-2); }
+.manual-win .man-group details { border-bottom: 1px solid var(--line); padding: 6px 0; }
+.manual-win .man-group summary { cursor: pointer; font-weight: 600; }
+.manual-win .man-group ul { margin: 6px 0; padding-left: 18px; color: var(--text-2); line-height: 1.5; }
+.manual-win .manual-tip { color: var(--text-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }

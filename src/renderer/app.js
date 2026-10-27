@@ -21,6 +21,7 @@ import { SamplerView } from './ui/sampler-view.js';
 import { PadSampler } from './audio/pad-sampler.js';
 import { PadSurface } from './controller/launchpad.js';
 import { PadSamplerView } from './ui/pad-sampler-view.js';
+import { openManual } from './ui/manual.js';
 import { Automix } from './automix.js';
 import { DrumSwap } from './audio/groove.js';
 import { BeatFxUnit, PAD_FX } from './audio/fx.js';
@@ -198,7 +199,7 @@ class App {
           h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
           h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.recBtn, this.recTime)),
         h('div.gbar-right', {}, this.trialPill, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
-          h('button.lbtn.help-btn', { onclick: () => window.rb.openExternal('https://reboxed.github.io/manuel.html'), title: 'Manual: every menu explained (opens in your browser)' }, '?'),
+          h('button.lbtn.help-btn', { onclick: () => openManual(), title: 'Manual: every menu explained' }, '?'),
           h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: 'Appearance: themes, colours, size' }, icon('palette')),
           h('button.lbtn', { onclick: () => this.openSettings(), title: 'Preferences' }, icon('gear')))),
       this.fxPanel,
