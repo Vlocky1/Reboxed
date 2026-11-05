@@ -98,7 +98,7 @@ export class Deck extends EventTarget {
     return this._bg;
   }
   /** Track tempo at the play head (varies along dynamic grids). */
-  get originalBpm() { return this.bg ? this.bg.bpmAt(this.position()) : this.track?.bpm ?? 0; }
+  get originalBpm() { return this.bg ? this.bg.smoothBpmAt(this.position()) : this.track?.bpm ?? 0; }
   get currentBpm() { return this.originalBpm * this.rate; }
   get period() { return this.bg ? this.bg.periodAt(this.position()) : this.track?.bpm ? 60 / this.track.bpm : 0; }
   get loaded() { return !!this.track && this.duration > 0; }
@@ -165,6 +165,7 @@ export class Deck extends EventTarget {
     this.analysis = analysis;
     this.duration = buffer.duration;
     this.loop = null;
+    this.lastLoop = null;
     this.playing = false;
     this.playedSec = 0;
     this.countedPlay = false;
@@ -187,7 +188,7 @@ export class Deck extends EventTarget {
 
   unload() {
     this.post({ type: 'unload' });
-    this.track = null; this.analysis = null; this.duration = 0; this.loop = null; this.playing = false;
+    this.track = null; this.analysis = null; this.duration = 0; this.loop = null; this.lastLoop = null; this.playing = false;
     this.stemsReady = false; this.stemsComplete = false; this.stemRanges = []; this.stemEnv = null; this.vocals = []; this.fine = null;
     if (this.fxParts.some(Boolean)) this.applyFxParts();
     this.emit('load');
