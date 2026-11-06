@@ -23,7 +23,7 @@ import { Updater } from './updater.js';
 import { LicenseManager } from './license.js';
 import { AiClient } from './ai.js';
 import { PRODUCT } from '../shared/product.js';
-import { hostname } from 'node:os';
+import { constants as osConstants, getPriority, hostname, setPriority, totalmem } from 'node:os';
 import { guardIpc, hardenContents, hardenSession } from './security.js';
 
 // Security: only Reboxed's own pages (app://rb) reach the main process, run in a window or get
@@ -346,6 +346,7 @@ function registerIpc(win) {
   ipcMain.handle('fs:writeFile', (_e, path, data) => store.writeExternal(path, data));
   ipcMain.handle('shell:showItem', (_e, path) => shell.showItemInFolder(path));
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('app:ramGB', () => totalmem() / 1024 ** 3);
   // In-app updates (GitHub releases).
   const updater = new Updater({
     version: app.getVersion(), fetch: (url, opts) => net.fetch(url, opts), tempDir: app.getPath('temp'),
@@ -405,6 +406,11 @@ async function createWindow() {
     if (!smoke && (storage.cfg.startMode ?? 'maximized') === 'maximized') win.maximize();
     win.show();
   });
+  // Windows can slow a program that is not in front about 4 times after a few seconds (measured on a
+  // laptop): tracks would analyse that much slower as soon as the DJ looks at another window.
+  win.webContents.on('did-finish-load', () => {
+    try { setPriority(win.webContents.getOSProcessId(), osConstants.priority.PRIORITY_ABOVE_NORMAL); } catch { /* not allowed: normal priority */ }
+  });
   // The version shows in the title bar (the page title would replace it).
   win.setTitle(`Reboxed ${app.getVersion()}`);
   win.on('page-title-updated', (e) => e.preventDefault());
@@ -423,6 +429,7 @@ async function createWindow() {
 
   if (smoke) {
     ipcMain.handle('smoke:dir', () => store.dir);
+    ipcMain.handle('smoke:priority', () => getPriority(win.webContents.getOSProcessId()));
     ipcMain.handle('smoke:dlTest', () => process.env.REBOXED_DL_TEST === '1');
     // Smoke switches that are not secrets (only REBOXED_* names).
     ipcMain.handle('smoke:env', (_e, name) => (/^REBOXED_[A-Z_]+$/.test(name) ? process.env[name] ?? null : null));

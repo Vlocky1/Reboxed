@@ -16,6 +16,7 @@ class DeckProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.channels = null;
+    this.pcmScale = 1;     // low memory mode: Int16 samples, back to audio with this factor
     this.length = 0;
     this.srcRate = sampleRate;
     this.pos = 0;          // source frames (fractional)
@@ -176,6 +177,7 @@ class DeckProcessor extends AudioWorkletProcessor {
     switch (m.type) {
       case 'load':
         this.channels = m.channels;
+        this.pcmScale = m.scale ?? 1;
         this.length = m.channels[0].length;
         this.srcRate = m.sampleRate;
         this.pos = 0; this.slipPos = 0; this.playing = false; this.loop = null; this.slipActive = false;
@@ -319,7 +321,7 @@ class DeckProcessor extends AudioWorkletProcessor {
     if (i < 0 || i + 1 >= this.length) return 0;
     const f = x - i;
     const d = this.channels[ch];
-    return d[i] + (d[i + 1] - d[i]) * f;
+    return (d[i] + (d[i + 1] - d[i]) * f) * this.pcmScale;
   }
 
   report(force = false) {

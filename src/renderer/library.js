@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS = {
   keyNotation: 'camelot',      // 'camelot' | 'musical'
   bpmRange: [78, 155],
   autoAnalyze: true,
+  lowMemory: 'auto',           // decks keep tracks in 16 bits: 'auto' (8 GB of RAM or less) | 'on' | 'off'
   waveformColor: '3band',      // '3band' | 'rgb' | 'blue'
   defaultTempoRange: 10,
   crossfaderCurve: 'smooth',

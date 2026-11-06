@@ -35,11 +35,12 @@ function combScore(env, period, phaseSteps) {
 /**
  * @param {Float32Array} samples mono
  * @param {number} sampleRate
- * @param {{minBpm?: number, maxBpm?: number}} [opts] fold range (Rekordbox lets users pick one)
+ * @param {{minBpm?: number, maxBpm?: number, onset?: object}} [opts] fold range (Rekordbox lets users
+ *   pick one); onset: the envelope of these samples when it is already computed
  * @returns {BeatAnalysis}
  */
-export function detectBeats(samples, sampleRate, { minBpm = 78, maxBpm = 156 } = {}) {
-  const { env: raw, low: rawLow, rate, offsetSec } = onsetEnvelope(samples, sampleRate);
+export function detectBeats(samples, sampleRate, { minBpm = 78, maxBpm = 156, onset = null } = {}) {
+  const { env: raw, low: rawLow, rate, offsetSec } = onset ?? onsetEnvelope(samples, sampleRate);
   const env = detrend(raw, rate);
   if (env.length < rate * 4) return { bpm: 0, firstBeat: 0, confidence: 0 };
 

@@ -1,4 +1,4 @@
-import { fft, hann } from './fft.js';
+import { RealFft, hann } from './fft.js';
 
 /** Position of a detected attack within the analysis window (fraction of fftSize), calibrated on synthetic drums. */
 export const ONSET_LAG = 0.8;
@@ -18,19 +18,20 @@ export function onsetEnvelope(samples, sampleRate, { fftSize = 512, hop = 64, lo
   const low = new Float32Array(frames);
   const lowBins = Math.max(2, Math.round((lowHz * fftSize) / sampleRate));
   const win = hann(fftSize);
-  const re = new Float64Array(fftSize);
-  const im = new Float64Array(fftSize);
+  const spectrum = new RealFft(fftSize);
+  const x = new Float64Array(fftSize);
   const bins = fftSize / 2;
+  const raw = new Float64Array(bins);
   let prev = new Float64Array(bins);
   let cur = new Float64Array(bins);
   for (let f = 0; f < frames; f++) {
     const start = f * hop;
-    for (let i = 0; i < fftSize; i++) { re[i] = samples[start + i] * win[i]; im[i] = 0; }
-    fft(re, im);
+    for (let i = 0; i < fftSize; i++) x[i] = samples[start + i] * win[i];
+    spectrum.magnitudes(x, raw);
     let flux = 0;
     let lowFlux = 0;
     for (let k = 1; k < bins; k++) {
-      const mag = Math.log1p(100 * Math.hypot(re[k], im[k]));
+      const mag = Math.log1p(100 * raw[k]);
       cur[k] = mag;
       const d = mag - prev[k];
       if (d > 0) { flux += d; if (k <= lowBins) lowFlux += d; }
@@ -40,7 +41,7 @@ export function onsetEnvelope(samples, sampleRate, { fftSize = 512, hop = 64, lo
     [prev, cur] = [cur, prev];
   }
   // Log-compressed flux peaks as soon as an attack enters the window, i.e. near its end.
-  return { env, low, rate: sampleRate / hop, offsetSec: (fftSize * ONSET_LAG) / sampleRate };
+  return { env, low, rate: sampleRate / hop, offsetSec: (fftSize * ONSET_LAG) / sampleRate, fftSize, hop };
 }
 
 /** Subtract a moving average and half-wave rectify (in place). */

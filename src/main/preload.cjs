@@ -59,6 +59,8 @@ const api = {
     onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cdj:progress', l); return () => ipcRenderer.off('cdj:progress', l); },
   },
   version: () => ipcRenderer.invoke('app:version'),
+  ramGB: () => ipcRenderer.invoke('app:ramGB'),
+  smokePriority: () => ipcRenderer.invoke('smoke:priority'),
   ai: {
     status: () => ipcRenderer.invoke('ai:status'),
     configure: (cfg) => ipcRenderer.invoke('ai:configure', cfg),

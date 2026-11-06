@@ -4,6 +4,7 @@ import { BPM_RANGES } from '../analysis/analyzer.js';
 import { keyboardSection } from './keyboard.js';
 import { aboutSection } from './updates.js';
 import { DEFAULT_SETTINGS } from '../library.js';
+import { lowMemoryWanted } from '../../shared/pcm.js';
 import { openRelink } from './relink.js';
 import { pluginsSection } from './plugins.js';
 import { appearanceSection } from './appearance.js';
@@ -361,6 +362,10 @@ export async function openSettings(library, engine, apply, midi, app) {
         })(),
         h('label', {}, 'Key notation'), sel('keyNotation', [['camelot', 'Alphanumeric (8A)'], ['musical', 'Classic (Am)']]),
         h('label', {}, 'Create cues from phrases'), check('autoCues')),
+      h('h4', {}, 'Small computers'),
+      h('div.form-grid', {},
+        h('label', {}, 'Low memory mode'), h('div', {}, sel('lowMemory', [['auto', `Automatic (${lowMemoryWanted('auto', app.ramGB ?? 0) ? 'on' : 'off'} here: ${Math.round(app.ramGB ?? 0)} GB of RAM)`], ['on', 'On'], ['off', 'Off']]),
+          h('small', {}, 'Each deck holds its track in half the memory (about 58 MB instead of 115 for 5 minutes), for a very small loss of precision (16 bits, like a CD). Applies to the next track loaded.'))),
       h('h4', {}, 'View'),
       h('div.form-grid', {},
         h('label', {}, 'Waveform color'), sel('waveformColor', [['3band', '3Band'], ['rgb', 'RGB'], ['blue', 'BLUE']]),

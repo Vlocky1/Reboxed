@@ -1,7 +1,7 @@
 // Phrase analysis: split a track into musical sections on bar boundaries and label them with
 // Rekordbox-style phrase names. Mood "high" (club music): INTRO / UP / CHORUS / DOWN / OUTRO;
 // "mid" and "low": INTRO / VERSE / CHORUS / BRIDGE / OUTRO.
-import { fft, hann } from './fft.js';
+import { RealFft, hann } from './fft.js';
 
 export const PHRASE_COLORS = {
   INTRO: '#3d7dff', UP: '#ff9a1f', CHORUS: '#ff3f6c', DOWN: '#25e6d6', OUTRO: '#5b6cff',
@@ -73,17 +73,19 @@ export function shiftPhrases(phrases, dt) {
 function barFeatures(samples, sampleRate, barStarts) {
   const fftSize = 2048;
   const win = hann(fftSize);
-  const re = new Float64Array(fftSize); const im = new Float64Array(fftSize);
+  const spectrum = new RealFft(fftSize);
+  const x = new Float64Array(fftSize);
+  const mags = new Float64Array(fftSize / 2);
   const binHz = sampleRate / fftSize;
   return barStarts.slice(0, -1).map((t0, k) => {
     const a = Math.round(t0 * sampleRate);
     const b = Math.min(samples.length - fftSize, Math.round(barStarts[k + 1] * sampleRate));
     let all = 0; let low = 0; let high = 0; let frames = 0;
     for (let s = a; s < b; s += fftSize) {
-      for (let i = 0; i < fftSize; i++) { re[i] = samples[s + i] * win[i]; im[i] = 0; }
-      fft(re, im);
+      for (let i = 0; i < fftSize; i++) x[i] = samples[s + i] * win[i];
+      spectrum.magnitudes(x, mags);
       for (let i = 1; i < fftSize / 2; i++) {
-        const e = re[i] * re[i] + im[i] * im[i];
+        const e = mags[i] * mags[i];
         const f = i * binHz;
         all += e;
         if (f < 150) low += e;

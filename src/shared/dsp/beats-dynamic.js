@@ -5,7 +5,7 @@
 // deviates (log-ratio) from the local beat period. The local period comes from windowed
 // autocorrelation around the global tempo, so gradual tempo changes are followed.
 import { onsetEnvelope, detrend } from './onset.js';
-import { fft, hann } from './fft.js';
+import { RealFft, hann } from './fft.js';
 
 function normalise(a) {
   let m = 0; let s = 0;
@@ -132,23 +132,29 @@ export function isSteadyTempo(times, maxRelStd = 0.006) {
 export function detectDownbeat(samples, sampleRate, beatTime, beatCount) {
   const fftSize = 4096;
   const win = hann(fftSize);
-  const re = new Float64Array(fftSize); const im = new Float64Array(fftSize);
+  const spectrum = new RealFft(fftSize);
+  const x = new Float64Array(fftSize);
+  const mags = new Float64Array(fftSize / 2);
   const binHz = sampleRate / fftSize;
+  // Pitch class of each bin in the chroma range (-1 outside), once rather than for every beat.
+  const pcOf = Int8Array.from({ length: fftSize / 2 }, (_, k) => {
+    const f = k * binHz;
+    return k >= 1 && f >= 60 && f <= 2000 ? ((Math.round(69 + 12 * Math.log2(f / 440)) % 12) + 12) % 12 : -1;
+  });
   const chroma = []; const lowE = []; const energy = [];
   for (let i = 0; i < beatCount; i++) {
     const t = beatTime(i);
     const start = Math.round(t * sampleRate);
     if (start < 0 || start + fftSize > samples.length) { chroma.push(null); lowE.push(0); energy.push(0); continue; }
-    for (let k = 0; k < fftSize; k++) { re[k] = samples[start + k] * win[k]; im[k] = 0; }
-    fft(re, im);
+    for (let k = 0; k < fftSize; k++) x[k] = samples[start + k] * win[k];
+    spectrum.magnitudes(x, mags);
     const c = new Float64Array(12);
     let lo = 0; let all = 0;
     for (let k = 1; k < fftSize / 2; k++) {
-      const f = k * binHz;
-      const mag = Math.hypot(re[k], im[k]);
+      const mag = mags[k];
       all += mag * mag;
-      if (f < 150) lo += mag * mag;
-      if (f >= 60 && f <= 2000) c[((Math.round(69 + 12 * Math.log2(f / 440)) % 12) + 12) % 12] += mag;
+      if (k * binHz < 150) lo += mag * mag;
+      if (pcOf[k] >= 0) c[pcOf[k]] += mag;
     }
     const norm = Math.hypot(...c) || 1;
     chroma.push(Array.from(c, (v) => v / norm));
