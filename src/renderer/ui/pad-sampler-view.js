@@ -328,7 +328,8 @@ export class PadSamplerView {
       this.row('Now', h('b', {}, `${NOTE_NAMES[key.root]} ${SCALE_LABELS[key.scale] ?? key.scale}`), h('span.dim', {}, `· octave ${key.octave}${this.surface.transpose ? ` · transpose ${this.surface.transpose > 0 ? '+' : ''}${this.surface.transpose}` : ''}`)),
       this.row('Layout', this.select2(ins.layout, { scale: 'In key (rows a 4th apart)', chromatic: 'Chromatic (rows a 4th apart)' }, (v) => set({ layout: v })),
         this.select2(ins.octave ?? '', { '': 'Octave: auto', 0: 'Octave 0', 1: 'Octave 1', 2: 'Octave 2', 3: 'Octave 3', 4: 'Octave 4', 5: 'Octave 5' }, (v) => set({ octave: v === '' ? null : Number(v) })),
-        this.select2(ins.mode, { gate: 'Notes while held', oneshot: 'Notes to the end' }, (v) => set({ mode: v }))),
+        this.select2(ins.mode, { sustain: 'Held: endless note', gate: 'Held: the sound fades', oneshot: 'Tap: plays to the end' }, (v) => set({ mode: v }),
+          'Endless: a note lasts as long as you hold its pad · Fades: it stops on release, or earlier when the sound dies out · Tap: each note plays its whole sound')),
       h('p.dim', {}, 'Launchpad X: ▲ ▼ octave, ◀ ▶ transpose, right column = the 8 synth sounds.'));
   }
 

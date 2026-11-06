@@ -50,6 +50,18 @@ export class Beatgrid {
 
   bpmAt(t) { return 60 / this.periodAt(t); }
 
+  /**
+   * Tempo to show at t. On a dynamic grid it is measured over about 16 beats: beat times are stored
+   * to the millisecond, so a single beat would make the display jump by a few tenths of a BPM.
+   */
+  smoothBpmAt(t) {
+    const b = this.beats;
+    if (!b) return this.bpm;
+    const i = Math.max(0, Math.min(b.length - 1, Math.floor(this.indexAt(t))));
+    const lo = Math.max(0, i - 8); const hi = Math.min(b.length - 1, i + 8);
+    return hi > lo ? (60 * (hi - lo)) / (b[hi] - b[lo]) : this.bpm;
+  }
+
   /** Position in bar 0..3 of integer beat index i (0 = downbeat). */
   barPos(i) { return (((this.beat - 1 + i) % 4) + 4) % 4; }
   isDownbeat(i) { return this.barPos(i) === 0; }
@@ -158,6 +170,28 @@ export function constantGridAt(bpm, t, beat = 1) {
   const first = t - Math.floor(t / p) * p;
   const shiftBeats = Math.round((t - first) / p);
   return { bpm: Math.round(bpm * 100) / 100, firstBeat: r3(first), beat: ((beat - 1 - shiftBeats) % 4 + 4) % 4 + 1 };
+}
+
+/**
+ * The constant grid closest to a dynamic one: a straight line through its beats, same bar position.
+ * @returns {{grid: object, drift: number}} drift: largest gap (s) between the two grids, small when
+ *   the tempo only seemed to move, large when it really does (live drums, tempo changes)
+ */
+export function constantFromBeats(g) {
+  const b = g.beats;
+  if (!(b?.length >= 2)) return { grid: g, drift: 0 };
+  const n = b.length;
+  const mi = (n - 1) / 2;
+  const mt = b.reduce((a, t) => a + t, 0) / n;
+  let num = 0; let den = 0;
+  for (let i = 0; i < n; i++) { num += (i - mi) * (b[i] - mt); den += (i - mi) ** 2; }
+  const bpm = Math.round((60 / (num / den)) * 100) / 100;
+  const period = 60 / bpm;
+  // The line is placed again for the rounded BPM, so it stays centred on the beats.
+  const firstBeat = mt - mi * period;
+  let drift = 0;
+  for (let i = 0; i < n; i++) drift = Math.max(drift, Math.abs(b[i] - (firstBeat + i * period)));
+  return { grid: { bpm, firstBeat: r3(firstBeat), beat: g.beat ?? 1 }, drift };
 }
 
 /** Tap tempo: BPM from tap timestamps (ms), averaging the last up to 8 intervals. */

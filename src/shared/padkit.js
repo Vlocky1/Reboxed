@@ -67,7 +67,8 @@ export function normalizeKit(k) {
       octave: k?.instrument?.octave ?? null,
       layout: k?.instrument?.layout === 'chromatic' ? 'chromatic' : 'scale',
       followKey: k?.instrument?.followKey ?? true,
-      mode: k?.instrument?.mode === 'oneshot' ? 'oneshot' : 'gate',
+      // sustain: a held note lasts until released · gate: held, with the sound's own decay · oneshot: to the end
+      mode: ['sustain', 'gate', 'oneshot'].includes(k?.instrument?.mode) ? k.instrument.mode : 'sustain',
     },
   };
 }

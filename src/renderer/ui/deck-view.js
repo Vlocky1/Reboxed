@@ -344,6 +344,7 @@ export class DeckView {
     this.playBtn.classList.toggle('on', d.playing);
     this.loopSize.textContent = fmtBeats(d.beatLoopSize);
     this.loopBtn.classList.toggle('on', !!d.loop);
+    this.el.classList.toggle('looping', !!d.loop);
     this.exitBtn.textContent = d.loop ? 'EXIT' : 'RELOOP';
     this.inBtn.classList.toggle('on', d.pendingLoopIn !== undefined);
     this.jumpSize.textContent = fmtBeats(d.beatJumpSize);

@@ -1,0 +1,242 @@
+<!-- Built-in manual (Help ▸ ?): every menu explained, in French. Shown by ui/manual.js; not published online. -->
+<nav class="manual-toc" aria-label="Sommaire">
+      <a href="#barre">La barre du haut</a>
+      <a href="#decks">Les decks</a>
+      <a href="#pads-deck">Les pads des decks</a>
+      <a href="#ondes">Les formes d'onde</a>
+      <a href="#mixer">Mixer et effets</a>
+      <a href="#sampler">Sampler</a>
+      <a href="#pads">PADS (Launchpad X)</a>
+      <a href="#navigateur">Le navigateur</a>
+      <a href="#suggestion">Suggestion de morceaux</a>
+      <a href="#telechargement">Téléchargement</a>
+      <a href="#preferences">Préférences</a>
+      <a href="#clavier">Raccourcis clavier</a>
+      <a href="#controleurs">Contrôleurs</a>
+    </nav>
+
+    <div class="manual-body">
+      <p class="manual-tip"><b>Astuce générale :</b> presque tout a un <b>clic droit</b> (pads, hot cues, morceaux, playlists, en-têtes de colonnes, forme d'onde) et une <b>bulle d'aide</b> quand tu laisses la souris dessus.</p>
+
+      <h2 id="barre">La barre du haut</h2>
+      <div class="man-group">
+        <details open><summary>À gauche : mode et disposition</summary>
+          <ul>
+            <li><b>PERFORMANCE / LIBRARY</b> : PERFORMANCE pour mixer (decks et navigateur), LIBRARY pour ranger ta collection (navigateur en grand).</li>
+            <li><b>2 decks / 4 decks</b> : nombre de decks affichés.</li>
+            <li><b>Navigateur plein écran</b> (touche Espace) : agrandit la liste des morceaux, les decks continuent de jouer.</li>
+          </ul></details>
+        <details><summary>Au centre : panneaux et outils</summary>
+          <ul>
+            <li><b>FX</b> : affiche la barre Beat FX. <b>MIXER</b> : affiche la table de mixage entre les decks.</li>
+            <li><b>SAMPLER</b> : les 16 cases de sampler sous les decks (<a href="#sampler">détails</a>).</li>
+            <li><b>PADS</b> : le sampler 64 pads, l'instrument et le light show. Ouvert, il prend la place du navigateur (<a href="#pads">détails</a>).</li>
+            <li><b>MIX POINT LINK</b> : quand un deck atteint son MIX OUT, l'autre deck démarre de son MIX IN, calé.</li>
+            <li><b>AUTOMIX</b> (menu) : <b>Start Automix with the current list</b> / <b>Stop Automix</b>, <b>Crossfade length</b> (en temps), <b>Repeat</b>, <b>Shuffle</b>.</li>
+            <li><b>DOWNLOAD</b> : la fenêtre de téléchargement (<a href="#telechargement">détails</a>). La pastille compte les nouvelles sorties de tes chaînes suivies.</li>
+            <li><b>REC</b> : enregistre la sortie master en WAV ; le compteur affiche la durée.</li>
+          </ul></details>
+        <details><summary>À droite : état et réglages</summary>
+          <ul>
+            <li><b>Pastille Beta / Update</b> : jours de beta restants, ou nouvelle version à installer en un clic.</li>
+            <li><b>STEMS</b> : progression de la séparation des stems en cours.</li>
+            <li><b>Contrôleur</b> : le contrôleur reconnu (ou « No controller »).</li>
+            <li><b>?</b> : ce manuel. <b>Palette</b> : thème, couleur, taille. <b>Engrenage</b> : toutes les Préférences.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="decks">Les decks</h2>
+      <div class="man-group">
+        <details open><summary>La barre du deck</summary>
+          <ul>
+            <li><b>KEY</b> (cliquer) : décaler la tonalité en demi-tons ou la caler sur l'autre deck.</li>
+            <li><b>MASTER</b> : ce deck donne le tempo aux autres. <b>BEAT SYNC</b> : se cale sur le master (tempo et phase). <b>KEY SYNC</b> : prend une tonalité compatible avec le master.</li>
+            <li><b>Boutons de grille épinglés</b> : les actions de grille que tu as mises sur la barre (en icônes).</li>
+            <li><b>Menu grille</b> (icône grille) : <b>Set downbeat (bar start) at play head</b>, <b>Shift grid ← / → 10 ms</b>, <b>Shift grid ← / → 1 beat</b>, <b>BPM × 2 / ÷ 2</b>, <b>BPM − / + 0.01</b>, <b>Tap tempo…</b>, <b>Convert to constant grid</b>, verrouiller la grille, <b>Re-analyze (normal / dynamic grid)</b>. Glisse une action sur la barre du deck pour l'y épingler, ou coche-la dans <b>Buttons on the deck bar</b>.</li>
+            <li><b>Menu du deck</b> (⋯) : <b>Instant Double from Deck N</b> (copie l'autre deck à la même position), <b>Create cues from phrases</b>, <b>DRUM SWAP slots…</b>, <b>Set MIX IN / MIX OUT at play head</b>, <b>Clear mix points</b>, <b>Eject</b>, et <b>Load while playing (all decks)</b> pour autoriser ou non le chargement sur un deck qui joue.</li>
+          </ul></details>
+        <details><summary>Jog, tempo et boutons du deck</summary>
+          <ul>
+            <li><b>Jog</b> : BPM au centre ; tourner = pitch bend, en mode vinyle = scratch. <b>6 / 10 / 16 / W</b> sous le BPM : la plage du fader de tempo.</li>
+            <li><b>Q</b> quantize, <b>MT</b> master tempo (la tonalité ne bouge pas avec le tempo), <b>SLIP</b>, <b>REV</b> lecture à l'envers, <b>CENSOR</b> (maintenu) : à l'envers puis retour là où le morceau en serait.</li>
+            <li><b>Fader de tempo</b> : double-clic = remise à zéro.</li>
+            <li><b>CUE</b> et <b>▶❚❚</b> : comme sur un lecteur ; CUE maintenu à l'arrêt = pré-écoute.</li>
+            <li><b>Stems</b> : <b>FAST</b> / <b>HQ</b> lance la séparation ; <b>VOCAL / INST / BASS / DRUMS</b> coupent ou remettent chaque partie.</li>
+            <li><b>Boucles</b> : <b>1/2X</b>, ◀ taille ▶, <b>2X</b>, <b>IN</b>, <b>OUT</b>, <b>RELOOP</b>. <b>JUMP</b> ◀ ▶ saute de la taille affichée (clic sur JUMP pour la changer). <b>RESET</b> remet le tempo à 0.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="pads-deck">Les pads des decks</h2>
+      <div class="man-group">
+        <details open><summary>Les 12 modes (bouton du mode, au-dessus des pads)</summary>
+          <ul>
+            <li><b>HOT CUE</b> : pad vide = pose une cue, plein = y saute. Shift+clic = efface. Clic droit sur une cue : <b>Rename…</b>, <b>Color</b>, <b>Delete</b>.</li>
+            <li><b>PAD FX</b> : un effet tant que le pad est tenu. <b>SLICER</b> : maintenir un pad boucle ce 8ᵉ des 2 mesures en cours, puis la lecture reprend où elle en serait.</li>
+            <li><b>BEAT JUMP</b> / <b>BEAT LOOP</b> : sauts et boucles de tailles fixes.</li>
+            <li><b>SAMPLER</b> : les cases du sampler. <b>KEYBOARD</b> : le morceau joué à d'autres hauteurs, comme un clavier. <b>KEY SHIFT</b> : décale la tonalité.</li>
+            <li><b>STEMS</b> : couper ou isoler les parties. <b>MEMORY CUE</b> : rappeler les memory cues (Shift+clic = effacer). <b>GROOVE</b> : DRUM SWAP, remplace la batterie par des boucles.</li>
+            <li><b>SEQ CALL</b> : pas encore disponible.</li>
+            <li><b>PAGE</b> : certains modes ont 16 valeurs, sur 2 pages de 8.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="ondes">Les formes d'onde</h2>
+      <div class="man-group">
+        <details open><summary>Zoom, déplacement et phrases</summary>
+          <ul>
+            <li><b>Glisser</b> pour se déplacer dans le morceau, <b>molette</b> pour zoomer.</li>
+            <li><b>Clic droit sur une phrase</b> (INTRO, CHORUS, DOWN…) : <b>Change to</b> (changer son nom), <b>Cut the phrase here</b> (au début de mesure le plus proche), <b>Join with the next phrase</b>, déplacer son début, <b>Shift all phrases</b> (← / → 1 mesure ou 1 temps), <b>Back to the analysed phrases</b>.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="mixer">Mixer et effets</h2>
+      <div class="man-group">
+        <details open><summary>Mixer</summary>
+          <ul>
+            <li>Par voie : <b>TRIM</b>, <b>HI / MID / LOW</b>, <b>ISO</b> (PART ISOLATOR : les 3 boutons règlent voix, instruments et batterie), <b>COLOR</b> (filtre ou Color FX), casque, fader, crossfader <b>A / THRU / B</b>.</li>
+            <li>Au centre : <b>MASTER</b>, <b>PHONES</b>, <b>CUE/MST</b> (mélange dans le casque) et le type de <b>COLOR FX</b> (FILTER, SPACE, DUB ECHO, NOISE, CRUSH…).</li>
+            <li>Double-clic sur un bouton = valeur par défaut.</li>
+          </ul></details>
+        <details><summary>Beat FX (bouton FX)</summary>
+          <ul>
+            <li>Choix de l'effet, ◀ longueur en temps ▶ (AUTO = calé sur le BPM), <b>LEVEL/DEPTH</b>, la voie qui le reçoit (<b>1–4</b>, <b>M</b> master, <b>S</b> sampler), puis <b>ON</b>.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="sampler">Sampler (16 cases)</h2>
+      <div class="man-group">
+        <details open><summary>Utiliser les cases</summary>
+          <ul>
+            <li><b>Case vide</b> : un clic capture la boucle qui joue (seulement les stems audibles). <b>Glisser un morceau</b> dessus pour le charger.</li>
+            <li><b>Case pleine</b> : un clic la joue ou l'arrête ; <b>molette</b> = volume de la case. Boutons ⤓ enregistrer en WAV, ✎ éditer, ⏏ éjecter.</li>
+            <li><b>Clic droit</b> : <b>One shot</b> / <b>Loop</b>, <b>Sync to master tempo</b>, <b>Gain</b>, <b>Capture the playing loop here</b>, <b>Save as WAV…</b>, <b>Edit…</b> (découpe, mode, sync, gain), <b>Eject</b>.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="pads">PADS : sampler 64 pads, instrument, light show</h2>
+      <div class="man-group">
+        <details open><summary>Les trois modes</summary>
+          <ul>
+            <li><b>SAMPLER</b> : 64 pads de sons (batteries, synthés, effets, fichiers, boucles capturées). Clic = joue (Shift = pleine force).</li>
+            <li><b>INSTRUMENT</b> : la grille devient un clavier. Les pads allumés sont dans la tonalité ; les colorés sont la note de base.</li>
+            <li><b>SHOW</b> : l'animation de fond couvre toute la grille, chaque pad joue son son et son effet de lumière.</li>
+          </ul></details>
+        <details><summary>La barre du panneau</summary>
+          <ul>
+            <li><b>Kit</b> (liste) et <b>⋯</b> : <b>New empty kit</b>, <b>Duplicate this kit</b>, <b>Rename…</b>, <b>Export the kit…</b>, <b>Import a kit…</b>, <b>Add the built-in kits again</b>, <b>Delete</b>.</li>
+            <li><b>EDIT</b> : un clic sélectionne le pad au lieu de le jouer (Alt+clic aussi). En EDIT, glisse un pad sur un autre pour l'y déplacer.</li>
+            <li><b>Quantize</b> : les boucles partent tout de suite, au prochain temps ou à la prochaine mesure du master. <b>STOP ALL</b>, <b>VOL</b>.</li>
+          </ul></details>
+        <details><summary>Le menu d'un pad (clic droit) et l'éditeur</summary>
+          <ul>
+            <li>Clic droit : <b>Drum</b>, <b>Synth note</b>, <b>DJ effect</b> (riser, impact…), <b>Audio file…</b>, <b>Selected track in the browser</b>, <b>Capture the deck loop here</b>, <b>Copy / Paste</b>, <b>Use as the instrument sound</b>, <b>Clear</b>. Tu peux aussi glisser un fichier audio sur un pad.</li>
+            <li>Éditeur : nom, note, <b>Play</b> (<b>One shot</b>, <b>Hold</b> tant que tenu, <b>Loop</b>, <b>Toggle</b>), <b>Sync</b> et BPM du sample, <b>Choke</b> (les pads d'un même groupe se coupent : charley ouvert / fermé), gain, pitch, couleur, effet de lumière et sa durée.</li>
+          </ul></details>
+        <details><summary>Le mode INSTRUMENT et les notes infinies</summary>
+          <ul>
+            <li><b>Sound</b> : un des 8 synthés, ou un de tes pads joué à toutes les hauteurs.</li>
+            <li><b>Key</b> : <b>Follow the master track</b> (suit la tonalité du morceau master), sinon note de base et gamme au choix. <b>Layout</b> : dans la gamme ou chromatique.</li>
+            <li><b>Durée des notes</b> : <b>Held: endless note</b> = la note dure tant que tu restes appuyé, sans fin (choix par défaut) ; <b>Held: the sound fades</b> = elle s'arrête au relâchement ou quand le son s'éteint ; <b>Tap: plays to the end</b> = chaque note joue son son en entier.</li>
+          </ul></details>
+        <details><summary>Le light show (mode SHOW)</summary>
+          <ul>
+            <li><b>Background</b> : Pad colours, Beat pulse, Rainbow, Wave, Spectrum, Rain ou Off. <b>Brightness</b>.</li>
+            <li><b>Pad colours</b> : Rainbow, By row, Random, By sound. <b>All effects</b> : le même effet sur tous les pads.</li>
+            <li>Couleur et effet d'un seul pad : mode SAMPLER, EDIT, clic sur le pad.</li>
+          </ul></details>
+        <details><summary>Sur un Launchpad X</summary>
+          <ul>
+            <li>Reconnu tout seul. <b>Session</b> = SAMPLER, <b>Note</b> = INSTRUMENT, <b>Custom</b> = SHOW, <b>Capture MIDI</b> = capture la boucle du deck dans le premier pad libre.</li>
+            <li><b>▲ ▼</b> : kit précédent / suivant (en INSTRUMENT : octave). <b>◀</b> : quantize (en INSTRUMENT : transposer −1) ; <b>▶</b> : tout arrêter (en INSTRUMENT : +1).</li>
+            <li><b>Colonne de droite</b> : SAMPLER = arrête la rangée, INSTRUMENT = choisit le synthé, SHOW = choisit l'animation. Le logo bat la mesure.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="navigateur">Le navigateur</h2>
+      <div class="man-group">
+        <details open><summary>L'arbre à gauche</summary>
+          <ul>
+            <li><b>Collection</b>, <b>Tag List</b> (liste de travail), <b>Stems</b> (morceaux déjà séparés), <b>Related Tracks</b> (règles : BPM, tonalité, genre, artiste…), <b>Track Suggestion</b>, puis tes playlists, Intelligent Playlists et historiques.</li>
+            <li><b>Clic droit sur un dossier ou une playlist</b> : <b>New playlist / folder / intelligent playlist here</b>, <b>Edit conditions…</b> et <b>Freeze into a normal playlist</b> (Intelligent Playlist), <b>Analyze tracks</b>, <b>Export as M3U8…</b>, <b>Find duplicates…</b>, <b>Send to another Reboxed (USB drive)…</b>, <b>Move to</b>, <b>Rename…</b>, <b>Delete</b>.</li>
+            <li><b>Tag List</b> : <b>Convert to playlist…</b>, <b>Clear Tag List</b>. <b>Historique</b> : <b>Turn into playlist</b>, <b>Delete this history</b>, <b>Delete all histories</b>.</li>
+          </ul></details>
+        <details><summary>Le menu ⋯ (outils de la bibliothèque)</summary>
+          <ul>
+            <li><b>Import a DJ library (XML)…</b> : récupère cues, grilles, tags et playlists d'un autre logiciel. <b>Export collection as XML…</b></li>
+            <li><b>Download tracks…</b>, <b>Export to USB for DJ players…</b> (clé pour lecteurs de club).</li>
+            <li><b>Auto-tag the tracks shown…</b> (genres, titres, artistes via Spotify / Deezer), <b>Clean the names of the tracks shown…</b>, <b>Undo the last auto-tag / clean</b>.</li>
+            <li><b>Send to / Import from another Reboxed</b> (avec les stems), <b>Find duplicates in the collection…</b>, <b>Analyze all unanalyzed tracks</b>, <b>Find missing files</b>, <b>Move my collection to a USB drive…</b></li>
+          </ul></details>
+        <details><summary>Clic droit sur un morceau</summary>
+          <ul>
+            <li><b>Load to Deck N</b>, <b>Add to playlist</b>, <b>New playlist from selection…</b>, <b>Add to Tag List</b>.</li>
+            <li><b>Show related tracks</b>, <b>Show suggestions</b>, <b>Analyze</b>, <b>Create cues from phrases</b>, <b>Separate stems</b>.</li>
+            <li><b>Rating</b>, <b>Color</b>, <b>Track information…</b> (avec recherche d'infos en ligne), <b>Auto-tag…</b>, <b>Clean names…</b>, <b>Show in Explorer</b>, <b>Remove from collection</b>.</li>
+          </ul></details>
+        <details><summary>Les colonnes</summary>
+          <ul>
+            <li><b>Clic</b> sur un en-tête = trier ; <b>glisser</b> un en-tête = déplacer la colonne ; glisser son bord = largeur.</li>
+            <li><b>Clic droit sur un en-tête</b> : afficher ou cacher des colonnes (Label, Year, Remixer, Bitrate, My Tag…), <b>Fit all columns to their content</b>, <b>Reset column widths / order</b>.</li>
+            <li><b>FILTER</b> : filtrer la liste (BPM, tonalité, note, couleur…). La recherche ignore les accents.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="suggestion">Suggestion de morceaux</h2>
+      <div class="man-group">
+        <details open><summary>Track Suggestion</summary>
+          <ul>
+            <li><b>Point de départ</b> : Master deck, un deck précis, ou le morceau sélectionné.</li>
+            <li><b>Keep the energy / Build up / Cool down</b> : garder, monter ou redescendre l'énergie.</li>
+            <li>Le classement mélange le son, la tonalité, le tempo, l'énergie et ce que tu enchaînes d'habitude (tes historiques). Les raisons des premiers choix s'affichent au-dessus de la liste.</li>
+            <li><b>✦ ASK GEMINI</b> (optionnel, clé dans Préférences ▸ Library) : reclasse et propose des morceaux à découvrir ; un clic sur l'un d'eux le cherche dans la fenêtre de téléchargement.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="telechargement">Téléchargement</h2>
+      <div class="man-group">
+        <details open><summary>La fenêtre DOWNLOAD</summary>
+          <ul>
+            <li><b>Recherche</b> sur YouTube ou SoundCloud, <b>lien</b> collé (ou glissé sur l'appli), <b>playlist Spotify</b> (chaque titre retrouvé sur YouTube), <b>nouvelles sorties</b> des chaînes que tu suis.</li>
+            <li>Les noms sont nettoyés (« Official Video », « Lyrics »…) et les morceaux arrivent analysés dans la collection.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="preferences">Préférences (engrenage)</h2>
+      <div class="man-group">
+        <details open><summary>Les onglets</summary>
+          <ul>
+            <li><b>General</b> : analyse (grille normale ou dynamique), notation des tonalités (8A ou Am), couleurs d'onde, fenêtre.</li>
+            <li><b>Appearance</b> : thème, couleur d'accent, taille de l'interface.</li>
+            <li><b>Decks &amp; Mixer</b> : nombre de decks, type de sync, plage de tempo, courbes des faders et du crossfader.</li>
+            <li><b>Audio</b> : cartes son du master et du casque, 2ᵉ sortie master.</li>
+            <li><b>Library</b> : dossier de la bibliothèque et des stems, clé USB, Spotify, Discogs, clé Gemini.</li>
+            <li><b>Stems</b> : modèles, qualité, moteur (processeur ou carte graphique) et <b>Test the engines</b>.</li>
+            <li><b>Downloads</b> : qualité, dossier, nettoyeur de noms, outils.</li>
+            <li><b>MIDI</b> : contrôleurs connectés, moniteur MIDI, <b>MIDI learn</b>. <b>Plugins</b> : installer, créer, activer les plugins de contrôleurs.</li>
+            <li><b>Keyboard</b> : raccourcis (QWERTY / AZERTY), chaque touche se change. <b>About</b> : version, mises à jour, liens.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="clavier">Raccourcis clavier</h2>
+      <div class="man-group">
+        <details open><summary>Deck 1 / Deck 2 (touches QWERTY ; un clavier AZERTY est détecté tout seul)</summary>
+          <ul>
+            <li>Play : <b>Z</b> / <b>N</b> · Cue : <b>A</b> / <b>H</b> · Sync : <b>Q</b> / <b>Y</b> · Pitch bend − + : <b>W E</b> / <b>U I</b></li>
+            <li>Loop in / out / reloop : <b>D F G</b> / <b>K L ;</b> · Loop ½ / ×2 : <b>Shift+D</b>, <b>Shift+G</b> / <b>Shift+K</b>, <b>Shift+;</b></li>
+            <li>Hot cues A–D : <b>1–4</b> / <b>6–9</b> (avec Shift : effacer) · Boucles : <b>Ctrl+1–5</b> / <b>Ctrl+6–0</b></li>
+            <li>Slip reverse : <b>S</b> / <b>J</b> · Charger le morceau sélectionné : <b>Shift+←</b> / <b>Shift+→</b> · Rechercher : <b>Ctrl+F</b> · Navigateur plein écran : <b>Espace</b></li>
+            <li>Tout se change dans Préférences ▸ Keyboard.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="controleurs">Contrôleurs</h2>
+      <div class="man-group">
+        <details open><summary>Brancher et jouer</summary>
+          <ul>
+            <li>Un contrôleur avec plugin est reconnu au branchement : jogs, pads, mixer, FX, LED, et sa carte son est choisie (Préférences ▸ Audio pour changer).</li>
+            <li>Un bouton de mode de pads sur le contrôleur ouvre la même page à l'écran.</li>
+            <li>Autre matériel MIDI : Préférences ▸ MIDI ▸ <b>MIDI learn</b>. Le moniteur MIDI montre chaque message reçu et la fonction déclenchée.</li>
+            <li>Les plugins de contrôleurs : Préférences ▸ Plugins.</li>
+          </ul></details>
+      </div>
+</div>

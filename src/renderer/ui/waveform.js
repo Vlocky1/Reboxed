@@ -205,12 +205,6 @@ export function drawDetail(canvas, deck, opts) {
   const strip = stripFor(canvas, deck, wf, opts, t0, secPerPx, w, h, dpr);
   g.drawImage(strip.el, Math.round((t0 - strip.t0) / secPerPx), 0, w, h, 0, 0, w, h);
 
-  // Loop region
-  if (deck.loop) {
-    const a = (deck.loop.start - t0) / secPerPx; const b = (deck.loop.end - t0) / secPerPx;
-    g.fillStyle = 'rgba(255,170,0,0.16)';
-    g.fillRect(a, 0, b - a, h);
-  }
   if (!wf) {
     g.fillStyle = themeColor.text; g.font = `${11 * dpr}px system-ui`; g.textAlign = 'center';
     g.fillText('Analyzing…', cx, 14 * dpr);
@@ -255,6 +249,21 @@ export function drawDetail(canvas, deck, opts) {
     }
   }
 
+  // Saved loops (hot cues and memory cues with an end): a tinted stretch with a bracket at its end.
+  for (const c of deck.track.cues ?? []) {
+    if (c.end === undefined) continue;
+    const a = (c.start - t0) / secPerPx; const b = (c.end - t0) / secPerPx;
+    if (b < 0 || a > w) continue;
+    g.fillStyle = c.kind === 'hot' ? (c.color ?? '#3fdc5a') : '#ff3b3b';
+    g.globalAlpha = 0.2;
+    g.fillRect(a, 0, b - a, h);
+    g.globalAlpha = 0.95;
+    g.fillRect(Math.round(b) - dpr, 0, 2 * dpr, h);
+    g.fillRect(a, 0, b - a, 2 * dpr);
+    g.fillRect(a, h - 2 * dpr, b - a, 2 * dpr);
+    g.globalAlpha = 1;
+  }
+
   // Cues
   for (const c of deck.track.cues ?? []) {
     const x = (c.start - t0) / secPerPx;
@@ -291,9 +300,56 @@ export function drawDetail(canvas, deck, opts) {
     g.fillStyle = 'rgba(80,200,255,0.8)';
     g.fillRect(Math.round((slip - t0) / secPerPx), 0, dpr, h);
   }
+  drawLoop(g, deck, t0, secPerPx, w, h, dpr);
   // Play head
   g.fillStyle = opts.color ?? '#fff';
   g.fillRect(cx - dpr, 0, 2 * dpr, h);
+}
+
+/** Active loop colour: not the waveform's orange, so it reads on every waveform style. */
+export const LOOP_COLOR = '#ffd400';
+
+const loopLabel = (loop) => {
+  if (!loop.beats) return 'LOOP';
+  return `LOOP ${loop.beats >= 1 ? loop.beats : `1/${Math.round(1 / loop.beats)}`}`;
+};
+
+/**
+ * The active loop stands out from anything: the rest of the track is dimmed, the loop is lit between
+ * thick edges, with its length on a tab. A loop just left (RELOOP brings it back) keeps a dashed outline.
+ */
+function drawLoop(g, deck, t0, secPerPx, w, h, dpr) {
+  const loop = deck.loop ?? deck.lastLoop;
+  if (!loop) return;
+  const a = (loop.start - t0) / secPerPx; const b = (loop.end - t0) / secPerPx;
+  if (!deck.loop) {
+    if (b < 0 || a > w) return;
+    g.strokeStyle = LOOP_COLOR; g.globalAlpha = 0.7; g.lineWidth = dpr;
+    g.setLineDash([5 * dpr, 4 * dpr]);
+    g.strokeRect(a, dpr / 2, b - a, h - dpr);
+    g.setLineDash([]); g.globalAlpha = 1;
+    return;
+  }
+  g.fillStyle = 'rgba(0,0,0,0.55)';
+  if (a > 0) g.fillRect(0, 0, Math.min(a, w), h);
+  if (b < w) g.fillRect(Math.max(b, 0), 0, w - Math.max(b, 0), h);
+  if (b < 0 || a > w) return;
+  g.fillStyle = 'rgba(255,212,0,0.2)';
+  g.fillRect(a, 0, b - a, h);
+  g.fillStyle = LOOP_COLOR;
+  const edge = 3 * dpr;
+  g.fillRect(Math.round(a) - edge / 2, 0, edge, h);
+  g.fillRect(Math.round(b) - edge / 2, 0, edge, h);
+  g.fillRect(a, 0, b - a, edge);
+  g.fillRect(a, h - edge, b - a, edge);
+  // Length tab, kept on screen while the loop start is off the left side.
+  const text = loopLabel(deck.loop);
+  g.font = `bold ${10 * dpr}px system-ui`; g.textAlign = 'left';
+  const tw = g.measureText(text).width + 10 * dpr;
+  const tx = Math.max(0, Math.min(a, w - tw));
+  g.fillRect(tx, 0, tw, 15 * dpr);
+  g.fillStyle = '#000';
+  g.fillText(text, tx + 5 * dpr, 11 * dpr);
 }
 
 /** Overview: pre-rendered waveform image + live play head and markers. */
@@ -361,7 +417,26 @@ export class Overview {
     const pos = deck.position();
     g.fillStyle = 'rgba(0,0,0,0.45)';
     g.fillRect(0, 0, px(pos), h);
-    if (deck.loop) { g.fillStyle = 'rgba(255,170,0,0.35)'; g.fillRect(px(deck.loop.start), 0, Math.max(dpr, px(deck.loop.end) - px(deck.loop.start)), h); }
+    // Saved loops: a tinted band, wide enough to see even when it lasts a few beats.
+    for (const c of deck.track.cues ?? []) {
+      if (c.end === undefined) continue;
+      g.fillStyle = c.kind === 'hot' ? (c.color ?? '#3fdc5a') : '#ff3b3b';
+      g.globalAlpha = 0.55;
+      g.fillRect(px(c.start), 0, Math.max(3 * dpr, px(c.end) - px(c.start)), h);
+      g.globalAlpha = 1;
+    }
+    // Active loop: a short loop is only a pixel or two wide here, so it gets a marker on top.
+    if (deck.loop) {
+      const a = px(deck.loop.start); const lw = Math.max(4 * dpr, px(deck.loop.end) - a);
+      g.fillStyle = 'rgba(255,212,0,0.45)';
+      g.fillRect(a, 0, lw, h);
+      g.fillStyle = LOOP_COLOR;
+      g.fillRect(a - dpr, 0, 2 * dpr, h);
+      g.fillRect(a + lw - dpr, 0, 2 * dpr, h);
+      const mid = a + lw / 2; const m = 6 * dpr;
+      g.beginPath(); g.moveTo(mid - m, 0); g.lineTo(mid + m, 0); g.lineTo(mid, m); g.fill();
+      g.beginPath(); g.moveTo(mid - m, h); g.lineTo(mid + m, h); g.lineTo(mid, h - m); g.fill();
+    }
     for (const c of deck.track.cues ?? []) {
       g.fillStyle = c.kind === 'hot' ? (c.color ?? '#3fdc5a') : c.kind === 'mixin' ? '#3fdc5a' : c.kind === 'mixout' ? '#ff3fa0' : '#ff3b3b';
       g.fillRect(px(c.start), c.kind === 'hot' ? 0 : h - 5 * dpr, dpr * 2, 5 * dpr);

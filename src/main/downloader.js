@@ -4,11 +4,17 @@
 // Preferences, Reboxed's tools folder (installed from the app, see tools.js), ~/.stacher when
 // Stacher is installed, or the PATH. Nothing is bundled.
 import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
+import { access, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
+import { locateDownload } from '../shared/dl-recover.js';
 
 const EXE = process.platform === 'win32' ? '.exe' : '';
+
+// yt-dlp writes to a pipe in the Windows code page unless told otherwise: read as UTF-8, a path with
+// an accent, Japanese or an emoji then names a file that does not exist.
+const UTF8_ENV = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
+const usable = (p) => stat(p).then((s) => s.isFile() && s.size > 0, () => false);
 
 /** Audio formats: yt-dlp arguments. m4a keeps YouTube's AAC stream as is (no re-encode). */
 export const FORMATS = {
@@ -110,7 +116,7 @@ export class Downloader {
     const t = await this.tools();
     if (!t.ytdlp) throw new Error('yt-dlp not found (install yt-dlp, or choose its folder in Preferences > Downloads)');
     // IPv4: on this kind of network IPv6 attempts time out first (search: 163 s -> 4 s).
-    const args = ['--force-ipv4', '--no-warnings', '--no-colors'];
+    const args = ['--force-ipv4', '--no-warnings', '--no-colors', '--encoding', 'utf-8'];
     if (t.deno) args.push('--js-runtimes', `deno:${t.deno}`);
     if (t.ffmpeg) args.push('--ffmpeg-location', dirname(t.ffmpeg));
     return { exe: t.ytdlp, args };
@@ -118,7 +124,7 @@ export class Downloader {
 
   exec(exe, args, onLine) {
     return new Promise((resolve, reject) => {
-      const child = spawn(exe, args, { windowsHide: true });
+      const child = spawn(exe, args, { windowsHide: true, env: UTF8_ENV });
       let out = ''; let err = ''; let buf = '';
       child.stdout.setEncoding('utf8');
       child.stderr.setEncoding('utf8');
@@ -211,21 +217,23 @@ export class Downloader {
     try {
       const { exe, args } = await this.base();
       const out = join(opts.folder, '%(meta_artist,artist,uploader)s - %(meta_title,title)s.%(ext)s');
-      let file = null;
+      let file = null; let expected = null;
       const onLine = (line) => {
         if (line.startsWith('[rb] ')) {
           const [pct, speed, eta] = line.slice(5).split('|').map((s) => s.trim());
           const p = parseFloat(pct);
           progress({ state: p >= 100 ? 'converting' : 'downloading', pct: Number.isFinite(p) ? p : 0, speed, eta });
         } else if (line.startsWith('[rbfile] ')) file = line.slice(9).trim();
+        else if (line.startsWith('[rbname] ')) expected = line.slice(9).trim();
       };
       progress({ state: 'starting', pct: 0 });
       const child = spawn(exe, [
-        item.url, '--no-playlist', '--windows-filenames', '--no-mtime',
+        item.url, '--no-playlist', '--windows-filenames', '--no-mtime', '--trim-filenames', '150',
         ...(FORMATS[opts.format] ?? FORMATS.mp3), ...METADATA, ...args,
         '-o', out, '--newline', '--progress', '--progress-template', PROGRESS,
+        '--print', 'before_dl:[rbname] %(filename)s',
         '--print', 'after_move:[rbfile] %(filepath)s',
-      ], { windowsHide: true });
+      ], { windowsHide: true, env: UTF8_ENV });
       this.running.set(key, child);
       const result = await new Promise((res, rej) => {
         let err = ''; let buf = '';
@@ -235,15 +243,21 @@ export class Downloader {
         child.on('error', rej);
         child.on('close', (code, signal) => { if (buf) onLine(buf); res({ code, signal, err }); });
       });
-      if (result.signal || (result.code !== 0 && !file)) {
-        const error = result.signal ? 'cancelled' : (lastError(result.err) || `yt-dlp exited with ${result.code}`);
-        progress({ state: result.signal ? 'cancelled' : 'error', error });
-        throw new Error(error);
+      if (result.signal) {
+        progress({ state: 'cancelled', error: 'cancelled' });
+        throw new Error('cancelled');
       }
-      progress({ state: 'done', pct: 100, file });
-      return file;
+      // A step after the conversion (e.g. the cover) can fail with the audio already there.
+      const found = await locateDownload(file, expected, opts.format in FORMATS ? opts.format : 'mp3', usable);
+      if (!found) {
+        const error = lastError(result.err) || (result.code !== 0 ? `yt-dlp exited with ${result.code}` : 'yt-dlp finished but its file was not found');
+        progress({ state: 'error', error });
+        throw Object.assign(new Error(error), { reported: true });
+      }
+      progress({ state: 'done', pct: 100, file: found });
+      return found;
     } catch (err) {
-      if (!/cancelled|exited/.test(err.message)) progress({ state: 'error', error: err.message });
+      if (!err.reported && err.message !== 'cancelled') progress({ state: 'error', error: err.message });
       throw err;
     }
   }

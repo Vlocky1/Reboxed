@@ -7,6 +7,7 @@ import { icon } from './icons.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 import { cleanTrackName, parseKeywords } from '../../shared/clean-name.js';
 import { findOnYoutube } from '../../shared/yt-match.js';
+import { matchLostDownloads } from '../../shared/dl-recover.js';
 
 const FORMAT_NAMES = { m4a: 'M4A', mp3: 'MP3 320', flac: 'FLAC', wav: 'WAV' };
 const PLATFORMS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
@@ -102,8 +103,8 @@ export class DownloadCenter {
       if (this.jobs.has(key) && ACTIVE.has(this.jobs.get(key).state)) continue;
       this.jobs.set(key, { item, state: 'queued', pct: 0 });
       window.rb.dl.download({ key, url: item.url }, { folder, format: this.cfg.format })
-        .then((file) => this.finished(item, file))
-        .catch(() => { /* state already reported through progress */ });
+        .then((file) => this.finished(item, file), () => { /* state already reported through progress */ })
+        .catch((err) => this.notAdded(item, err.message));
     }
     this.changed(this.tab === 'queue');
   }
@@ -118,11 +119,52 @@ export class DownloadCenter {
     this.changed();
   }
 
+  /** The download went through but the track is not in the library: said clearly, can be retried. */
+  notAdded(item, reason) {
+    const job = this.jobs.get(item.id);
+    if (job) Object.assign(job, { state: 'error', error: reason });
+    toast(`"${item.title}" was downloaded but not added to the library: ${reason}`, 9000);
+    this.changed();
+  }
+
   /** Add the file to the collection (and the Downloads playlist), remember it was downloaded. */
   async finished(item, file) {
-    if (!file) return;
-    const lib = this.app.library;
+    if (!file) { this.notAdded(item, 'no file came back from the download'); return; }
     await this.app.importPaths([file]);
+    if (!this.app.library.idForPath(file)) { this.notAdded(item, `cannot read ${file}`); return; }
+    this.afterImport(item, file);
+    toast(`Downloaded: ${item.title}`);
+    this.changed();
+  }
+
+  /**
+   * Tracks downloaded before 1.21 whose name had an accent, Japanese or an emoji: the file is in the
+   * download folder, the library never got it, and the download shows as done. They are added now.
+   */
+  async recoverLost() {
+    const lib = this.app.library;
+    const entries = Object.entries(this.cfg.done).filter(([, path]) => typeof path === 'string' && !lib.idForPath(path));
+    if (!entries.length) return 0;
+    const exists = await window.rb.existsMany(entries.map(([, path]) => path));
+    const lost = entries.filter((_, i) => !exists[i]).map(([id, path]) => ({ id, path }));
+    if (!lost.length) return 0;
+    const files = (await window.rb.listAudio(await this.folder()).catch(() => [])).map((f) => f.path).filter((p) => !lib.idForPath(p));
+    const found = matchLostDownloads(lost, files);
+    if (found.length) await this.app.importPaths(found.map((f) => f.path));
+    for (const f of found) if (lib.idForPath(f.path)) this.afterImport({ id: f.id, title: lib.get(lib.idForPath(f.path))?.title ?? '' }, f.path);
+    // A garbled record with no file: back to "can be downloaded" instead of a false "in collection".
+    const done = { ...this.cfg.done };
+    const fixed = new Set(found.map((f) => f.id));
+    for (const l of lost) if (!fixed.has(l.id) && l.path.includes('�')) delete done[l.id];
+    this.save({ done: { ...done, ...Object.fromEntries(found.map((f) => [f.id, f.path])) } });
+    if (found.length) toast(`${found.length} downloaded track(s) that never reached the library were added`, 7000);
+    this.changed();
+    return found.length;
+  }
+
+  /** A downloaded file just joined the collection: its clean name, its playlists, marked as done. */
+  afterImport(item, file) {
+    const lib = this.app.library;
     const id = lib.idForPath(file);
     // Name cleaner: "(Paroles)", "[Official Video]", "- Topic"… go as the track joins the collection.
     if (id && this.cfg.cleanNames !== false) {
@@ -143,8 +185,6 @@ export class DownloadCenter {
       if (!pl.trackIds.includes(id)) lib.addToPlaylist(pl.id, [id]);
     }
     this.save({ done: { ...this.cfg.done, [item.id]: file } });
-    toast(`Downloaded: ${item.title}`);
-    this.changed();
   }
 
   /** Followed channels / playlists: latest uploads, newest first, with the "new" ones counted. */

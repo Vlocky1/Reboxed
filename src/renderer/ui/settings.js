@@ -343,7 +343,22 @@ export async function openSettings(library, engine, apply, midi, app) {
         h('label', {}, 'Analyze on import'), check('autoAnalyze'),
         h('label', {}, 'BPM range'), h('select', { onchange: (e) => apply('bpmRange', e.target.value.split('-').map(Number)) },
           BPM_RANGES.map(([a, b]) => h('option', { value: `${a}-${b}`, selected: s.bpmRange[0] === a && s.bpmRange[1] === b }, `${a} - ${b}`))),
-        h('label', {}, 'Beatgrid mode'), sel('analysisMode', [['normal', 'Normal (constant tempo)'], ['dynamic', 'Dynamic (variable tempo)']]),
+        h('label', {}, 'Beatgrid mode'), h('div', {}, sel('analysisMode', [['normal', 'Normal (constant tempo)'], ['dynamic', 'Dynamic (variable tempo)']]),
+          h('small', {}, 'Normal: the BPM stays fixed through the track. A track analysed in dynamic mode becomes constant the next time it is loaded, except a locked grid, one re-analysed as dynamic from its deck, or an imported grid with real tempo changes.')),
+        h('label', {}, 'Variable grids'), (() => {
+          const count = () => library.all().filter((t) => t.beatgrid?.beats && !t.gridLocked).length;
+          const info = h('small', {}, `${count()} track(s) have a variable grid.`);
+          const btn = h('button.dbtn.small', { disabled: !count(), onclick: async () => {
+            const n = count();
+            const ok = await modal('Make every grid constant', h('p', {}, `The ${n} track(s) with a variable grid get a constant one, closest to their beats. Locked grids stay. A recording whose tempo really changes will drift from its grid: re-analyse that one as dynamic from its deck.`),
+              [{ label: 'Make them constant', primary: true, value: true }, { label: 'Cancel', value: null }]);
+            if (!ok) return;
+            toast(`${app.makeAllGridsConstant()} grid(s) made constant`);
+            info.textContent = `${count()} track(s) have a variable grid.`;
+            btn.disabled = !count();
+          } }, 'Make them all constant');
+          return h('div', {}, btn, info);
+        })(),
         h('label', {}, 'Key notation'), sel('keyNotation', [['camelot', 'Alphanumeric (8A)'], ['musical', 'Classic (Am)']]),
         h('label', {}, 'Create cues from phrases'), check('autoCues')),
       h('h4', {}, 'View'),

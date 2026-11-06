@@ -21,11 +21,12 @@ import { SamplerView } from './ui/sampler-view.js';
 import { PadSampler } from './audio/pad-sampler.js';
 import { PadSurface } from './controller/launchpad.js';
 import { PadSamplerView } from './ui/pad-sampler-view.js';
+import { openManual } from './ui/manual.js';
 import { Automix } from './automix.js';
 import { DrumSwap } from './audio/groove.js';
 import { BeatFxUnit, PAD_FX } from './audio/fx.js';
 import { encodeWav } from '../shared/wav.js';
-import { toBeatgrid, shiftGrid, doubleGrid, halveGrid, setDownbeatAt, constantGridAt, tapBpm } from '../shared/beatgrid.js';
+import { toBeatgrid, shiftGrid, doubleGrid, halveGrid, setDownbeatAt, constantGridAt, constantFromBeats, tapBpm } from '../shared/beatgrid.js';
 import { createCues } from '../shared/autocues.js';
 import { transposeKey } from '../shared/keys.js';
 import { RELEASE_FX } from './audio/deck.js';
@@ -198,6 +199,7 @@ class App {
           h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
           h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.recBtn, this.recTime)),
         h('div.gbar-right', {}, this.trialPill, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
+          h('button.lbtn.help-btn', { onclick: () => openManual(), title: 'Manual: every menu explained' }, '?'),
           h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: 'Appearance: themes, colours, size' }, icon('palette')),
           h('button.lbtn', { onclick: () => this.openSettings(), title: 'Preferences' }, icon('gear')))),
       this.fxPanel,
@@ -235,6 +237,9 @@ class App {
     // New releases from followed channels, quietly, a few seconds after start.
     if (!new URLSearchParams(location.search).has('smoke') && !new URLSearchParams(location.search).has('shots') && this.library.settings.checkUpdates !== false) {
       setTimeout(() => checkForUpdates(this, { silent: true }).then((info) => { if (info?.newer) toast(`Reboxed ${info.latest} is available: click the update button in the top bar`, 7000); }), 5000);
+    }
+    if (!new URLSearchParams(location.search).has('smoke') && !new URLSearchParams(location.search).has('shots')) {
+      setTimeout(() => this.downloads.recoverLost().catch((err) => console.warn('recover downloads', err)), 4000);
     }
     if (!new URLSearchParams(location.search).has('smoke') && this.downloads.cfg.checkOnStart && this.downloads.cfg.subs.length) {
       setTimeout(() => this.downloads.checkFeeds().catch(() => {}), 8000);
@@ -354,7 +359,7 @@ class App {
       const buffer = await this.analyzer.decode(track.path);
       let stored = await window.rb.getAnalysis(trackId);
       if (!stored) stored = await this.storeAnalysis(trackId, await this.analyzer.analyzeBuffer(buffer, this.analysisOptions(track)), buffer.duration);
-      const fresh = this.library.get(trackId);
+      const fresh = this.constantGridIfAsked(this.library.get(trackId));
       deck.setLoaded(fresh, buffer, this.deckAnalysis(fresh, stored));
       if (fresh.missing) this.library.update(trackId, { missing: false });
       if (stored?.vocals) deck.vocals = stored.vocals;
@@ -373,6 +378,36 @@ class App {
       deck.loading = false;
       this.browser.renderBody();
     }
+  }
+
+  /**
+   * "Constant tempo" applies to tracks analysed earlier too: their grid is kept once made, so one made
+   * in dynamic mode kept moving the BPM. Left alone: a locked grid, a track re-analysed in dynamic on
+   * purpose, and an imported grid whose tempo really changes (made by hand, or a live recording):
+   * that one is converted only on request (grid menu, Preferences > General).
+   */
+  constantGridIfAsked(t) {
+    if (this.library.settings.analysisMode !== 'normal' || !t.beatgrid?.beats || t.gridLocked || t.dynamicGrid) return t;
+    const { grid, drift } = constantFromBeats(t.beatgrid);
+    if (t.source === 'rekordbox' && drift > 0.03) {
+      toast(`"${t.title}": its imported grid has real tempo changes, so its BPM moves. To make it constant: grid button on the deck > Convert to constant grid`, 7000);
+      return t;
+    }
+    return this.library.update(t.id, { beatgrid: grid, bpm: grid.bpm });
+  }
+
+  /** Every variable grid becomes constant (Preferences > General). Locked grids stay. */
+  makeAllGridsConstant() {
+    let n = 0;
+    for (const t of this.library.all()) {
+      if (!t.beatgrid?.beats || t.gridLocked) continue;
+      const { grid } = constantFromBeats(t.beatgrid);
+      const fresh = this.library.update(t.id, { beatgrid: grid, bpm: grid.bpm, dynamicGrid: false }, { silent: true });
+      for (const d of this.engine.decks) if (d.track?.id === t.id) d.updateTrack(fresh, this.deckAnalysis(fresh, d.analysis));
+      n++;
+    }
+    if (n) this.library.emit('tracks', {});
+    return n;
   }
 
   /** Options for the analysis worker; a track's own grid (xml import, edits, lock) is kept. */
@@ -1153,7 +1188,7 @@ class App {
       { id: 'bpmUp', icon: 'grid-bpm-up', label: 'BPM + 0.01', disabled: off || !!g?.beats, run: set((x) => ({ ...x, bpm: Math.round((x.bpm + 0.01) * 100) / 100 })) },
       { id: 'tap', icon: 'grid-tap', label: 'Tap tempo…', disabled: off, run: () => { if (d.loaded && d.grid && !d.track.gridLocked) this.tapTempo(d); } },
       { id: 'constant', icon: 'grid-constant', label: 'Convert to constant grid', disabled: off || !g?.beats,
-        run: set((x) => constantGridAt(x.bpm, d.bg.snap(d.position()), d.bg.barPos(Math.round(d.bg.indexAt(d.position()))) + 1)) },
+        run: set((x) => { this.library.update(d.track.id, { dynamicGrid: false }, { silent: true }); return constantFromBeats(x).grid; }) },
       { id: 'lock', icon: locked ? 'grid-unlock' : 'grid-lock', label: locked ? 'Unlock beatgrid' : 'Lock beatgrid', disabled: !d.loaded,
         run: () => { if (!d.track) return; const l = !!d.track.gridLocked; this.library.update(d.track.id, { gridLocked: !l }); toast(l ? 'Beatgrid unlocked' : 'Beatgrid locked'); this.renderGridQuick(); } },
     ];
@@ -1165,7 +1200,7 @@ class App {
     const g = d.grid;
     const locked = !!d.track.gridLocked;
     const reanalyze = async (mode) => {
-      const t = this.library.update(d.track.id, { beatgrid: locked ? d.track.beatgrid : null });
+      const t = this.library.update(d.track.id, { beatgrid: locked ? d.track.beatgrid : null, dynamicGrid: mode === 'dynamic' });
       this.modeOverride.set(t.id, mode);
       await window.rb.putAnalysis(t.id, null);
       this.analyzeTracks([t.id]);
@@ -1411,7 +1446,10 @@ class App {
       const stemMode = this.library.settings.stemWaveform;
       // The zoom is real (listening) time, like rekordbox: a faster deck shows more of its track,
       // so decks at the same BPM show beat grids of the same size, lined up when synced.
-      this.visibleDecks().forEach((d, i) => drawDetail(this.waveCanvases[i], d, { style, spanSec: this.zoom * (d.rate || 1), color: DECK_COLORS[i], stemMode }));
+      this.visibleDecks().forEach((d, i) => {
+        drawDetail(this.waveCanvases[i], d, { style, spanSec: this.zoom * (d.rate || 1), color: DECK_COLORS[i], stemMode });
+        this.waveRows[i].classList.toggle('looping', !!d.loop);
+      });
       lap('waveforms');
       this.deckViews.slice(0, this.deckCount).forEach((v) => v.frame(style));
       lap('decks');
@@ -3079,6 +3117,71 @@ async function smoke(app) {
           `${nv.gpu?.name} · HQ ${b.speed?.toFixed?.(1) ?? JSON.stringify(b)}× real time · ${t.title} separated on ${meta?.ep} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
       } else report.steps.push({ name: `NVIDIA engine: not installed here (${nv.gpu?.name ?? 'no NVIDIA card'}${nv.support?.ok ? '' : ` · ${nv.support?.reason}`})`, ok: true, info: '' });
 
+      // Active loop: yellow edges and dimmed surroundings on the big waveform, marks on the deck.
+      {
+        await app.loadTrack(0, kicks[0].id);
+        await wait(300);
+        const pos = d1.position();
+        d1.setLoop({ start: Math.max(0, pos - 0.4), end: pos + 0.4, beats: 2 });
+        await wait(200);
+        const c = app.waveCanvases[0];
+        const spp = (app.zoom * (d1.rate || 1)) / c.width;
+        const xEdge = Math.round(c.width / 2 + (d1.loop.end - d1.position()) / spp);
+        const px = c.getContext('2d').getImageData(xEdge, Math.round(c.height * 0.6), 1, 1).data;
+        const yellow = px[0] > 200 && px[1] > 170 && px[2] < 90;
+        const marks = app.waveRows[0].classList.contains('looping') && app.deckViews[0].el.classList.contains('looping') && app.deckViews[0].loopBtn.classList.contains('on');
+        await window.rb.smokeShot('loop');
+        d1.exitLoop();
+        await wait(100);
+        const left = !app.waveRows[0].classList.contains('looping') && d1.lastLoop?.beats === 2;
+        step('an active loop stands out: yellow edge on the waveform, marks on the deck and its row', yellow && marks && left, `edge pixel rgb(${[...px].slice(0, 3)}) at x=${xEdge} · marks ${marks} · after exit ${left}`);
+      }
+
+      // Constant tempo setting: a variable grid from an earlier analysis becomes constant at load.
+      {
+        const t0 = kicks[1];
+        const period = 60 / 128;
+        const beats = Array.from({ length: 40 }, (_, i) => Math.round((0.2 + i * period + (i % 2 ? 0.003 : -0.003)) * 1000) / 1000);
+        const was = { beatgrid: t0.beatgrid, bpm: t0.bpm, source: t0.source };
+        const prevMode = lib.settings.analysisMode;
+        lib.setSetting('analysisMode', 'normal');
+        lib.update(t0.id, { beatgrid: { bpm: 128, firstBeat: beats[0], beat: 1, beats }, dynamicGrid: true });
+        await app.loadTrack(1, t0.id);
+        const kept = !!d2.bg?.dynamic;
+        const shown = Array.from({ length: 12 }, (_, i) => d2.bg.smoothBpmAt(i * 1.5));
+        const moving = Math.max(...shown) - Math.min(...shown);
+        lib.update(t0.id, { dynamicGrid: false });
+        await app.loadTrack(1, t0.id);
+        const flat = !d2.bg?.dynamic && Math.abs(d2.originalBpm - 128) < 0.05 && !lib.get(t0.id).beatgrid.beats;
+        step('constant tempo: a variable grid becomes constant at load, unless asked as dynamic; the shown BPM is steady',
+          kept && flat && moving < 0.15, `dynamic on purpose kept ${kept} (shown BPM moves ${moving.toFixed(3)}) · flattened ${flat} → ${d2.originalBpm.toFixed(2)} BPM`);
+        lib.update(t0.id, was);
+        lib.setSetting('analysisMode', prevMode);
+      }
+
+      // A finished download that cannot join the library is said, not silently marked as done.
+      {
+        const dc = app.downloads;
+        const item = { id: 'smoke-lost', title: 'Lost track', url: 'https://www.youtube.com/watch?v=smoke-lost' };
+        dc.jobs.set(item.id, { item, state: 'done', pct: 100 });
+        await dc.finished(item, `${dir}\\does-not-exist.mp3`);
+        const job = dc.jobs.get(item.id);
+        step('download: a file that cannot be added shows an error and is not marked as done', job.state === 'error' && !dc.isDone(item.id) && /cannot read/.test(job.error), `${job.state} · ${job.error}`);
+        // Recovery of a download recorded under a garbled path.
+        const real = `${await dc.folder()}\\Beyoncé - Déjà Vu.wav`;
+        const buf = syntheticTrack(ctx, 124, 4);
+        await window.rb.writeFile(real, encodeWav([0, 1].map((c) => buf.getChannelData(c).map((x) => x * 0.7)), buf.sampleRate));
+        dc.save({ done: { ...dc.cfg.done, 'smoke-garbled': `${await dc.folder()}\\Beyonc� - D�j� Vu.wav` } });
+        const recovered = await dc.recoverLost();
+        const fixedPath = dc.cfg.done['smoke-garbled'];
+        const rid = lib.idForPath(fixedPath);
+        step('download: a track lost by the old garbled path is recovered at start', recovered === 1 && !!rid && /Beyoncé - Déjà Vu\.wav$/.test(fixedPath), `${recovered} recovered · in library ${!!rid} · ${fixedPath}`);
+        if (rid) lib.removeTracks([rid]);
+        const { 'smoke-garbled': _g, ...restDone } = dc.cfg.done;
+        dc.save({ done: restDone });
+        dc.jobs.delete(item.id);
+      }
+
       // Jog wheels stay round when the height is short (zoomed interface, small screen).
       const jogShape = () => [...document.querySelectorAll('.jog-canvas')].filter((c) => c.offsetParent).map((c) => [c.clientWidth, c.clientHeight]);
       // A short screen (or Windows scaling at 125-150 %) leaves the platter column less height than
@@ -3153,6 +3256,15 @@ async function smoke(app) {
       await wait(150);
       const noteOff = app.pads.notes.size === 0;
       const noteInfo = `held ${heldBefore} → notes ${JSON.stringify([...app.pads.notes.keys()])} mode ${app.padSurface.mode}/${app.pads.kit.instrument.mode}`;
+      // Endless note: held longer than the sub's own sound, it still plays; released, it stops.
+      app.pads.kit.instrument.mode = 'sustain';
+      lp.receive([0x90, 11, 100]);
+      await wait(2200);
+      const held = [...app.pads.notes.values()][0];
+      const endless = app.pads.notes.size === 1 && held?.src.loop === true && held.src.loopEnd > held.src.loopStart;
+      lp.receive([0x90, 11, 0]);
+      await wait(150);
+      const endlessOff = app.pads.notes.size === 0;
       lp.receive([0xb0, 95, 127]); // Session: back to the pads
       const emptyBefore = app.pads.kit.pads.filter((p) => !p).length;
       const slot = await app.capturePad();
@@ -3165,8 +3277,8 @@ async function smoke(app) {
       app.midi.launchpads.delete('virtual-lpx');
       app.togglePads(false);
       step('pads: Launchpad X in Programmer mode, pads play and light up (RGB SysEx), instrument notes, capture into a pad, back to Live mode',
-        programmer && rgb.length > 0 && panel && kickPlaying && kickLed?.[2] > 60 && noteOn && noteOff && captured && saved && live,
-        `programmer ${programmer} · ${rgb.length} RGB msg · panel ${panel} · kick ${kickPlaying} led ${kickLed?.slice(2)} · note on/off ${noteOn}/${noteOff} (${noteInfo}) · capture → pad ${slot} saved ${saved} · live ${live}`);
+        programmer && rgb.length > 0 && panel && kickPlaying && kickLed?.[2] > 60 && noteOn && noteOff && endless && endlessOff && captured && saved && live,
+        `programmer ${programmer} · ${rgb.length} RGB msg · panel ${panel} · kick ${kickPlaying} led ${kickLed?.slice(2)} · note on/off ${noteOn}/${noteOff} (${noteInfo}) · endless note ${endless}/${endlessOff} · capture → pad ${slot} saved ${saved} · live ${live}`);
     }
 
     // Security: the window never opens or navigates to another page (a dropped link, window.open…).
