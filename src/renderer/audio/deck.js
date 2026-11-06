@@ -3,6 +3,7 @@
 
 import { toBeatgrid } from '../../shared/beatgrid.js';
 import { finePeaks } from '../../shared/dsp/waveform.js';
+import { toCompactPcm, COMPACT_SCALE } from '../../shared/pcm.js';
 import { transposeKey } from '../../shared/keys.js';
 
 /** Insert [a, b) into a sorted list of disjoint ranges, merging neighbours. */
@@ -157,10 +158,13 @@ export class Deck extends EventTarget {
    * @param {object} analysis stored analysis {beatgrid, waveform, key, loudness}
    */
   setLoaded(track, buffer, analysis) {
-    const channels = [];
-    for (let c = 0; c < Math.min(2, buffer.numberOfChannels); c++) channels.push(buffer.getChannelData(c).slice());
-    this.fine = finePeaks(channels, buffer.sampleRate); // zoomed-in waveform (real wave shape)
-    this.post({ type: 'load', channels, sampleRate: buffer.sampleRate }, channels.map((c) => c.buffer));
+    const decoded = [];
+    for (let c = 0; c < Math.min(2, buffer.numberOfChannels); c++) decoded.push(buffer.getChannelData(c));
+    this.fine = finePeaks(decoded, buffer.sampleRate); // zoomed-in waveform (real wave shape)
+    // The worklet takes its own copy over: half the size in low memory mode.
+    const compact = !!this.engine.compactPcm;
+    const channels = decoded.map((c) => (compact ? toCompactPcm(c) : c.slice()));
+    this.post({ type: 'load', channels, sampleRate: buffer.sampleRate, scale: compact ? COMPACT_SCALE : 1 }, channels.map((c) => c.buffer));
     this.track = track;
     this.analysis = analysis;
     this.duration = buffer.duration;

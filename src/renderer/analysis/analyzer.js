@@ -4,6 +4,7 @@ import { base64ToU8 } from '../../shared/dsp/waveform.js';
 
 const MONO_RATE = 11025;
 const BAND_RATE = 22050;
+const ANALYSIS_RATE = 44100; // 22050 saves little memory and moves the beatgrid by a few ms
 
 export const BPM_RANGES = [
   [48, 95], [58, 115], [68, 135], [70, 180], [78, 155], [88, 175], [98, 195], [108, 215], [118, 235], [128, 255],
@@ -38,7 +39,12 @@ export class Analyzer {
    * @param {AudioBuffer} buffer
    * @param {{bpmRange?: [number, number]}} [opts]
    */
-  async analyzeBuffer(buffer, { bpmRange = [78, 155], mode = 'normal', fixedGrid = null } = {}) {
+  async analyzeBuffer(buffer, opts = {}) {
+    return this.analyzeSignals(await this.signals(buffer), opts);
+  }
+
+  /** The two signals the analysis works on, as plain arrays it can take over (no copy to the worker). */
+  async signals(buffer) {
     const mono = await render(buffer, MONO_RATE, 1, (ctx, src) => src.connect(ctx.destination));
     const bands = await render(buffer, BAND_RATE, 3, (ctx, src) => {
       const merger = ctx.createChannelMerger(3);
@@ -51,22 +57,35 @@ export class Analyzer {
       src.connect(high); high.connect(merger, 0, 2);
       merger.connect(ctx.destination);
     });
-    const monoData = mono.getChannelData(0);
-    const bandData = [0, 1, 2].map((c) => bands.getChannelData(c));
+    // Copied once here, then handed over: AudioBuffer channel storage is not reliably detachable.
+    return { mono: mono.getChannelData(0).slice(), bands: [0, 1, 2].map((c) => bands.getChannelData(c).slice()) };
+  }
+
+  /** Run the analysis on signals(); the arrays go to the worker and are no longer usable here. */
+  analyzeSignals({ mono, bands }, { bpmRange = [78, 155], mode = 'normal', fixedGrid = null } = {}) {
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       this.worker.postMessage({
-        id, mono: monoData, monoRate: MONO_RATE, bands: bandData, bandRate: BAND_RATE,
+        id, mono, monoRate: MONO_RATE, bands, bandRate: BAND_RATE,
         bpmRange: { minBpm: bpmRange[0], maxBpm: bpmRange[1] }, mode, fixedGrid,
-      }); // copied, not transferred: AudioBuffer channel storage is not reliably detachable
+      }, [mono.buffer, ...bands.map((b) => b.buffer)]);
     });
   }
 
+  /**
+   * Analyse a file without loading it on a deck. It is decoded at the analysis's own quality, not the
+   * sound card's (resampling to 48 kHz was over half of the decoding time), and the decoded audio is
+   * released before the analysis starts: on a small computer memory counts as much as speed.
+   */
   async analyzePath(path, opts) {
-    const buffer = await this.decode(path);
-    const result = await this.analyzeBuffer(buffer, opts);
-    return { ...result, duration: buffer.duration };
+    const res = await fetch(mediaUrl(path));
+    if (!res.ok) throw new Error(`Cannot read ${path} (${res.status})`);
+    let buffer = await new OfflineAudioContext(2, 1, ANALYSIS_RATE).decodeAudioData(await res.arrayBuffer());
+    const { duration } = buffer;
+    const signals = await this.signals(buffer);
+    buffer = null;
+    return { ...await this.analyzeSignals(signals, opts), duration };
   }
 }
 

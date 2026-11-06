@@ -57,6 +57,46 @@ export function fft(re, im) {
   }
 }
 
+/**
+ * Spectrum of a real signal of length n, through a complex FFT of half that size: about twice as
+ * fast as fft(), and audio is always real.
+ */
+export class RealFft {
+  /** @param {number} n power of two */
+  constructor(n) {
+    this.n = n;
+    const h = n / 2;
+    this.re = new Float64Array(h);
+    this.im = new Float64Array(h);
+    this.cos = new Float64Array(h);
+    this.sin = new Float64Array(h);
+    for (let k = 0; k < h; k++) { this.cos[k] = Math.cos((2 * Math.PI * k) / n); this.sin[k] = -Math.sin((2 * Math.PI * k) / n); }
+  }
+
+  /**
+   * Magnitudes of bins 0..n/2-1.
+   * @param {Float64Array} x n windowed samples
+   * @param {Float64Array} mag receives n/2 values
+   */
+  magnitudes(x, mag) {
+    const { re, im, cos, sin } = this;
+    const h = this.n / 2;
+    for (let i = 0; i < h; i++) { re[i] = x[2 * i]; im[i] = x[2 * i + 1]; }
+    fft(re, im);
+    mag[0] = Math.abs(re[0] + im[0]);
+    for (let k = 1; k < h; k++) {
+      // The half-size spectrum holds the even and odd samples' spectra, separated here.
+      const m = h - k;
+      const er = (re[k] + re[m]) / 2; const ei = (im[k] - im[m]) / 2;
+      const or = (im[k] + im[m]) / 2; const oi = (re[m] - re[k]) / 2;
+      const c = cos[k]; const s = sin[k];
+      const xr = er + or * c - oi * s;
+      const xi = ei + or * s + oi * c;
+      mag[k] = Math.sqrt(xr * xr + xi * xi);
+    }
+  }
+}
+
 /** Hann window of length n. */
 export function hann(n) {
   const w = new Float64Array(n);

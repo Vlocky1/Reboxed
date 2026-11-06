@@ -1,5 +1,5 @@
 // Key detection: averaged chroma from an STFT, correlated with Krumhansl-Kessler profiles.
-import { fft, hann } from './fft.js';
+import { RealFft, hann } from './fft.js';
 
 const MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
@@ -25,8 +25,9 @@ function pearson(a, b) {
 export function chromagram(samples, sampleRate, { fftSize = 8192, hop = 4096, minHz = 60, maxHz = 2100 } = {}) {
   const chroma = new Float64Array(12);
   const win = hann(fftSize);
-  const re = new Float64Array(fftSize);
-  const im = new Float64Array(fftSize);
+  const spectrum = new RealFft(fftSize);
+  const x = new Float64Array(fftSize);
+  const mags = new Float64Array(fftSize / 2);
   const binHz = sampleRate / fftSize;
   const k0 = Math.max(1, Math.ceil(minHz / binHz));
   const k1 = Math.min(fftSize / 2 - 1, Math.floor(maxHz / binHz));
@@ -37,12 +38,12 @@ export function chromagram(samples, sampleRate, { fftSize = 8192, hop = 4096, mi
   }
   const frame = new Float64Array(12);
   for (let start = 0; start + fftSize <= samples.length; start += hop) {
-    for (let i = 0; i < fftSize; i++) { re[i] = samples[start + i] * win[i]; im[i] = 0; }
-    fft(re, im);
+    for (let i = 0; i < fftSize; i++) x[i] = samples[start + i] * win[i];
+    spectrum.magnitudes(x, mags);
     frame.fill(0);
     let energy = 0;
     for (let k = k0; k <= k1; k++) {
-      const mag = Math.hypot(re[k], im[k]);
+      const mag = mags[k];
       frame[pcOfBin[k]] += mag;
       energy += mag;
     }
@@ -56,10 +57,10 @@ export function chromagram(samples, sampleRate, { fftSize = 8192, hop = 4096, mi
 /**
  * @param {Float32Array} samples mono
  * @param {number} sampleRate
+ * @param {Float64Array} [chroma] these samples' chromagram when it is already computed
  * @returns {{tonic: number, mode: 'major'|'minor', confidence: number} | null}
  */
-export function detectKey(samples, sampleRate) {
-  const chroma = chromagram(samples, sampleRate);
+export function detectKey(samples, sampleRate, chroma = chromagram(samples, sampleRate)) {
   if (chroma.every((v) => v === 0)) return null;
   const scores = [];
   for (let tonic = 0; tonic < 12; tonic++) {

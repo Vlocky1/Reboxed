@@ -2,6 +2,7 @@ import { Library } from './library.js';
 import { AudioEngine } from './audio/engine.js';
 import { Analyzer, mediaUrl, waveformArrays } from './analysis/analyzer.js';
 import { wavePreview } from '../shared/dsp/waveform.js';
+import { lowMemoryWanted } from '../shared/pcm.js';
 import { PHRASE_LABELS, phraseAt, relabelPhrase, splitPhrase, mergePhrase, moveBoundary, shiftPhrases } from '../shared/dsp/phrase.js';
 import { DeckView } from './ui/deck-view.js';
 import { MixerView, FxView, deckOrder } from './ui/mixer-view.js';
@@ -75,6 +76,7 @@ const DECK_COLORS = ['#ffffff', '#ffffff', '#ffffff', '#ffffff']; // play head: 
 class App {
   async init() {
     this.library = await Library.load();
+    this.ramGB = await window.rb.ramGB();
     this.engine = new AudioEngine();
     await this.engine.init(4); // 4 decks always exist; the layout shows 2 or 4
     this.analyzer = new Analyzer(this.engine.ctx);
@@ -254,6 +256,7 @@ class App {
     this.engine.setCrossfaderCurve(s.crossfaderCurve);
     this.engine.setFaderCurve(s.faderCurve);
     this.engine.autoGainOn = s.autoGain;
+    this.engine.compactPcm = lowMemoryWanted(s.lowMemory, this.ramGB ?? 0);
     this.engine.syncMode = s.syncMode;
     this.engine.syncDoubleHalf = s.syncDoubleHalf;
     this.engine.decks.forEach((d) => { if (!d.loaded) d.tempoRange = s.defaultTempoRange; });
@@ -356,11 +359,12 @@ class App {
     if (deck.playing && !this.library.settings.loadOnPlaying) { toast(`Deck ${deckIndex + 1} is playing — pause it first, or turn on "Load while playing" (deck menu ⋯)`, 4000); return; }
     deck.loading = true;
     try {
-      const buffer = await this.analyzer.decode(track.path);
+      let buffer = await this.analyzer.decode(track.path);
       let stored = await window.rb.getAnalysis(trackId);
       if (!stored) stored = await this.storeAnalysis(trackId, await this.analyzer.analyzeBuffer(buffer, this.analysisOptions(track)), buffer.duration);
       const fresh = this.constantGridIfAsked(this.library.get(trackId));
       deck.setLoaded(fresh, buffer, this.deckAnalysis(fresh, stored));
+      buffer = null; // the deck has its own copy: no reason to keep twice the track in memory
       if (fresh.missing) this.library.update(trackId, { missing: false });
       if (stored?.vocals) deck.vocals = stored.vocals;
       // Cached stems load in the background; the deck plays the original mix meanwhile.
@@ -3116,6 +3120,25 @@ async function smoke(app) {
         step('NVIDIA engine (CUDA): speed and a real HQ separation', typeof b.speed === 'number' && b.speed > 0 && meta?.ep === 'cuda' && meta.stems.length === 4,
           `${nv.gpu?.name} · HQ ${b.speed?.toFixed?.(1) ?? JSON.stringify(b)}× real time · ${t.title} separated on ${meta?.ep} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
       } else report.steps.push({ name: `NVIDIA engine: not installed here (${nv.gpu?.name ?? 'no NVIDIA card'}${nv.support?.ok ? '' : ` · ${nv.support?.reason}`})`, ok: true, info: '' });
+
+      // Small computers: the window's process runs above normal priority; low memory mode plays.
+      {
+        const prio = await window.rb.smokePriority();
+        lib.setSetting('lowMemory', 'on');
+        app.applySettingsToEngine();
+        await app.loadTrack(0, kicks[0].id);
+        const on = app.engine.compactPcm;
+        d1.play();
+        let peak = 0;
+        for (let i = 0; i < 12; i++) { await wait(80); peak = Math.max(peak, app.engine.levels().channels[0]); }
+        const moved = d1.position();
+        d1.pause();
+        lib.setSetting('lowMemory', 'auto');
+        app.applySettingsToEngine();
+        await app.loadTrack(0, kicks[0].id);
+        step('small computers: priority above normal, a deck plays in low memory mode', prio < 0 && on && peak > 0.05 && moved > 0.5 && app.engine.compactPcm === lowMemoryWanted('auto', app.ramGB),
+          `priority ${prio} · level ${peak.toFixed(3)} at ${moved.toFixed(2)} s · ${Math.round(app.ramGB)} GB: automatic ${app.engine.compactPcm}`);
+      }
 
       // Active loop: yellow edges and dimmed surroundings on the big waveform, marks on the deck.
       {
