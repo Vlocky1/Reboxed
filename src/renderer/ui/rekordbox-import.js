@@ -49,7 +49,7 @@ export function openRekordboxImport(app, file = null) {
         h('div.rbi-pick', {},
           h('button.dbtn.rbi-choose', { onclick: async () => { const [f] = await window.rb.openFiles('xml'); if (f) load(f); } }, 'Choose the XML file…'),
           last ? h('button.dbtn', { title: last, onclick: () => load(last) }, `Re-import ${baseName(last)}`) : null),
-        error ? h('p.rbi-error', {}, error) : null,
+        error ? h('p.rbi-error', {}, error) : '',   // replaceChildren would print null as "null"
         h('div.rbi-note', {},
           h('b', {}, 'Imported: '), 'title, artist, album, genre, composer, remixer, label, mix, year, BPM, key, comments, rating, colour, play count, date added, ',
           'hot cues (A–H with names and colours), memory cues, loops, beatgrid, playlists and folders.',
