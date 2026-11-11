@@ -80,13 +80,16 @@ export class LyricsLink {
     const job = (async () => {
       const checked = new Date().toISOString();
       let out = null;
-      const side = force ? null : await window.rb.lyrics.sidecar(t.path).catch(() => null);
-      if (side) out = { v: 1, source: 'file', lrc: /\[\d{1,3}:\d{1,2}/.test(side) ? side : null, plain: /\[\d{1,3}:\d{1,2}/.test(side) ? null : side, offset: 0, checked };
+      // with the music file (".lrc" next to it, or its tags); text only: still look online for synced lyrics
+      const local = force ? null : await window.rb.lyrics.local(t.path).catch(() => null);
+      if (local?.lrc) out = { v: 1, source: local.source, lrc: local.lrc, plain: null, offset: 0, checked };
       else {
-        const found = await window.rb.lyrics.find({ title: t.title, artist: t.artist, duration: t.duration });
-        out = found
-          ? { v: 1, source: found.source, lrc: found.synced, plain: found.plain, instrumental: found.instrumental, offset: have?.offset ?? 0, checked,
-            match: { artist: found.artist, title: found.title, album: found.album, duration: found.duration, id: found.id } }
+        const found = await window.rb.lyrics.find({ title: t.title, artist: t.artist, duration: t.duration }).catch((err) => { if (!local) throw err; return null; });
+        const useFound = found && (found.synced || !local?.plain);
+        out = useFound
+          ? { v: 1, source: found.source, lrc: found.synced, plain: found.plain ?? local?.plain ?? null, instrumental: found.instrumental, offset: have?.offset ?? 0, checked,
+            match: { artist: found.artist, title: found.title, album: found.album, duration: found.duration, id: found.id, url: found.url ?? null } }
+          : local?.plain ? { v: 1, source: local.source, lrc: null, plain: local.plain, offset: 0, checked }
           : { v: 1, none: true, checked };
       }
       lib.update(trackId, { lyrics: out }, { silent: true });

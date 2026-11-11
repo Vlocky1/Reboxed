@@ -81,6 +81,53 @@ export function titleVariants(title) {
   return [...new Set(out.filter(Boolean))];
 }
 
+/** "Artist - Title" written in the title field (downloads): {artist, title}, or null. */
+export function splitArtistTitle(title) {
+  const m = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(title ?? '').trim());
+  return m ? { artist: m[1].trim(), title: m[2].trim() } : null;
+}
+
+/**
+ * WebVTT subtitles → lines. Rolling captions (a cue repeating the previous text) are merged; tags,
+ * entities and "[Music]"-like cues are dropped.
+ */
+export function vttToLines(vtt) {
+  const out = [];
+  const time = (s) => { const p = s.trim().replace(',', '.').split(':').map(Number); return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1]; };
+  const ent = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" };
+  for (const block of String(vtt ?? '').replace(/\r/g, '').split(/\n\n+/)) {
+    const lines = block.split('\n');
+    const at = lines.findIndex((l) => l.includes('-->'));
+    if (at < 0) continue;
+    const t = time(lines[at].split('-->')[0]);
+    const text = lines.slice(at + 1).join(' ').replace(/<[^>]+>/g, '').replace(/&(#?\w+);/g, (m, k) => ent[k] ?? m).replace(/[♪♫]/g, '').replace(/\s+/g, ' ').trim();
+    if (!text || /^[[(].*[\])]$/.test(text) || !Number.isFinite(t)) continue;
+    const last = out.at(-1);
+    if (last && (last.text === text || text.startsWith(last.text) && t - last.t < 1.5)) { last.text = text; continue; }
+    out.push({ t, text });
+  }
+  return out;
+}
+
+/**
+ * Lyrics stored in the music file's tags (music-metadata common.lyrics): synchronized ones (times in
+ * ms) as LRC, else the text (an LRC text in a plain tag stays LRC).
+ * @returns {{lrc: string|null, plain: string|null} | null}
+ */
+export function embeddedLyrics(tags) {
+  for (const tag of tags ?? []) {
+    const sync = (tag?.syncText ?? []).filter((s) => Number.isFinite(s.timestamp) && s.text?.trim());
+    if (sync.length >= 3 && tag.timeStampFormat === 2) return { lrc: toLrc(sync.map((s) => ({ t: s.timestamp / 1000, text: s.text.trim() }))), plain: null };
+  }
+  for (const tag of tags ?? []) {
+    const text = (typeof tag === 'string' ? tag : tag?.text ?? '').trim();
+    if (!text) continue;
+    if (parseLrc(text).length >= 3) return { lrc: text, plain: null };
+    return { lrc: null, plain: text };
+  }
+  return null;
+}
+
 /** The main artist ("A, B", "A & B", "A feat. B", "A x B" → "A"). */
 export function mainArtist(artist) {
   return String(artist ?? '').split(/\s*(?:,|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\bx\b|\bvs\.?)\s*/i)[0].trim();
@@ -94,9 +141,9 @@ const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-
  * @param {{trackName: string, artistName: string, duration: number, syncedLyrics?: string, plainLyrics?: string, instrumental?: boolean}[]} results
  * @param {{title: string, artist: string, duration?: number}} track
  */
-export function bestLyrics(results, track) {
+export function bestLyrics(results, track, { anyArtist = false, maxDelta = Infinity } = {}) {
   const wantTitle = norm(titleVariants(track.title).at(-1));
-  const wantArtist = norm(mainArtist(track.artist));
+  const wantArtist = anyArtist ? '' : norm(mainArtist(track.artist));
   let best = null, bestScore = -Infinity;
   for (const r of results ?? []) {
     if (!r || (!r.syncedLyrics && !r.plainLyrics && !r.instrumental)) continue;
@@ -106,6 +153,7 @@ export function bestLyrics(results, track) {
     const artistOk = !wantArtist || artist.includes(wantArtist) || wantArtist.includes(artist);
     if (!artistOk) continue;
     const dd = track.duration ? Math.abs((r.duration ?? 0) - track.duration) : 0;
+    if (dd > maxDelta) continue;
     const score = (r.syncedLyrics ? 1000 : 0) + (title === wantTitle ? 50 : 0) - Math.min(dd, 600);
     if (score > bestScore) { best = r; bestScore = score; }
   }

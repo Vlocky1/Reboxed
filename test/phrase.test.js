@@ -25,13 +25,17 @@ function addPad(out, t0, t1, gain) {
   }
 }
 
-/** intro 16 bars (kick+hats) | breakdown 8 (pad only) | chorus 16 (kick+hats+bass+lead loud) | outro 8 (kick) */
-function track() {
-  const bars = 48;
+/**
+ * intro 16 bars (kick+hats) | breakdown 8 (pad only) | chorus 16 (kick+hats+bass+lead loud) | outro 8 (kick);
+ * `lead` extra intro bars first (the phrases then start that many bars into the file).
+ */
+function track(lead = 0) {
+  const bars = 48 + lead;
   const out = new Float32Array(Math.ceil((bars * 4 * P + 1) * SR));
   for (let b = 0; b < bars; b++) {
     const t0 = b * 4 * P;
-    const section = b < 16 ? 'intro' : b < 24 ? 'down' : b < 40 ? 'chorus' : 'outro';
+    const c = b - lead;
+    const section = c < 16 ? 'intro' : c < 24 ? 'down' : c < 40 ? 'chorus' : 'outro';
     for (let k = 0; k < 4; k++) {
       const t = t0 + k * P;
       if (section !== 'down') addKick(out, t, section === 'chorus' ? 0.9 : 0.6);
@@ -52,6 +56,16 @@ test('phrases: intro / breakdown / chorus / outro on the right bars', () => {
     ['INTRO', 0, 16], ['DOWN', 16, 8], ['CHORUS', 24, 16], ['OUTRO', 40, 8],
   ]);
   assert.ok(Math.abs(r.phrases[2].start - 24 * 4 * P) < 0.01);
+});
+
+test('phrases that start a bar into the file are not counted a bar early (1.23.2)', () => {
+  const grid = new Beatgrid({ bpm: BPM, firstBeat: 0, beat: 1 });
+  for (const lead of [1, 2, 3]) {
+    const samples = track(lead);
+    const r = analyzePhrases(samples, SR, grid, samples.length / SR);
+    assert.deepEqual(r.phrases.slice(1).map((p) => [p.label, p.startBar]), [['DOWN', 16 + lead], ['CHORUS', 24 + lead], ['OUTRO', 40 + lead]], `${lead} bar(s) in`);
+    assert.equal(r.barOffset, lead);
+  }
 });
 
 test('intelligent cues from phrases', () => {

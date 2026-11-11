@@ -54,8 +54,9 @@ test('phrases: move a start to a beat, shift them all', () => {
   assert.deepEqual(m.map((p) => [p.start, p.end, p.bars, p.startBar]), [[0, 20, 10, 0], [20, 48, 14, 10]]);
   assert.equal(moveBoundary(ph, 1, 47.9), ph, 'leaves the phrase too short');
   assert.equal(moveBoundary(ph, 0, 3), ph, 'the first phrase has no previous one');
-  assert.deepEqual(shiftPhrases(ph, 0.5).map((p) => [p.start, p.end]), [[0.5, 16.5], [16.5, 48.5]]);
-  assert.deepEqual(shiftPhrases(ph, -2).map((p) => [p.start, p.end]), [[0, 14], [14, 46]]);
+  // the boundaries move; the track's first start and last end stay, bar counts follow (a bar is 2 s here)
+  assert.deepEqual(shiftPhrases(ph, 2).map((p) => [p.start, p.end, p.bars, p.startBar]), [[0, 18, 9, 0], [18, 48, 15, 9]]);
+  assert.deepEqual(shiftPhrases(ph, -2).map((p) => [p.start, p.end, p.bars, p.startBar]), [[0, 14, 7, 0], [14, 48, 17, 7]]);
 });
 
 test('waveform preview: PREVIEW_COLS columns of 3 band peaks', () => {

@@ -11,6 +11,8 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(`lyrics.${k}`); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(`lyrics.${k}`, JSON.stringify(v)); } catch { /* private storage off */ } },
 };
+/** Where the lyrics came from, as the badge says it. */
+const SOURCE = { LRCLIB: 'LRCLIB', file: '.LRC FILE', tags: 'FILE TAGS', YouTube: 'YOUTUBE SUBTITLES' };
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 const S = {
@@ -128,8 +130,8 @@ function renderHead() {
   if (S.mode === 'edit') { el.badge.textContent = 'SYNCING BY HAND'; el.badge.classList.add('hand'); }
   else if (S.status === 'loading') el.badge.textContent = 'SEARCHING…';
   else if (L?.instrumental && !synced && !S.plain) el.badge.textContent = 'INSTRUMENTAL';
-  else if (synced) { el.badge.textContent = L?.edited ? 'SYNCED BY HAND' : `SYNCED · ${L?.source === 'file' ? '.LRC FILE' : 'LRCLIB'}`; el.badge.classList.add(L?.edited ? 'hand' : 'ok'); }
-  else if (S.plain) { el.badge.textContent = 'TEXT ONLY · NOT SYNCED'; el.badge.classList.add('warn'); }
+  else if (synced) { el.badge.textContent = L?.edited ? 'SYNCED BY HAND' : `SYNCED · ${SOURCE[L?.source] ?? 'LRCLIB'}`; el.badge.classList.add(L?.edited ? 'hand' : L?.source === 'YouTube' ? 'warn' : 'ok'); }
+  else if (S.plain) { el.badge.textContent = `TEXT ONLY · NOT SYNCED${SOURCE[L?.source] ? ` · ${SOURCE[L.source]}` : ''}`; el.badge.classList.add('warn'); }
   else if (S.trackId) el.badge.textContent = S.status === 'error' ? 'OFFLINE?' : 'NO LYRICS';
   else el.badge.textContent = '';
   el.offset.hidden = !synced || S.mode === 'edit';
@@ -141,8 +143,12 @@ function renderHead() {
   // lyrics from a version of another length (radio edit vs extended mix): say so
   const md = L?.match?.duration, td = d?.duration;
   const off = S.mode === 'view' && synced && !L?.edited && md && td && Math.abs(md - td) > 8;
-  el.note.hidden = !off;
-  if (off) el.note.replaceChildren(`These lyrics come from a ${mmss(md)} version; this track lasts ${mmss(td)}. Shift them with − / + or sync them by hand.`,
+  // YouTube subtitles follow the video (an intro, a clip edit): always worth a check
+  const yt = S.mode === 'view' && synced && !L?.edited && L?.source === 'YouTube';
+  el.note.hidden = !off && !yt;
+  if (yt) el.note.replaceChildren('These lyrics come from the subtitles of a YouTube video: their timing follows the video. Check it, shift them with − / + or sync them by hand.',
+    h('button', { onclick: () => enterEdit() }, 'SYNC'));
+  else if (off) el.note.replaceChildren(`These lyrics come from a ${mmss(md)} version; this track lasts ${mmss(td)}. Shift them with − / + or sync them by hand.`,
     h('button', { onclick: () => enterEdit() }, 'SYNC'));
 }
 
@@ -162,7 +168,7 @@ function renderBody() {
   } else {
     const d = deckInfo();
     const msg = !S.trackId ? 'Load a track: its lyrics show here.'
-      : S.status === 'loading' ? 'Looking for the lyrics…'
+      : S.status === 'loading' ? 'Looking for the lyrics… (LRCLIB, then YouTube subtitles: up to a minute)'
       : S.lyrics?.instrumental ? 'Instrumental'
       : S.status === 'error' ? `The lyrics could not be fetched (${S.error}).`
       : `No lyrics found for ${d?.title ?? 'this track'}.`;

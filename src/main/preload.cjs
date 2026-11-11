@@ -43,7 +43,7 @@ const api = {
   lyrics: {
     find: (track) => ipcRenderer.invoke('lyrics:find', track),
     list: (q) => ipcRenderer.invoke('lyrics:list', q),
-    sidecar: (path) => ipcRenderer.invoke('lyrics:sidecar', path),
+    local: (path) => ipcRenderer.invoke('lyrics:local', path),
     open: () => ipcRenderer.invoke('lyrics:open'),
     window: (o) => ipcRenderer.invoke('lyrics:window', o),
   },

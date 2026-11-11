@@ -3,7 +3,7 @@ import { AudioEngine } from './audio/engine.js';
 import { Analyzer, mediaUrl, waveformArrays } from './analysis/analyzer.js';
 import { wavePreview } from '../shared/dsp/waveform.js';
 import { lowMemoryWanted } from '../shared/pcm.js';
-import { PHRASE_LABELS, phraseAt, relabelPhrase, splitPhrase, mergePhrase, moveBoundary, shiftPhrases } from '../shared/dsp/phrase.js';
+import { PHRASE_LABELS, PHRASES_VERSION, phraseAt, relabelPhrase, splitPhrase, mergePhrase, moveBoundary, shiftPhrases } from '../shared/dsp/phrase.js';
 import { DeckView } from './ui/deck-view.js';
 import { MixerView, FxView, deckOrder } from './ui/mixer-view.js';
 import { Browser } from './ui/browser.js';
@@ -368,6 +368,11 @@ class App {
       if (!stored) stored = await this.storeAnalysis(trackId, await this.analyzer.analyzeBuffer(buffer, this.analysisOptions(track)), buffer.duration);
       const fresh = this.constantGridIfAsked(this.library.get(trackId));
       deck.setLoaded(fresh, buffer, this.deckAnalysis(fresh, stored));
+      // Phrases from an older analysis (counted a bar off on many tracks) are redone in the background;
+      // phrases corrected by hand are kept.
+      if (stored?.phrases && !stored.phrases.edited && stored.phrases.v !== PHRASES_VERSION && (fresh.beatgrid ?? stored.beatgrid)) {
+        this.refreshPhrases(trackId, buffer, fresh.beatgrid ?? stored.beatgrid);
+      }
       buffer = null; // the deck has its own copy: no reason to keep twice the track in memory
       if (fresh.missing) this.library.update(trackId, { missing: false });
       if (stored?.vocals) deck.vocals = stored.vocals;
@@ -402,6 +407,18 @@ class App {
       return t;
     }
     return this.library.update(t.id, { beatgrid: grid, bpm: grid.bpm });
+  }
+
+  /** New phrase analysis on the track's own grid; stored and shown on the decks that hold the track. */
+  async refreshPhrases(trackId, buffer, grid) {
+    try {
+      const { phrases } = await this.analyzer.phrasesFor(buffer, grid);
+      const stored = await window.rb.getAnalysis(trackId);
+      if (!stored || stored.phrases?.edited) return;
+      await window.rb.putAnalysis(trackId, { ...stored, phrases });
+      const t = this.library.get(trackId);
+      for (const d of this.engine.decks) if (d.track?.id === trackId) d.updateTrack(t, this.deckAnalysis(t, { ...d.analysis, phrases }));
+    } catch (err) { console.warn('phrases', err); }
   }
 
   /** Every variable grid becomes constant (Preferences > General). Locked grids stay. */
@@ -791,6 +808,15 @@ class App {
       ...(others.length ? ['-'] : []),
       { label: d.loop ? 'Capture loop to sampler' : `Capture ${fmtLoopBeats(d.beatLoopSize)} beats to sampler`, disabled: !d.loaded, action: () => this.captureLoop(i) },
       { label: 'Create cues from phrases', disabled: !d.loaded, action: () => this.createCuesFor(d.track.id) },
+      // Every phrase of the track at once (also: right-click the waveform for one phrase).
+      { label: 'Phrases', disabled: !d.loaded || !d.analysis?.phrases?.phrases?.length, submenu: [
+        { label: 'Shift all phrases ← 1 bar', action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, -4 * d.period)) },
+        { label: 'Shift all phrases → 1 bar', action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, 4 * d.period)) },
+        { label: 'Shift all phrases ← 1 beat', action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, -d.period)) },
+        { label: 'Shift all phrases → 1 beat', action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, d.period)) },
+        '-',
+        { label: 'Back to the analysed phrases', disabled: !d.analysis?.phrases?.edited, action: () => this.resetPhrases(d) },
+      ] },
       { label: 'DRUM SWAP slots…', action: () => this.openDrumSwapEditor(i) },
       '-',
       { label: 'Set MIX IN at play head', disabled: !d.loaded, action: () => d.setMixPoint('mixin') },
@@ -1814,8 +1840,15 @@ async function smoke(app) {
       const cues = lib.get(st.id).cues;
       const hotB = cues.find((c) => c.kind === 'hot' && c.slot === 1);
       step('intelligent cues', hotB?.name === 'CHORUS' && Math.abs(hotB.start - 24 * 4 * P) < 0.05 && cues.filter((c) => c.kind === 'memory').length === 4, `${cues.length} cues, B=${hotB?.name}@${hotB?.start}`);
-      // Grid editing on the loaded track.
+      // 1.23.2: phrases from an older analysis (no version) are redone when the track is loaded.
+      const old = await window.rb.getAnalysis(st.id);
+      await window.rb.putAnalysis(st.id, { ...old, phrases: { ...old.phrases, v: undefined, phrases: old.phrases.phrases.map((p) => ({ ...p, label: 'VERSE' })) } });
       await app.loadTrack(2, st.id);
+      let redone = null;
+      for (let k = 0; k < 50 && !(redone?.phrases?.v === PHRASES_VERSION); k++) { await new Promise((r) => setTimeout(r, 100)); redone = await window.rb.getAnalysis(st.id); }
+      const redoneLabels = (redone?.phrases?.phrases ?? []).map((p) => `${p.label}@${p.startBar}`).join(' ');
+      step('old phrases redone on load', redone?.phrases?.v === PHRASES_VERSION && redoneLabels === labels && d3.analysis?.phrases?.phrases?.[1]?.label === 'DOWN', `v${redone?.phrases?.v}: ${redoneLabels}`);
+      // Grid editing on the loaded track.
       const before = d3.grid;
       app.setTrackGrid(d3, setDownbeatAt(before, before.firstBeat + 60 / 128));
       step('grid edit (downbeat)', d3.bg.isDownbeat(Math.round(d3.bg.indexAt(before.firstBeat + 60 / 128))), `beat=${d3.grid.beat}`);
