@@ -18,6 +18,7 @@ export const ICONS = {
   trash: svg('<path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5"/><path d="M4 4.5l.7 8.6a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-8.6M6.8 7v4.5M9.2 7v4.5"/>'),
   download: svg('<path d="M8 2v8M4.5 6.5L8 10l3.5-3.5"/><path d="M2.5 11.5v1.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-1.5"/>'),
   rec: svg('<circle cx="8" cy="8" r="4.5" fill="currentColor" stroke="none"/>'),
+  lyrics: svg('<rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5M5.5 14.5h5"/>'),
   link: svg('<path d="M6.5 9.5l3-3"/><path d="M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2"/><path d="M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"/>'),
   automix: svg('<path d="M2 5h8l-2-2M14 11H6l2 2"/>'),
   layout2: svg('<rect x="1.5" y="3" width="13" height="3.5" rx=".8"/><rect x="1.5" y="9.5" width="13" height="3.5" rx=".8"/>'),

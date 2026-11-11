@@ -18,6 +18,7 @@ import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
 import { Spotify } from './spotify.js';
 import { Deezer } from './deezer.js';
+import { Lyrics, sidecarLrc } from './lyrics.js';
 import { MetadataLookup } from './metadata.js';
 import { Updater } from './updater.js';
 import { LicenseManager } from './license.js';
@@ -185,6 +186,19 @@ function registerIpc(win) {
   const genres = new GenreSources({ fetch: timedFetch, discogsToken });
   const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: timedFetch }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret), genres });
   ipcMain.handle('metadata:lookup', (_e, q, source, opts) => metadata.lookup(q, source, opts));
+  // Lyrics (LRCLIB) and their window, which can go on another screen (in front of the audience).
+  const lyrics = new Lyrics({ fetch: timedFetch, userAgent: `Reboxed/${app.getVersion()} (https://github.com/Vlocky1/Reboxed)` });
+  ipcMain.handle('lyrics:find', (_e, track) => lyrics.find({ title: String(track?.title ?? ''), artist: String(track?.artist ?? ''), duration: Number(track?.duration) || 0 }));
+  ipcMain.handle('lyrics:list', (_e, q) => lyrics.list(q));
+  ipcMain.handle('lyrics:sidecar', (_e, path) => sidecarLrc(path));
+  ipcMain.handle('lyrics:open', () => { openLyricsWindow(win); return true; });
+  ipcMain.handle('lyrics:window', (_e, o = {}) => {
+    const lw = lyricsWin && !lyricsWin.isDestroyed() ? lyricsWin : null;
+    if (!lw) return null;
+    if (typeof o.onTop === 'boolean') lw.setAlwaysOnTop(o.onTop, 'floating');
+    if (typeof o.fullscreen === 'boolean') lw.setFullScreen(o.fullscreen);
+    return { onTop: lw.isAlwaysOnTop(), fullscreen: lw.isFullScreen() };
+  });
   ipcMain.handle('discogs:status', () => ({ hasToken: !!storage.cfg.discogs?.token }));
   ipcMain.handle('discogs:setToken', async (_e, token) => {
     if (token) await genres.checkDiscogs(token); // refused tokens are not saved
@@ -388,6 +402,27 @@ function registerIpc(win) {
   });
 }
 
+/** The lyrics window: one at a time, its own size and place, closed with the app. */
+let lyricsWin = null;
+function openLyricsWindow(parent) {
+  if (lyricsWin && !lyricsWin.isDestroyed()) { if (lyricsWin.isMinimized()) lyricsWin.restore(); lyricsWin.focus(); return lyricsWin; }
+  lyricsWin = new BrowserWindow({
+    width: 760, height: 560, minWidth: 420, minHeight: 300,
+    backgroundColor: '#0b0c0f', title: 'Reboxed — Lyrics', autoHideMenuBar: true, show: false,
+    webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, backgroundThrottling: false },
+  });
+  lyricsWin.setTitle('Reboxed — Lyrics');
+  lyricsWin.on('page-title-updated', (e) => e.preventDefault());
+  lyricsWin.once('ready-to-show', () => lyricsWin.show());
+  lyricsWin.webContents.on('before-input-event', (e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11') { e.preventDefault(); lyricsWin.setFullScreen(!lyricsWin.isFullScreen()); }
+  });
+  parent.once('closed', () => { if (lyricsWin && !lyricsWin.isDestroyed()) lyricsWin.close(); });
+  lyricsWin.on('closed', () => { lyricsWin = null; });
+  lyricsWin.loadURL('app://rb/renderer/lyrics.html');
+  return lyricsWin;
+}
+
 async function createWindow() {
   const win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 1100, minHeight: 700,
@@ -450,6 +485,19 @@ async function createWindow() {
       const file = shotsDir ? join(shotsDir, `${safe}.png`) : shot.slice(7).replace(/\.png$/i, `-${safe}.png`);
       if (shotsDir) await mkdir(shotsDir, { recursive: true });
       await writeFile(file, (await win.webContents.capturePage()).toPNG());
+      return file;
+    });
+    // The lyrics window in shots / smoke runs: optionally click one of its buttons (by its text), then capture it.
+    ipcMain.handle('smoke:lyricsShot', async (_e, name, clickText) => {
+      const lw = lyricsWin && !lyricsWin.isDestroyed() ? lyricsWin : null;
+      if (!lw) return null;
+      if (clickText) await lw.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(String(clickText))})?.click(); true`);
+      await new Promise((r) => setTimeout(r, 700));
+      const safe = String(name).replace(/[^\w-]/g, '');
+      const dir = shotsDir ?? tmpdir();
+      await mkdir(dir, { recursive: true });
+      const file = join(dir, `${safe}.png`);
+      await writeFile(file, (await lw.webContents.capturePage()).toPNG());
       return file;
     });
     // CI-style check: load the UI, report renderer errors, exit with a status code.

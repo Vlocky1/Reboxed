@@ -155,6 +155,17 @@ export class PioneerController {
     }
     if (FX_SELECT[name.replace('FX1-1Select.', '')] && name.startsWith('FX1-1Select.')) { if (press) fx.setEffect(FX_SELECT[name.slice(12)]); return; }
     if (name.startsWith('FX1Assign.')) { if (press) fx.setTarget(name === 'FX1Assign.MASTER' ? 'master' : name === 'FX1Assign.SAMPLER' ? 'sampler' : `ch${name.slice(-1)}`); return; }
+    // BEAT FX CH SELECT lever (DDJ-FLX4): CH1 and CH2 each say on (7F) or off (00). 1 = CH1 alone, 2 = CH2 alone,
+    // 1&2 = both, which is the master for two decks. While the lever moves, both can briefly be off: keep the target.
+    const chSel = /^FX1ChSelect\.(\d)$/.exec(name);
+    if (chSel) {
+      this.fxLever ??= {};
+      this.fxLever[chSel[1]] = press;
+      const onCh = Object.keys(this.fxLever).filter((k) => this.fxLever[k]);
+      const target = onCh.length > 1 ? 'master' : onCh.length === 1 ? `ch${onCh[0]}` : null;
+      if (target && target !== fx.target) fx.setTarget(target);
+      return;
+    }
     if (/^CFXParameterCH\d$/.test(name)) { this.ctl(`ch${name.slice(-1)}.color`)?.apply(ev.value01); return; }
     // DRUM ROLL 1/8 1/4 1/2 1: the drum captured by the first button keeps rolling while any of the
     // four is held; the last one pressed sets the length.

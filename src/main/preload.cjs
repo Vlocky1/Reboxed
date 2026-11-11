@@ -40,6 +40,13 @@ const api = {
     playlist: (url) => ipcRenderer.invoke('spotify:playlist', url),
   },
   metadata: { lookup: (q, source, opts) => ipcRenderer.invoke('metadata:lookup', q, source, opts) },
+  lyrics: {
+    find: (track) => ipcRenderer.invoke('lyrics:find', track),
+    list: (q) => ipcRenderer.invoke('lyrics:list', q),
+    sidecar: (path) => ipcRenderer.invoke('lyrics:sidecar', path),
+    open: () => ipcRenderer.invoke('lyrics:open'),
+    window: (o) => ipcRenderer.invoke('lyrics:window', o),
+  },
   discogs: {
     status: () => ipcRenderer.invoke('discogs:status'),
     setToken: (token) => ipcRenderer.invoke('discogs:setToken', token),
@@ -94,6 +101,7 @@ const api = {
   smokeReady: (report) => ipcRenderer.send('smoke:ready', report),
   smokeDir: () => ipcRenderer.invoke('smoke:dir'),
   smokeShot: (name) => ipcRenderer.invoke('smoke:shot', name),
+  smokeLyricsShot: (name, clickText) => ipcRenderer.invoke('smoke:lyricsShot', name, clickText),
   smokeDlTest: () => ipcRenderer.invoke('smoke:dlTest'),
   smokeEnv: (name) => ipcRenderer.invoke('smoke:env', name),
   smokeDemoSong: () => ipcRenderer.invoke('smoke:demoSong'),
