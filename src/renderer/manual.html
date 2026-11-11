@@ -10,6 +10,7 @@
       <a href="#navigateur">Le navigateur</a>
       <a href="#suggestion">Suggestion de morceaux</a>
       <a href="#telechargement">Téléchargement</a>
+      <a href="#paroles">Paroles</a>
       <a href="#preferences">Préférences</a>
       <a href="#clavier">Raccourcis clavier</a>
       <a href="#controleurs">Contrôleurs</a>
@@ -34,6 +35,7 @@
             <li><b>MIX POINT LINK</b> : quand un deck atteint son MIX OUT, l'autre deck démarre de son MIX IN, calé.</li>
             <li><b>AUTOMIX</b> (menu) : <b>Start Automix with the current list</b> / <b>Stop Automix</b>, <b>Crossfade length</b> (en temps), <b>Repeat</b>, <b>Shuffle</b>.</li>
             <li><b>DOWNLOAD</b> : la fenêtre de téléchargement (<a href="#telechargement">détails</a>). La pastille compte les nouvelles sorties de tes chaînes suivies.</li>
+            <li><b>LYRICS</b> : les paroles synchronisées du morceau à l'antenne, dans une fenêtre à part (<a href="#paroles">détails</a>).</li>
             <li><b>REC</b> : enregistre la sortie master en WAV ; le compteur affiche la durée.</li>
           </ul></details>
         <details><summary>À droite : état et réglages</summary>
@@ -198,6 +200,26 @@
           <ul>
             <li><b>Recherche</b> sur YouTube ou SoundCloud, <b>lien</b> collé (ou glissé sur l'appli), <b>playlist Spotify</b> (chaque titre retrouvé sur YouTube), <b>nouvelles sorties</b> des chaînes que tu suis.</li>
             <li>Les noms sont nettoyés (« Official Video », « Lyrics »…) et les morceaux arrivent analysés dans la collection.</li>
+          </ul></details>
+      </div>
+
+      <h2 id="paroles">Paroles (LYRICS)</h2>
+      <div class="man-group">
+        <details open><summary>La fenêtre des paroles</summary>
+          <ul>
+            <li><b>LYRICS</b> (barre du haut) ouvre une fenêtre à part : déplace-la sur un deuxième écran ou un vidéoprojecteur, <b>F11</b> ou <b>FULL SCREEN</b> pour le plein écran, <b>ON TOP</b> pour la garder devant les autres fenêtres.</li>
+            <li><b>AUTO</b> suit le deck à l'antenne (celui qui joue, fader et crossfader les plus ouverts) ; <b>1</b>, <b>2</b>… fixent un deck.</li>
+            <li>Les paroles viennent d'un fichier <b>.lrc</b> posé à côté du morceau (même nom), sinon de <b>LRCLIB</b> (base libre de paroles synchronisées). Elles sont gardées avec le morceau : la recherche ne se fait qu'une fois.</li>
+            <li>La ligne chantée est au milieu, en grand. <b>−</b> / <b>+</b> (ou <b>[</b> / <b>]</b>, Maj = 1 s) décalent toutes les paroles ; <b>A−</b> / <b>A+</b> changent la taille.</li>
+            <li>Si les paroles viennent d'une version d'une autre durée (radio edit / extended mix), un bandeau le dit : décale-les ou cale-les à la main.</li>
+            <li><b>SEARCH</b> : choisir une autre version dans LRCLIB, relancer la recherche automatique ou <b>coller tes propres paroles</b>.</li>
+          </ul></details>
+        <details open><summary>Caler à la main (SYNC), avant de jouer devant le public</summary>
+          <ul>
+            <li>Lance le morceau et tape <b>Espace</b> (ou <b>TAP</b>) au début de chaque ligne : la ligne surlignée prend le temps, la suivante est surlignée.</li>
+            <li><b>↑ ↓</b> choisissent la ligne, <b>← →</b> reculent / avancent de 2 s, <b>P</b> lecture / pause, un clic sur un temps réécoute à partir de juste avant.</li>
+            <li><b>− +</b> sur une ligne : 0,1 s plus tôt / plus tard. En bas : décaler toutes les lignes, <b>EDIT TEXT</b> pour corriger ou coller le texte (les temps restent sur les lignes), <b>CLEAR TIMES</b> pour tout recaler.</li>
+            <li><b>SAVE</b> (ou Ctrl+S) garde le calage avec le morceau : une recherche automatique ne le remplace jamais.</li>
           </ul></details>
       </div>
 

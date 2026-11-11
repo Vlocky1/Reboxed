@@ -97,6 +97,24 @@ test('every built-in Pioneer controller: all mapped inputs are handled, LEDs upd
   assert.deepEqual(errors, []);
 });
 
+test('DDJ-FLX4 BEAT FX CH SELECT lever: 1 → deck 1, 2 → deck 2, 1&2 → master; the in-between state keeps the target', () => {
+  const r = rig('pioneer-ddj-flx4');
+  const [s1, d1] = r.addr('FX1ChSelect.1');
+  const [s2, d2] = r.addr('FX1ChSelect.2');
+  const targets = () => r.calls('fx.setTarget').map((c) => c.args[0]);
+  // the stand-in fx follows setTarget, like the real one
+  const receive = r.ctrl.receive.bind(r.ctrl);
+  r.ctrl.receive = (b) => { const out = receive(b); r.engine.fx.target = targets().at(-1) ?? r.engine.fx.target; return out; };
+  r.ctrl.receive([s1, d1, 0x7f]); r.ctrl.receive([s2, d2, 0x7f]);          // 1&2
+  assert.equal(targets().at(-1), 'master');
+  r.ctrl.receive([s2, d2, 0]);                                             // → 1
+  assert.equal(targets().at(-1), 'ch1');
+  r.ctrl.receive([s1, d1, 0]);                                             // passing between 1 and 2: nothing on
+  assert.equal(targets().at(-1), 'ch1');
+  r.ctrl.receive([0x95, d2, 0x7f]);                                        // → 2 (CH2 also read on 95 11)
+  assert.equal(targets().at(-1), 'ch2');
+});
+
 test('Numark: pads follow the deck’s pad mode, 7-bit knobs, jog in two’s complement, pitch fader up = slower', () => {
   for (const id of ['numark-mixtrack-pro-fx', 'numark-mixtrack-platinum-fx', 'numark-ns4fx']) {
     const r = rig(id);

@@ -36,6 +36,7 @@ import { h, toast, fmtTime, contextMenu, closeMenu, modal } from './ui/dom.js';
 import { icon } from './ui/icons.js';
 import { exportRekordboxXml, importRekordboxXml } from '../shared/rekordbox-xml.js';
 import { openRekordboxImport } from './ui/rekordbox-import.js';
+import { LyricsLink } from './ui/lyrics-link.js';
 import { DownloadCenter, platformOf } from './ui/downloads.js';
 import { openRelink } from './ui/relink.js';
 import { openSetup } from './ui/setup.js';
@@ -160,6 +161,9 @@ class App {
     this.updatePill = h('button.update-pill', { hidden: true, title: 'A new version of Reboxed is available', onclick: () => openUpdateDialog(this) });
     this.trialPill = h('button.trial-pill', { hidden: true, title: 'Free trial: activate a licence in Preferences > About', onclick: () => this.openSettings('about') });
     this.dlBtn.append(this.dlBadge);
+    // Lyrics in their own window (can go on a second screen), synced with the deck on air.
+    this.lyrics = new LyricsLink(this);
+    this.lyricsBtn = gtoggle('lyrics', 'LYRICS', 'Lyrics of the track on air, synced, in a window you can move to another screen (F11: full screen)', () => this.lyrics.openWindow());
     this.samplerView = new SamplerView(this.sampler, this);
     this.samplerView.el.hidden = !s.showSampler;
     this.samplerBtn = gtoggle('sampler', 'SAMPLER', 'Show/hide the sampler', () => this.toggleSampler());
@@ -199,7 +203,7 @@ class App {
         h('div.gbar-center', {},
           h('div.ggroup', { title: 'Panels' }, this.fxBtn, this.mixerBtn, this.samplerBtn, this.padsBtn),
           h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
-          h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.recBtn, this.recTime)),
+          h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.lyricsBtn, this.recBtn, this.recTime)),
         h('div.gbar-right', {}, this.trialPill, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
           h('button.lbtn.help-btn', { onclick: () => openManual(), title: 'Manual: every menu explained' }, '?'),
           h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: 'Appearance: themes, colours, size' }, icon('palette')),
