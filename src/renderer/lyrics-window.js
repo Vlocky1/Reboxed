@@ -156,7 +156,7 @@ function renderBody() {
   el.plain.hidden = synced || !S.plain;
   el.empty.hidden = synced || !!S.plain;
   if (synced) {
-    el.lines.replaceChildren(...S.lines.map((l) => h(`div.ly-line${l.text ? '' : '.gap'}`, {}, l.text || '♪')));
+    el.lines.replaceChildren(...S.lines.map((l) => lineEl(l.text)));
   } else if (S.plain) {
     el.plain.textContent = S.plain;
   } else {
@@ -188,7 +188,7 @@ function frame() {
       const target = rows[Math.max(0, i)] ?? rows[0];
       if (target) el.lines.style.transform = `translateY(${el.view.clientHeight / 2 - (target.offsetTop + target.offsetHeight / 2) + (i < 0 ? target.offsetHeight : 0)}px)`;
     }
-    if (rows[i]) rows[i].style.setProperty('--p', `${(lineProgress(S.lines, i, t, S.offset) * 100).toFixed(1)}%`);
+    if (rows[i]) fillWords(rows[i], lineProgress(S.lines, i, t, S.offset));
   } else if (S.plain && !el.plain.hidden) {
     // not synced: scroll along with the track, roughly
     const d = deckInfo();
@@ -196,6 +196,30 @@ function frame() {
   }
 }
 requestAnimationFrame(frame);
+
+/** A line as one span per word (spaces between), so the fill can go word by word across wrapped rows. */
+function lineEl(text) {
+  if (!text) return h('div.ly-line.gap', {}, '♪');
+  const words = text.split(/\s+/).filter(Boolean);
+  const row = h('div.ly-line', {});
+  words.forEach((w, k) => { if (k) row.append(' '); row.append(h('span.w', {}, w)); });
+  return row;
+}
+
+/** Karaoke fill: the line's progress spread over its words by their length, each word filled left to right. */
+function fillWords(row, p) {
+  const words = row.querySelectorAll('.w');
+  if (!words.length) return;
+  if (!row._len) row._len = [...words].map((w) => w.textContent.length);
+  const total = row._len.reduce((a, b) => a + b, 0);
+  let cut = p * total;
+  words.forEach((w, k) => {
+    const len = row._len[k];
+    const local = Math.max(0, Math.min(1, cut / len));
+    cut -= len;
+    w.style.setProperty('--p', `${(local * 100).toFixed(1)}%`);
+  });
+}
 
 let offsetSave = 0;
 function shiftOffset(by) {

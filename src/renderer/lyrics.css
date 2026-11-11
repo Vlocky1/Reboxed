@@ -41,8 +41,10 @@ input:focus, textarea:focus { border-color: var(--accent-2); }
 .ly-line { font-size: calc(var(--size) * .62); font-weight: 600; line-height: 1.25; padding: calc(var(--size) * .22) 0; color: var(--dim); opacity: .55; transition: color .25s, opacity .25s, font-size .25s; overflow-wrap: anywhere; }
 .ly-line.past { opacity: .28; }
 .ly-line.next { opacity: .8; color: var(--text-2); }
-.ly-line.now { font-size: var(--size); opacity: 1; color: transparent; -webkit-background-clip: text; background-clip: text;
-  background-image: linear-gradient(90deg, #fff var(--p, 0%), rgba(255,255,255,.42) var(--p, 0%)); text-shadow: none; }
+/* the karaoke fill goes word by word, so a line wrapped on two rows fills the top row, then the bottom one */
+.ly-line.now { font-size: var(--size); opacity: 1; color: rgba(255,255,255,.42); }
+.ly-line.now .w { color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(90deg, #fff var(--p, 0%), rgba(255,255,255,.42) var(--p, 0%)); }
 .ly-line.gap { min-height: calc(var(--size) * .6); }
 .ly-plain { position: absolute; inset: 0; overflow: hidden; padding: 30vh 8%; text-align: center; font-size: calc(var(--size) * .55); line-height: 1.45; color: var(--text-2); white-space: pre-wrap; }
 .ly-empty { position: absolute; inset: 0; display: grid; place-content: center; gap: 14px; text-align: center; color: var(--dim); font-size: 16px; padding: 20px; }
