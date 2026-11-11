@@ -73,6 +73,16 @@ export class Analyzer {
     });
   }
 
+  /** Phrases only, on a known grid: for tracks analysed before the phrase analysis changed. */
+  async phrasesFor(buffer, grid) {
+    const mono = (await render(buffer, MONO_RATE, 1, (ctx, src) => src.connect(ctx.destination))).getChannelData(0).slice();
+    const id = ++this.seq;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.worker.postMessage({ id, phrasesOnly: true, mono, monoRate: MONO_RATE, fixedGrid: grid }, [mono.buffer]);
+    });
+  }
+
   /**
    * Analyse a file without loading it on a deck. It is decoded at the analysis's own quality, not the
    * sound card's (resampling to 48 kHz was over half of the decoding time), and the decoded audio is

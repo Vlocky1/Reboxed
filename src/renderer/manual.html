@@ -55,7 +55,7 @@
             <li><b>MASTER</b> : ce deck donne le tempo aux autres. <b>BEAT SYNC</b> : se cale sur le master (tempo et phase). <b>KEY SYNC</b> : prend une tonalité compatible avec le master.</li>
             <li><b>Boutons de grille épinglés</b> : les actions de grille que tu as mises sur la barre (en icônes).</li>
             <li><b>Menu grille</b> (icône grille) : <b>Set downbeat (bar start) at play head</b>, <b>Shift grid ← / → 10 ms</b>, <b>Shift grid ← / → 1 beat</b>, <b>BPM × 2 / ÷ 2</b>, <b>BPM − / + 0.01</b>, <b>Tap tempo…</b>, <b>Convert to constant grid</b>, verrouiller la grille, <b>Re-analyze (normal / dynamic grid)</b>. Glisse une action sur la barre du deck pour l'y épingler, ou coche-la dans <b>Buttons on the deck bar</b>.</li>
-            <li><b>Menu du deck</b> (⋯) : <b>Instant Double from Deck N</b> (copie l'autre deck à la même position), <b>Create cues from phrases</b>, <b>DRUM SWAP slots…</b>, <b>Set MIX IN / MIX OUT at play head</b>, <b>Clear mix points</b>, <b>Eject</b>, et <b>Load while playing (all decks)</b> pour autoriser ou non le chargement sur un deck qui joue.</li>
+            <li><b>Menu du deck</b> (⋯) : <b>Instant Double from Deck N</b> (copie l'autre deck à la même position), <b>Create cues from phrases</b>, <b>Phrases</b> (décaler toutes les phrases du morceau de ± 1 mesure ou ± 1 temps, revenir aux phrases analysées), <b>DRUM SWAP slots…</b>, <b>Set MIX IN / MIX OUT at play head</b>, <b>Clear mix points</b>, <b>Eject</b>, et <b>Load while playing (all decks)</b> pour autoriser ou non le chargement sur un deck qui joue.</li>
           </ul></details>
         <details><summary>Jog, tempo et boutons du deck</summary>
           <ul>
@@ -88,6 +88,7 @@
           <ul>
             <li><b>Glisser</b> pour se déplacer dans le morceau, <b>molette</b> pour zoomer.</li>
             <li><b>Clic droit sur une phrase</b> (INTRO, CHORUS, DOWN…) : <b>Change to</b> (changer son nom), <b>Cut the phrase here</b> (au début de mesure le plus proche), <b>Join with the next phrase</b>, déplacer son début, <b>Shift all phrases</b> (← / → 1 mesure ou 1 temps), <b>Back to the analysed phrases</b>.</li>
+            <li>Les phrases sont comptées par blocs de 4 mesures à partir de la mesure où la musique change vraiment (et plus forcément depuis la toute première mesure du fichier). Les morceaux analysés avant la 1.23.2 refont leurs phrases tout seuls quand tu les charges ; celles que tu as corrigées à la main ne bougent pas.</li>
           </ul></details>
       </div>
 
@@ -209,7 +210,8 @@
           <ul>
             <li><b>LYRICS</b> (barre du haut) ouvre une fenêtre à part : déplace-la sur un deuxième écran ou un vidéoprojecteur, <b>F11</b> ou <b>FULL SCREEN</b> pour le plein écran, <b>ON TOP</b> pour la garder devant les autres fenêtres.</li>
             <li><b>AUTO</b> suit le deck à l'antenne (celui qui joue, fader et crossfader les plus ouverts) ; <b>1</b>, <b>2</b>… fixent un deck.</li>
-            <li>Les paroles viennent d'un fichier <b>.lrc</b> posé à côté du morceau (même nom), sinon de <b>LRCLIB</b> (base libre de paroles synchronisées). Elles sont gardées avec le morceau : la recherche ne se fait qu'une fois.</li>
+            <li>Les paroles viennent, dans l'ordre : d'un fichier <b>.lrc</b> posé à côté du morceau (même nom), des <b>paroles rangées dans le fichier</b> lui-même (tags), de <b>LRCLIB</b> (base libre de paroles synchronisées, cherchée de plusieurs façons), et en dernier des <b>sous-titres d'une vidéo YouTube</b> du morceau écrits par celui qui l'a publiée (jamais les sous-titres automatiques ; il faut yt-dlp, comme pour les téléchargements). Une version synchronisée arrête la recherche. Elles sont gardées avec le morceau : la recherche ne se fait qu'une fois.</li>
+            <li>Musixmatch et Genius ne sont pas utilisés : leurs paroles complètes ne sont pas libres d'accès (licence payante, ou interdiction de les récupérer).</li>
             <li>La ligne chantée est au milieu, en grand. <b>−</b> / <b>+</b> (ou <b>[</b> / <b>]</b>, Maj = 1 s) décalent toutes les paroles ; <b>A−</b> / <b>A+</b> changent la taille.</li>
             <li>Si les paroles viennent d'une version d'une autre durée (radio edit / extended mix), un bandeau le dit : décale-les ou cale-les à la main.</li>
             <li><b>SEARCH</b> : choisir une autre version dans LRCLIB, relancer la recherche automatique ou <b>coller tes propres paroles</b>.</li>

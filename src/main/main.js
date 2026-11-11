@@ -18,7 +18,7 @@ import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
 import { Spotify } from './spotify.js';
 import { Deezer } from './deezer.js';
-import { Lyrics, sidecarLrc } from './lyrics.js';
+import { Lyrics, localLyrics } from './lyrics.js';
 import { MetadataLookup } from './metadata.js';
 import { Updater } from './updater.js';
 import { LicenseManager } from './license.js';
@@ -187,10 +187,10 @@ function registerIpc(win) {
   const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: timedFetch }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret), genres });
   ipcMain.handle('metadata:lookup', (_e, q, source, opts) => metadata.lookup(q, source, opts));
   // Lyrics (LRCLIB) and their window, which can go on another screen (in front of the audience).
-  const lyrics = new Lyrics({ fetch: timedFetch, userAgent: `Reboxed/${app.getVersion()} (https://github.com/Vlocky1/Reboxed)` });
+  const lyrics = new Lyrics({ fetch: timedFetch, userAgent: `Reboxed/${app.getVersion()} (https://github.com/Vlocky1/Reboxed)`, youtube: () => downloader });
   ipcMain.handle('lyrics:find', (_e, track) => lyrics.find({ title: String(track?.title ?? ''), artist: String(track?.artist ?? ''), duration: Number(track?.duration) || 0 }));
   ipcMain.handle('lyrics:list', (_e, q) => lyrics.list(q));
-  ipcMain.handle('lyrics:sidecar', (_e, path) => sidecarLrc(path));
+  ipcMain.handle('lyrics:local', (_e, path) => localLyrics(path));
   ipcMain.handle('lyrics:open', () => { openLyricsWindow(win); return true; });
   ipcMain.handle('lyrics:window', (_e, o = {}) => {
     const lw = lyricsWin && !lyricsWin.isDestroyed() ? lyricsWin : null;

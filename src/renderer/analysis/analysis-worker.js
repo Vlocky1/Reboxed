@@ -2,7 +2,7 @@ import { detectBeats } from '../../shared/dsp/bpm.js';
 import { trackBeatsDynamic, isSteadyTempo, detectDownbeat } from '../../shared/dsp/beats-dynamic.js';
 import { onsetEnvelope } from '../../shared/dsp/onset.js';
 import { chromagram, detectKey } from '../../shared/dsp/key.js';
-import { analyzePhrases } from '../../shared/dsp/phrase.js';
+import { analyzePhrases, PHRASES_VERSION } from '../../shared/dsp/phrase.js';
 import { audioFeatures } from '../../shared/dsp/features.js';
 import { reduceBands, loudnessDb, u8ToBase64 } from '../../shared/dsp/waveform.js';
 import { Beatgrid } from '../../shared/beatgrid.js';
@@ -24,8 +24,14 @@ function gridFor(mono, rate, bpmRange, mode, onset) {
 }
 
 self.onmessage = (e) => {
-  const { id, mono, monoRate, bands, bandRate, bpmRange, mode = 'normal', fixedGrid = null } = e.data;
+  const { id, mono, monoRate, bands, bandRate, bpmRange, mode = 'normal', fixedGrid = null, phrasesOnly = false } = e.data;
   try {
+    // Phrases only, on the track's grid (tracks analysed before the phrase analysis changed).
+    if (phrasesOnly) {
+      const phrases = { ...analyzePhrases(mono, monoRate, new Beatgrid(fixedGrid), mono.length / monoRate), v: PHRASES_VERSION };
+      self.postMessage({ id, ok: true, result: { phrases } });
+      return;
+    }
     const duration = mono.length / monoRate;
     // Computed once: the tempo, the key and the sound fingerprint all need these.
     const onset = fixedGrid ? null : onsetEnvelope(mono, monoRate);
@@ -48,7 +54,7 @@ self.onmessage = (e) => {
         key: key ? toCamelot(key) : '',
         keyConfidence: key?.confidence ?? 0,
         loudness: loudnessDb(mono, monoRate),
-        phrases: bg ? analyzePhrases(mono, monoRate, bg, duration) : null,
+        phrases: bg ? { ...analyzePhrases(mono, monoRate, bg, duration), v: PHRASES_VERSION } : null,
         features: audioFeatures(mono, monoRate, grid?.bpm ?? 0, { chroma, onset }),
         ...(wf ? { waveform: { pps: wf.pps, low: u8ToBase64(wf.low), mid: u8ToBase64(wf.mid), high: u8ToBase64(wf.high) } } : {}),
       },
