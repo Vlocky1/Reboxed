@@ -115,6 +115,44 @@ test('DDJ-FLX4 BEAT FX CH SELECT lever: 1 → deck 1, 2 → deck 2, 1&2 → mast
   assert.equal(targets().at(-1), 'ch2');
 });
 
+test('DDJ-FLX4 "stems" mod: PAD FX → STEMS pads (parts / FX parts), SHIFT+CUE → EQ knobs control the parts, LEDs follow', () => {
+  const r = rig('pioneer-ddj-flx4');
+  const plugin = JSON.parse(readFileSync(`${PLUGINS}pioneer-ddj-flx4/plugin.json`, 'utf8'));
+  const mod = plugin.mods.find((m) => m.id === 'stems');
+  assert.ok(mod, 'the FLX4 plugin offers the stems mod');
+  // off: PAD FX is pad effects, SHIFT + CUE jumps to the track start
+  r.press('PadFx1', 0);
+  assert.equal(r.ctrl.decks[0].mode, 'PAD FX');
+  r.press('JumpToTrackStart', 0);
+  assert.equal(r.calls('deck0.jumpToStart').length, 1);
+  // on
+  r.app.plugins = { enabledMods: () => [mod] };
+  r.press('PadFx1', 0);
+  assert.equal(r.ctrl.decks[0].mode, 'STEMS', 'PAD FX opens the STEMS pads');
+  r.press('PAD1_PadFx1', 0);                                          // top row: vocal part on / off
+  assert.deepEqual(r.calls('deck0.setStemOn').at(-1).args, [3, false]);
+  r.press('PAD8_PadFx1', 0);                                          // bottom row: Beat FX on the drums part
+  assert.deepEqual(r.calls('deck0.setFxPart').at(-1).args, [0, true]);
+  // EQ knobs: EQ while the isolator is off
+  r.decks[0].partIso = false;
+  const [hs, hd] = r.addr('EQHigh', 0);
+  r.ctrl.receive([hs, hd, 20]);
+  assert.equal(r.calls('deck0.setIsoKnob').length, 0);
+  // SHIFT + CUE: the isolator starts where the knobs are, then the knobs move the parts
+  r.press('JumpToTrackStart', 0);
+  assert.equal(r.calls('deck0.jumpToStart').length, 1, 'no jump to start with the mod');
+  assert.deepEqual(r.calls('deck0.setPartIso').at(-1).args, [true]);
+  assert.ok(Math.abs(r.decks[0].isoKnobs[0] - r.ctrl.decks[0].eqKnobs[0]) < 1e-9);
+  r.decks[0].partIso = true;
+  r.ctrl.receive([hs, hd, 100]);
+  assert.equal(r.calls('deck0.setIsoKnob').at(-1).args[0], 0, 'HI knob → vocal band');
+  // LEDs: the STEMS state lights the PAD FX button and pads, not the pad effects
+  r.sent.length = 0;
+  r.ctrl.updateLeds(true);
+  const [ps, pd] = r.addr('PadFx1', 0);
+  assert.ok(r.sent.some((b) => b[0] === ps && b[1] === pd && b[2] === 0x7f), 'PAD FX button lit for the STEMS mode');
+});
+
 test('Numark: pads follow the deck’s pad mode, 7-bit knobs, jog in two’s complement, pitch fader up = slower', () => {
   for (const id of ['numark-mixtrack-pro-fx', 'numark-mixtrack-platinum-fx', 'numark-ns4fx']) {
     const r = rig(id);

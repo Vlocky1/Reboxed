@@ -398,7 +398,7 @@ export async function openSettings(library, engine, apply, midi, app) {
     ['stems', 'Stems', () => stemsSection(library, apply, app, () => show('stems'))],
     ['downloads', 'Downloads', () => downloadsSection(app, library)],
     ['midi', 'MIDI', () => (midi ? midi.renderSettings() : h('p.dim', {}, 'MIDI not initialised'))],
-    ['plugins', 'Plugins', () => pluginsSection(app)],
+    ['plugins', 'Mods / Plugins', () => pluginsSection(app)],
     ['keyboard', 'Keyboard', () => keyboardSection(library)],
     ['about', 'About', async () => aboutSection(app, await window.rb.version())],
   ];
@@ -412,7 +412,7 @@ export async function openSettings(library, engine, apply, midi, app) {
     stems: ['wave', 'Stem separation models, quality, engine (CPU or GPU) and files.'],
     downloads: ['download', 'Quality, folder, name cleaner and tools.'],
     midi: ['midi', 'Connected controllers, MIDI monitor and learn.'],
-    plugins: ['plug', 'Hardware plugins: install, create, enable.'],
+    plugins: ['plug', 'Mods that change what a controller\'s buttons do, and hardware plugins: install, create, enable.'],
     keyboard: ['keyboard', 'Keyboard shortcuts: presets for QWERTY and AZERTY, every key can be changed.'],
     about: ['info', 'Version, updates, links and credits.'],
   };

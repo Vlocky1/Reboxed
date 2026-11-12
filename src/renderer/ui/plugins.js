@@ -60,9 +60,29 @@ export async function pluginsSection(app) {
     } catch (err) { toast(`Could not create the plugin: ${err.message}`, 6000); }
   };
 
+  // Mods: changes a controller plugin offers for part of the hardware, turned on per controller.
+  const modsBox = h('div.plugin-list.mods-list');
+  const renderMods = () => {
+    const live = connected();
+    const withMods = reg.all.filter((p) => !reg.problem(p) && reg.modsOf(p).length);
+    modsBox.replaceChildren(...(withMods.length ? withMods.map((p) => {
+      const on = new Set(reg.enabledModIds(p));
+      return h('div.plugin-card', {},
+        h('div.plugin-head', {}, h('b', {}, p.name ?? p.id), live.has(p.id) ? h('span.plugin-tag.live', {}, '● connected') : null),
+        ...reg.modsOf(p).map((m) => h('label.mod-row', {},
+          h('input', { type: 'checkbox', checked: on.has(m.id), onchange: (e) => { reg.setModEnabled(p, m.id, e.target.checked); toast(`${m.name ?? m.id}: ${e.target.checked ? 'on' : 'off'}`, 1500); renderMods(); } }),
+          h('span', {}, h('b', {}, m.name ?? m.id), h('div.dim', {}, m.description ?? '')))));
+    }) : [h('p.dim', {}, 'No controller plugin offers mods yet.')]));
+  };
+
   await reg.refresh();
   render();
+  renderMods();
   return h('div', {},
+    h('h3.settings-sub', {}, 'Mods'),
+    h('p.dim', {}, 'A mod changes what part of a controller does, e.g. stem buttons on pads that had effects. They apply at once, the controller can stay connected.'),
+    modsBox,
+    h('h3.settings-sub', {}, 'Plugins'),
     h('p.dim', {}, 'A plugin teaches Reboxed a piece of hardware: which MIDI messages its buttons send, its LEDs and its sound card. Anyone can write one for a controller that is not supported yet — see docs/PLUGINS.md in the Reboxed repository.'),
     h('div.frow', {},
       h('button.dbtn.small', { onclick: install }, 'Install a plugin folder…'),
