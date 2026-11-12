@@ -5,6 +5,7 @@
 // another edit lines up over a long stretch; a remix with the same name does not.
 import { similarity, artistSimilarity, splitMix, norm } from './autotag.js';
 import { featureSimilarity } from './dsp/features.js';
+import { CollectionIndex } from './in-collection.js';
 
 /** Points per second of the curves compared (enough to tell recordings apart, cheap to slide). */
 export const ENV_PPS = 1;
@@ -30,8 +31,9 @@ const tempoClose = (a, b) => {
  * @param {object[]} tracks
  * @returns {[object, object, number][]} [a, b, metaSimilarity]
  */
-export function candidatePairs(tracks) {
+export function candidatePairs(tracks, { keywords } = {}) {
   const out = [];
+  const seen = new Set();
   const meta = tracks.map((t) => ({ t, title: baseTitle(t.title) }));
   for (let i = 0; i < meta.length; i++) {
     for (let j = i + 1; j < meta.length; j++) {
@@ -39,11 +41,26 @@ export function candidatePairs(tracks) {
       if (a.id === b.id) continue;
       const titleSim = similarity(meta[i].title, meta[j].title);
       const m = titleSim > 0.75 ? metaSimilarity(a, b) : 0;
-      const sound = a.features && b.features && tempoClose(a.bpm, b.bpm) ? featureSimilarity(a.features, b.features) : 0;
-      if (m >= 0.75 || sound >= 0.985) out.push([a, b, m]);
+      if (m >= 0.75 || soundAlike(a, b)) { out.push([a, b, m]); seen.add([a.id, b.id].sort().join('|')); }
+    }
+  }
+  // names read like downloads are (an old download still titled "Artist - Title (Official Video)",
+  // a label as artist, "Title - Artist"…): the same track by its names under any reading
+  const index = new CollectionIndex(tracks, { keywords });
+  for (const a of tracks) {
+    for (const f of index.findAll(a, { upload: !a.artist })) {
+      const k = [a.id, f.id].sort().join('|');
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push([a, f.track, Math.max(metaSimilarity(a, f.track), f.score)]);
     }
   }
   return out;
+}
+
+/** The same sound fingerprint at the same tempo (another name, maybe). */
+export function soundAlike(a, b) {
+  return !!(a.features && b.features && tempoClose(a.bpm, b.bpm) && featureSimilarity(a.features, b.features) >= 0.985);
 }
 
 /**
