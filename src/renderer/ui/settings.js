@@ -297,14 +297,30 @@ export async function spotifySection() {
       status.textContent = r.clientId && r.hasSecret ? '✓ Connected to Spotify' : 'Removed';
     } catch (err) { status.textContent = `✗ ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`; }
   };
+  // the Spotify account: whole playlists (Spotify gives a playlist's tracks only to a signed-in user)
+  const acct = h('div');
+  const showAccount = async () => {
+    const a = await window.rb.spotify.account();
+    const msg = h('span.dim');
+    const connect = async () => {
+      msg.textContent = 'Sign in in your browser…';
+      try { const me = await window.rb.spotify.signIn(); msg.textContent = `✓ Connected as ${me.name}`; showAccount(); } catch (err) { msg.textContent = `✗ ${String(err.message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`; }
+    };
+    acct.replaceChildren(a.signedIn
+      ? h('div', {}, h('span', {}, `✓ Connected${a.user ? ` as ${a.user}` : ''}`), ' ', h('button.dbtn.small', { onclick: async () => { await window.rb.spotify.signOut(); showAccount(); } }, 'Disconnect'), ' ', msg)
+      : h('div', {}, h('button.dbtn.small', { disabled: !st.clientId, onclick: connect }, 'Connect my Spotify account…'), ' ', msg));
+  };
+  showAccount();
   return h('div', {},
-    h('h4', {}, 'Track information online (Deezer, Spotify)'),
-    h('p.dim', {}, 'Track information ▸ "Search info" fills genre, album, year, label, cover… from the service you pick there: Deezer works without any setup (and has the genres); Spotify is optional and needs a free Spotify app: on developer.spotify.com/dashboard create an app (any name; redirect URI: http://127.0.0.1:8888/callback — Reboxed never uses it, Spotify only requires one; tick Web API), then copy its Client ID and Client Secret here. The secret is stored encrypted on this computer.'),
+    h('h4', {}, 'Spotify, Deezer (track information, playlists)'),
+    h('p.dim', {}, 'Track information ▸ "Search info" fills genre, album, year, label, cover… from the service you pick there: Deezer works without any setup (and has the genres). Spotify is optional and needs a free Spotify app: on developer.spotify.com/dashboard create an app (any name; redirect URI: http://127.0.0.1:8888/callback; tick Web API), then copy its Client ID and Client Secret here. The secret is stored encrypted on this computer.'),
     h('div.form-grid', {},
       h('label', {}, 'Client ID'), id,
       h('label', {}, 'Client Secret'), secret,
       h('label', {}, ''), h('div', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
-        h('button.dbtn.small', { onclick: async () => { id.value = ''; secret.value = ''; await window.rb.spotify.setCredentials('', ''); status.textContent = 'Removed'; } }, 'Remove'), ' ', status)));
+        h('button.dbtn.small', { onclick: async () => { id.value = ''; secret.value = ''; await window.rb.spotify.setCredentials('', ''); status.textContent = 'Removed'; } }, 'Remove'), ' ', status),
+      h('label', {}, 'Spotify account'), acct),
+    h('p.dim', {}, 'Spotify gives the tracks of a playlist only to a signed-in account: connect yours (once, in the browser, on your Spotify app above) to read whole playlists, not only their first 100 tracks, and to list your playlists in the download window. Reboxed only reads your playlists.'));
 }
 
 /** Track downloader preferences (moved here from the download window). */
