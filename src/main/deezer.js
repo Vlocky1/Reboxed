@@ -32,6 +32,25 @@ export function deezerFields(tr, album = {}) {
   };
 }
 
+/** A Deezer link → {kind: 'track'|'album'|'playlist', id}, or null (short links: resolve them first). */
+export function deezerLink(url) {
+  const m = /deezer\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(track|album|playlist)\/(\d+)/i.exec(String(url ?? ''));
+  return m ? { kind: m[1].toLowerCase(), id: m[2] } : null;
+}
+
+/** Short share links (link.deezer.com/s/…, deezer.page.link/…) that redirect to a deezer.com page. */
+export const isDeezerShortLink = (url) => /^https?:\/\/(link\.deezer\.com|deezer\.page\.link|dzr\.page\.link)\//i.test(String(url ?? '').trim());
+
+/** A Deezer API track → what the download window lists (the audio is then found on YouTube). */
+export function deezerTrack(t) {
+  const version = t.title_version ? ` ${t.title_version}` : '';
+  return {
+    title: t.title_short ? `${t.title_short}${version}`.trim() : t.title ?? '',
+    artist: t.artist?.name ?? '', duration: t.duration ?? 0, deezerId: t.id, isrc: t.isrc ?? '',
+    album: t.album?.title ?? '', cover: t.album?.cover_medium ?? t.album?.cover_small ?? '',
+  };
+}
+
 export class Deezer {
   constructor({ fetch: f = fetch } = {}) {
     this.fetch = f;
@@ -44,6 +63,38 @@ export class Deezer {
     const j = await res.json();
     if (j.error) throw new Error(`Deezer: ${j.error.message ?? j.error.type ?? 'error'}`);
     return j;
+  }
+
+  /** Tracks of a Deezer search (public API, no account). */
+  async searchTracks(q, limit = 25) {
+    return ((await this.get(`/search?limit=${limit}&q=${encodeURIComponent(String(q ?? '').slice(0, 200))}`)).data ?? []).filter((t) => t.type !== 'podcast').map(deezerTrack);
+  }
+
+  /**
+   * A Deezer track / album / playlist link → its name and tracks (up to 2000).
+   * @returns {Promise<{kind: string, name: string, tracks: object[], via: 'deezer'}>}
+   */
+  async readLink(url) {
+    let link = deezerLink(url);
+    if (!link && isDeezerShortLink(url)) {
+      const res = await this.fetch(String(url).trim(), { redirect: 'follow' });
+      link = deezerLink(res.url) ?? deezerLink(await res.text().catch(() => ''));
+    }
+    if (!link) throw new Error('Not a Deezer track, album or playlist link');
+    if (link.kind === 'track') {
+      const t = await this.get(`/track/${link.id}`);
+      return { kind: 'track', name: `${t.artist?.name ?? ''} - ${t.title ?? ''}`, tracks: [deezerTrack(t)], via: 'deezer' };
+    }
+    const head = await this.get(`/${link.kind}/${link.id}`);
+    const tracks = [];
+    let next = `/${link.kind}/${link.id}/tracks?limit=100&index=0`;
+    while (next && tracks.length < 2000) {
+      const page = await this.get(next.replace(API, ''));
+      // album tracks carry no album: the album's own cover and title
+      for (const t of page.data ?? []) tracks.push(deezerTrack(link.kind === 'album' ? { ...t, album: t.album ?? head } : t));
+      next = page.next ?? null;
+    }
+    return { kind: link.kind, name: head.title ?? 'Deezer playlist', tracks: tracks.filter((t) => t.title), via: 'deezer' };
   }
 
   async album(id) {

@@ -166,9 +166,17 @@ export class Downloader {
   }
 
   /** A pasted YouTube / SoundCloud link: one track, or every entry of a playlist or artist page. */
-  async resolve(url) {
+  async resolve(url) { return (await this.resolveList(url)).items; }
+
+  /** A link with its name: one track, or a playlist / album / artist page and its tracks. */
+  async resolveList(url) {
     if (!platformOf(url)) throw new Error('Not a YouTube or SoundCloud link');
     const d = await this.json(url.trim(), ['--playlist-end', '200']);
+    const name = String(d.title ?? d.playlist_title ?? '').replace(/ - (Videos|Home|Tracks)$/, '') || 'Playlist';
+    return { name, kind: d._type === 'playlist' ? 'playlist' : 'track', items: await this.resolveItems(d) };
+  }
+
+  async resolveItems(d) {
     if (d._type !== 'playlist') return [toItem(d)].filter(Boolean);
     const items = (d.entries ?? []).map(toItem).filter(Boolean);
     // A SoundCloud ".../sets" page lists playlists: open them (the first 10) to list their tracks.

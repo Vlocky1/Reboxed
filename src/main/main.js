@@ -185,7 +185,26 @@ function registerIpc(win) {
     try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
   };
   const genres = new GenreSources({ fetch: timedFetch, discogsToken });
-  const metadata = new MetadataLookup({ spotify, deezer: new Deezer({ fetch: timedFetch }), spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret), genres });
+  const deezer = new Deezer({ fetch: timedFetch });
+  const metadata = new MetadataLookup({ spotify, deezer, spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret), genres });
+  // Spotify / Deezer in the download window: they give the track lists (search, track, album,
+  // playlist); the audio of each track is then found on YouTube. Deezer's public API needs no account.
+  const spotifyKeys = () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret);
+  ipcMain.handle('catalog:read', (_e, url) => {
+    const u = String(url ?? '');
+    if (/spotify/i.test(u)) return spotify.playlist(u, spotifyKeys());
+    if (/deezer|dzr\.page\.link/i.test(u)) return deezer.readLink(u);
+    throw new Error('Not a Spotify or Deezer link');
+  });
+  ipcMain.handle('catalog:search', (_e, platform, q) => {
+    if (platform === 'deezer') return deezer.searchTracks(q);
+    if (platform === 'spotify') {
+      if (!spotifyKeys()) throw new Error('Searching Spotify needs your Spotify keys (Preferences > Library). Spotify links work without them, and Deezer search needs no account.');
+      return spotify.searchTracks(q);
+    }
+    throw new Error(`no catalog search for ${platform}`);
+  });
+  ipcMain.handle('catalog:status', () => ({ spotifyKeys: spotifyKeys() }));
   ipcMain.handle('metadata:lookup', (_e, q, source, opts) => metadata.lookup(q, source, opts));
   // Lyrics (LRCLIB) and their window, which can go on another screen (in front of the audience).
   const lyrics = new Lyrics({ fetch: timedFetch, userAgent: `Reboxed/${app.getVersion()} (https://github.com/Vlocky1/Reboxed)`, youtube: () => downloader });
@@ -287,6 +306,7 @@ function registerIpc(win) {
   ipcMain.handle('dl:search', (_e, q, n, platform) => downloader.search(q, n, platform));
   ipcMain.handle('dl:feed', (_e, url, n) => downloader.feed(url, n));
   ipcMain.handle('dl:resolve', (_e, url) => downloader.resolve(url));
+  ipcMain.handle('dl:resolveList', (_e, url) => downloader.resolveList(url));
   ipcMain.handle('dl:download', (_e, item, opts) => downloader.download(item, opts));
   ipcMain.handle('dl:cancel', (_e, key) => downloader.cancel(key));
   ipcMain.handle('stems:status', () => stems.status());

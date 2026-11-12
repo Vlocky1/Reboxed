@@ -165,7 +165,7 @@ class App {
     this.recBtn.classList.add('rec');
     this.recTime = h('span.rec-time');
     this.downloads = new DownloadCenter(this);
-    this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download tracks: search YouTube or SoundCloud, links, new releases', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'search'));
+    this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download tracks from YouTube, SoundCloud, Spotify or Deezer: search, links, playlists, new releases', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'search'));
     this.dlBadge = h('span.dl-badge', { hidden: true });
     // Shown when GitHub has a newer version.
     this.updatePill = h('button.update-pill', { hidden: true, title: 'A new version of Reboxed is available', onclick: () => openUpdateDialog(this) });
@@ -2727,24 +2727,28 @@ async function smoke(app) {
       dlc.save({ platform: 'youtube' });
       dlc.open('search');
       await wait(200);
+      // 1.26: the four sources with their marks, one field for a search or a link from any of them
       const tabs = [...document.querySelectorAll('.dlc-tabs button')].map((x) => x.textContent.replace(/ \(.*/, ''));
-      document.querySelector('.dlc-platform [data-platform="soundcloud"]').click();
+      document.querySelector('.dlc-sources [data-platform="soundcloud"]').click();
       await wait(150);
       const scPlaceholder = document.querySelector('.dlc-bar input.text')?.placeholder ?? '';
       const remembered = dlc.cfg.platform;
+      const logos = document.querySelectorAll('.dlc-sources .dlc-logo svg').length;
       await window.rb.smokeShot('dl-search');
-      dlc.showTab('link');
+      const kinds = ['https://youtu.be/jNQXAC9IVRw', 'https://soundcloud.com/indochineofficiel/3-nuits-par-semaine', 'https://open.spotify.com/intl-fr/playlist/37i9dQZF1DXcBWIGoYBM5M',
+        'spotify:track:0dEIca2nhcxDUV8C5QkPYb', 'https://www.deezer.com/fr/album/6575789', 'https://link.deezer.com/s/30abc', 'https://example.com/song.mp3'].map(platformOf);
+      // a link from another source switches to it (the reading itself goes online: not here)
+      const realRead = dlc.readLink; dlc.readLink = async () => {};
+      const field = document.querySelector('.dlc-bar input.text');
+      field.value = 'https://www.deezer.com/fr/album/6575789';
+      document.querySelector('.dlc-bar .dlc-primary').click();
       await wait(100);
-      const input = document.querySelector('.dlc-bar input.text');
-      const badgeFor = (url) => { input.value = url; input.dispatchEvent(new Event('input')); return [document.querySelector('.dlc-badge').textContent, document.querySelector('.dlc-bar .dlc-primary').disabled]; };
-      const yt = badgeFor('https://youtu.be/jNQXAC9IVRw');
-      const other = badgeFor('https://example.com/song.mp3');
-      const sc = badgeFor('https://soundcloud.com/indochineofficiel/3-nuits-par-semaine');
-      await window.rb.smokeShot('dl-link');
-      step('download centre: search platforms + link detection',
-        tabs.join('|') === 'Search|Link|Spotify playlist|New releases|Queue' && /SoundCloud/.test(scPlaceholder) && remembered === 'soundcloud'
-          && yt[0] === 'YouTube link' && !yt[1] && other[1] && /Not a YouTube/.test(other[0]) && sc[0] === 'SoundCloud link' && !sc[1],
-        `tabs ${tabs.join('|')} · ${scPlaceholder} · yt ${yt} · other ${other} · sc ${sc}`);
+      dlc.readLink = realRead;
+      const switched = dlc.source;
+      step('download centre: four sources with logos, links of all four recognised',
+        tabs.join('|') === 'YouTube|SoundCloud|Spotify|Deezer|New releases|Queue' && logos === 4 && /SoundCloud/.test(scPlaceholder) && remembered === 'soundcloud'
+          && kinds.join() === 'youtube,soundcloud,spotify,spotify,deezer,deezer,' && switched === 'deezer',
+        `tabs ${tabs.join('|')} · logos ${logos} · ${scPlaceholder} · kinds ${kinds.join()} · switched ${switched}`);
       const tools = await dlc.tools();
       if (tools.ytdlp && (await window.rb.smokeDlTest())) {
         const found = await window.rb.dl.search('indochine trois nuits par semaine', 5, 'soundcloud');

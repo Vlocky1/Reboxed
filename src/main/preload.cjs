@@ -39,6 +39,11 @@ const api = {
     lookup: (q) => ipcRenderer.invoke('spotify:lookup', q),
     playlist: (url) => ipcRenderer.invoke('spotify:playlist', url),
   },
+  catalog: {
+    read: (url) => ipcRenderer.invoke('catalog:read', url),
+    search: (platform, q) => ipcRenderer.invoke('catalog:search', platform, q),
+    status: () => ipcRenderer.invoke('catalog:status'),
+  },
   metadata: { lookup: (q, source, opts) => ipcRenderer.invoke('metadata:lookup', q, source, opts) },
   lyrics: {
     find: (track) => ipcRenderer.invoke('lyrics:find', track),
@@ -118,6 +123,7 @@ const api = {
     search: (q, n, platform) => ipcRenderer.invoke('dl:search', q, n, platform),
     feed: (url, n) => ipcRenderer.invoke('dl:feed', url, n),
     resolve: (url) => ipcRenderer.invoke('dl:resolve', url),
+    resolveList: (url) => ipcRenderer.invoke('dl:resolveList', url),
     download: (item, opts) => ipcRenderer.invoke('dl:download', item, opts),
     cancel: (key) => ipcRenderer.invoke('dl:cancel', key),
     onProgress: (cb) => {
