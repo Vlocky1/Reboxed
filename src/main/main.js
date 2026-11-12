@@ -16,7 +16,7 @@ import { NvidiaEngine } from './nvidia-engine.js';
 import { ToolInstaller, TOOLS } from './tools.js';
 import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
-import { Spotify } from './spotify.js';
+import { Spotify, REDIRECT_URI } from './spotify.js';
 import { Deezer } from './deezer.js';
 import { Lyrics, localLyrics } from './lyrics.js';
 import { Whisper } from './whisper.js';
@@ -163,12 +163,36 @@ function registerIpc(win) {
       if (!c?.clientId || !c?.secret) return null;
       try { return { clientId: c.clientId, secret: safeStorage.decryptString(Buffer.from(c.secret, 'base64')) }; } catch { return null; }
     },
+    // the Spotify account (whole playlists): its refresh token, encrypted
+    account: {
+      get: () => {
+        const enc = storage.cfg.spotify?.refresh;
+        if (!enc) return null;
+        try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
+      },
+      set: async (refresh) => {
+        if (!storage.cfg.spotify) return;
+        storage.cfg.spotify = { ...storage.cfg.spotify, refresh: refresh ? safeStorage.encryptString(refresh).toString('base64') : null, user: refresh ? storage.cfg.spotify.user : null };
+        await storage.save();
+      },
+    },
   });
+  ipcMain.handle('spotify:signIn', async () => {
+    const me = await spotify.signIn((url) => shell.openExternal(url));
+    storage.cfg.spotify = { ...storage.cfg.spotify, user: me.name };
+    await storage.save();
+    return me;
+  });
+  ipcMain.handle('spotify:signOut', () => spotify.signOut());
+  ipcMain.handle('spotify:account', () => ({ signedIn: spotify.signedIn, user: storage.cfg.spotify?.user ?? null, redirectUri: REDIRECT_URI }));
+  ipcMain.handle('spotify:myPlaylists', () => spotify.myPlaylists());
   ipcMain.handle('spotify:status', () => ({ clientId: storage.cfg.spotify?.clientId ?? '', hasSecret: !!storage.cfg.spotify?.secret }));
   ipcMain.handle('spotify:setCredentials', async (_e, clientId, secret) => {
     const prev = storage.cfg.spotify ?? {};
     const enc = secret ? safeStorage.encryptString(secret).toString('base64') : (clientId ? prev.secret : null);
-    storage.cfg.spotify = clientId ? { clientId, secret: enc } : null;
+    // the account stays connected while the app (Client ID) is the same
+    const keep = clientId && prev.clientId === clientId ? { refresh: prev.refresh ?? null, user: prev.user ?? null } : {};
+    storage.cfg.spotify = clientId ? { clientId, secret: enc, ...keep } : null;
     await storage.save();
     spotify.forget();
     if (clientId && enc) await spotify.auth(); // check the credentials now

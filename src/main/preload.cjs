@@ -36,6 +36,10 @@ const api = {
   spotify: {
     status: () => ipcRenderer.invoke('spotify:status'),
     setCredentials: (clientId, secret) => ipcRenderer.invoke('spotify:setCredentials', clientId, secret),
+    signIn: () => ipcRenderer.invoke('spotify:signIn'),
+    signOut: () => ipcRenderer.invoke('spotify:signOut'),
+    account: () => ipcRenderer.invoke('spotify:account'),
+    myPlaylists: () => ipcRenderer.invoke('spotify:myPlaylists'),
     lookup: (q) => ipcRenderer.invoke('spotify:lookup', q),
     playlist: (url) => ipcRenderer.invoke('spotify:playlist', url),
   },

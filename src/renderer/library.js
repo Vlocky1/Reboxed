@@ -42,8 +42,12 @@ export const DEFAULT_SETTINGS = {
   outputLayout: 'stereo',      // 'stereo' | 'quad' (controller sound card: master 1/2, phones 3/4)
   controllerAudioAuto: true,   // use a recognised controller's sound card automatically
   controllerTempoInvert: false,
+  // CLASSIC: play freely, nothing is written in the history (nor in play counts); PERFORMANCE: every
+  // track played (as in a set) goes into the day's history.
+  playMode: 'classic',
   // Track downloader (yt-dlp, as used by Stacher): folder '' = <Music>/Reboxed Downloads.
-  downloads: { folder: '', format: 'mp3', platform: 'youtube', cleanNames: true, cleanKeywords: '', toolsDir: '', playlist: true, subs: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
+  // lists: Spotify / Deezer playlists followed (★): their new tracks show in New releases.
+  downloads: { folder: '', format: 'mp3', platform: 'youtube', cleanNames: true, cleanKeywords: '', toolsDir: '', playlist: true, subs: [], lists: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
 };
 
 /** Local date YYYY-MM-DD (the "Date Added" day; the exact moment is in addedAt, ms). */

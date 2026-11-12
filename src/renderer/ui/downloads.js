@@ -9,6 +9,7 @@ import { cleanTrackName, parseKeywords } from '../../shared/clean-name.js';
 import { findOnYoutube } from '../../shared/yt-match.js';
 import { matchLostDownloads } from '../../shared/dl-recover.js';
 import { CollectionIndex } from '../../shared/in-collection.js';
+import { followEntry, newTracks, markListSeen } from '../../shared/followed-lists.js';
 
 const FORMAT_NAMES = { m4a: 'M4A', mp3: 'MP3 320', flac: 'FLAC', wav: 'WAV' };
 const PLATFORMS = { youtube: 'YouTube', soundcloud: 'SoundCloud', spotify: 'Spotify', deezer: 'Deezer' };
@@ -309,8 +310,25 @@ export class DownloadCenter {
   /** Followed channels / playlists: latest uploads, newest first, with the "new" ones counted. */
   async checkFeeds() {
     const { subs, seen, maxMinutes } = this.cfg;
-    if (!subs.length) { this.feedItems = []; this.newCount = 0; this.changed(); return []; }
+    const lists = this.cfg.lists ?? [];
+    if (!subs.length && !lists.length) { this.feedItems = []; this.listNews = []; this.newCount = 0; this.changed(); return []; }
     this.checking = true; this.changed(true);
+    // followed Spotify / Deezer playlists: the tracks added since they were last seen
+    const before = this.listNews?.reduce((n, x) => n + x.tracks.length, 0) ?? 0;
+    this.listRead ??= new Map();
+    this.listNews = [];
+    for (const l of lists) {
+      try {
+        const r = await this.catalogRead(l.url);
+        this.listRead.set(l.url, r.tracks);
+        const fresh = newTracks(l, r.tracks).filter((t) => !this.ownedCatalog(t)?.sure);
+        if (fresh.length) this.listNews.push({ list: { ...l, search: true, followed: true, tracks: [] }, tracks: fresh.map((t) => ({ ...t, status: 'waiting', match: null })) });
+      } catch (err) { toast(`${l.name}: ${cleanErr(err)}`, 6000); }
+    }
+    this.listNews.forEach((x) => { x.list.tracks = x.tracks; });
+    const listCount = this.listNews.reduce((n, x) => n + x.tracks.length, 0);
+    if (listCount > before) toast(`${listCount} new track${listCount > 1 ? 's' : ''} in your followed playlists (${this.listNews.map((x) => x.list.name).join(', ')}): see New releases`, 8000);
+    if (!subs.length) { this.feedItems = []; this.newCount = listCount; this.checking = false; this.changed(true); return []; }
     const results = [];
     for (let i = 0; i < subs.length; i += 3) {
       const part = await Promise.all(subs.slice(i, i + 3).map((s) => window.rb.dl.feed(s.url, 15)
@@ -323,19 +341,50 @@ export class DownloadCenter {
     const seenSet = new Set(seen);
     const fits = (it) => !maxMinutes || !it.duration || it.duration <= maxMinutes * 60;
     this.feedItems.forEach((it) => { it.isNew = !seenSet.has(it.id) && !this.isDone(it.id); });
-    this.newCount = this.feedItems.filter((it) => it.isNew && fits(it)).length;
+    this.newCount = this.feedItems.filter((it) => it.isNew && fits(it)).length + listCount;
     this.checking = false;
     this.changed(true);
     return this.feedItems;
   }
 
   markSeen() {
-    if (!this.feedItems) return;
     const seen = new Set(this.cfg.seen);
-    this.feedItems.forEach((it) => seen.add(it.id));
-    this.save({ seen: [...seen].slice(-5000) });
+    (this.feedItems ?? []).forEach((it) => seen.add(it.id));
+    // followed playlists: what they hold now is seen
+    const lists = (this.cfg.lists ?? []).map((l) => (this.listRead?.has(l.url) ? markListSeen(l, this.listRead.get(l.url)) : l));
+    this.save({ seen: [...seen].slice(-5000), lists });
+    this.listNews = [];
     this.newCount = 0;
     this.changed();
+  }
+
+  // ---- followed Spotify / Deezer playlists (★) ----------------------------------------------------
+
+  isFollowedList(url) { return (this.cfg.lists ?? []).some((l) => l.url === url); }
+
+  /** Follow a list read from a link (its current tracks count as seen). */
+  followList(sp) {
+    if (!sp?.url || this.isFollowedList(sp.url)) return;
+    this.save({ lists: [...(this.cfg.lists ?? []), followEntry({ platform: sp.platform ?? 'spotify', url: sp.url, name: sp.name, src: sp.src, cover: sp.tracks?.[0]?.cover ?? '' }, sp.tracks)] });
+    toast(`★ ${sp.name}: tracks added to it from now on show in New releases`, 5000);
+    this.changed(true);
+  }
+
+  unfollowList(url) {
+    this.save({ lists: (this.cfg.lists ?? []).filter((l) => l.url !== url) });
+    const gone = (this.listNews ?? []).filter((x) => x.list.url === url).reduce((n, x) => n + x.tracks.length, 0);
+    this.listNews = (this.listNews ?? []).filter((x) => x.list.url !== url);
+    this.newCount = Math.max(0, this.newCount - gone);
+    this.changed(true);
+  }
+
+  /** The ★ button of a list. */
+  followButton(sp) {
+    const on = this.isFollowedList(sp.url);
+    return h(on ? 'button.dbtn.dlc-star.on' : 'button.dbtn.dlc-star', {
+      title: on ? 'Followed: tracks added to this playlist show in New releases. Click to stop.' : 'Follow this playlist: tracks added to it later show in New releases (like followed channels)',
+      onclick: () => { if (on) this.unfollowList(sp.url); else this.followList(sp); this.renderTab(false); },
+    }, on ? '★ Following' : '☆ Follow');
   }
 
   follow(url, name) {
@@ -486,8 +535,20 @@ export class DownloadCenter {
     this.rows = [];
     const parts = [bar];
     this.statusEl = h('p.dim');
-    // a list read from a link (playlist, album, artist page)
-    if (catalog && this.sp && (this.sp.platform ?? 'spotify') === p && !this.sp.search) {
+    // Spotify: the account (whole playlists, "My playlists")
+    if (p === 'spotify') {
+      const acct = h('div.dlc-bar.dlc-filters.dlc-account');
+      parts.push(acct);
+      window.rb.spotify.account().then((a) => {
+        acct.replaceChildren(...(a.signedIn
+          ? [h('span.dim', {}, `Spotify: ${a.user ?? 'connected'} · whole playlists`), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.renderMyPlaylists() }, '♫ My playlists')]
+          : [h('span.dim', {}, 'Without a Spotify account, Spotify shows only the first 100 tracks of a playlist.'), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.app.openSettings('library') }, 'Connect my Spotify account…')]));
+      }).catch(() => acct.remove());
+    }
+    if (p === 'spotify' && this.showMyPls && this.myPls) {
+      parts.push(...this.myPlaylistsView());
+    } else if (catalog && this.sp && (this.sp.platform ?? 'spotify') === p && !this.sp.search) {
+      // a list read from a link (playlist, album, artist page)
       parts.push(h('div.dlc-bar.dlc-filters', {}, check('addToPlaylist', 'Add to a playlist named after it')));
       parts.push(...this.catalogView(this.sp));
     } else if (catalog && this.sp && (this.sp.platform ?? 'spotify') === p && this.sp.search) {
@@ -561,12 +622,15 @@ export class DownloadCenter {
 
   /** Read a Spotify or Deezer link (track, album, playlist): its tracks, each to be found on YouTube. */
   async readSpotify(url) {
-    const r = await window.rb.catalog.read(url);
+    const r = await this.catalogRead(url);
     const platform = /deezer|dzr\./i.test(url) ? 'deezer' : 'spotify';
     const link = /(playlist|album|track)[/:]([A-Za-z0-9]+)/.exec(url);
-    this.sp = { platform, url, kind: r.kind, name: r.name, via: r.via, src: `${platform}:${link?.[2] ?? r.name}`, tracks: r.tracks.map((t) => ({ ...t, status: 'waiting', match: null })) };
+    this.sp = { platform, url, kind: r.kind, name: r.name, via: r.via, accountError: r.accountError ?? null, src: `${platform}:${link?.[2] ?? r.name}`, tracks: r.tracks.map((t) => ({ ...t, status: 'waiting', match: null })) };
     return this.sp;
   }
+
+  /** A Spotify / Deezer list read from its link (replaced in tests). */
+  catalogRead(url) { return window.rb.catalog.read(url); }
 
   /** The search YouTube matches run through (replaced in tests). */
   ytSearch(q) { return window.rb.dl.search(q, 6, 'youtube'); }
@@ -613,7 +677,7 @@ export class DownloadCenter {
 
   enqueueSpotify(t, addToPlaylist = true, list = this.sp) {
     if (!t.match || this.isDone(t.match.id)) return;
-    this.enqueue([{ ...t.match, meta: { title: t.title, artist: t.artist }, addTo: addToPlaylist && list?.name && !list.search ? { name: list.name, src: list.src } : null }]);
+    this.enqueue([{ ...t.match, meta: { title: t.title, artist: t.artist }, addTo: addToPlaylist && list?.name && (!list.search || list.followed) ? { name: list.name, src: list.src } : null }]);
   }
 
   /** A Spotify / Deezer list read from a link: its name, progress, download all, the tracks. */
@@ -625,11 +689,39 @@ export class DownloadCenter {
     return [
       h('div.dlc-bar', {},
         h('span.dlc-logo.small', { innerHTML: LOGOS[sp.platform] ?? '' }), h('b', {}, sp.name),
-        h('span.dim', {}, ` ${sp.tracks.length} track${sp.tracks.length > 1 ? 's' : ''} · ${found} found on YouTube${owned ? ` · ${owned} already in your collection` : ''}${sp.via === 'embed' && sp.tracks.length >= 100 ? ' · only the first 100 without Spotify keys' : ''}`),
+        h('span.dim', {}, ` ${sp.tracks.length} track${sp.tracks.length > 1 ? 's' : ''} · ${found} found on YouTube${owned ? ` · ${owned} already in your collection` : ''}`),
         h('span.spacer'),
+        sp.kind !== 'track' && sp.url ? this.followButton(sp) : null,
         sp.running ? h('button.dbtn', { onclick: () => { sp.stop = true; } }, 'Stop') : h('button.dbtn', { onclick: () => this.findSpotifyOnYoutube(opts) }, 'Search again (not found)'),
         left ? h('button.dbtn.dlc-primary', { onclick: () => sp.tracks.forEach((t) => this.enqueueSpotify(t, opts.addToPlaylist, sp)) }, `Download all ${left}`) : null),
+      // Spotify's public page stops at 100 tracks: the whole list needs the Spotify account
+      sp.via === 'embed' && sp.platform !== 'deezer' && sp.tracks.length >= 100 ? h('div.dlc-bar.dlc-note', {},
+        h('span', {}, `Only the first 100 tracks: Spotify gives a whole playlist only to a signed-in account${sp.accountError ? ` (${sp.accountError})` : ''}.`), h('span.spacer'),
+        h('button.dbtn.small', { onclick: () => this.app.openSettings('library') }, 'Connect my Spotify account…')) : null,
       h('div.dlc-list', {}, sp.tracks.map((t) => this.spotifyRow(t, sp))),
+    ];
+  }
+
+  /** The signed-in Spotify account's playlists, to open or follow. */
+  async renderMyPlaylists() {
+    this.flash('Reading your Spotify playlists…', false);
+    try {
+      this.myPls = await window.rb.spotify.myPlaylists();
+      this.showMyPls = true;
+      this.renderTab(false);
+    } catch (err) { this.flash(cleanErr(err)); }
+  }
+
+  myPlaylistsView() {
+    return [
+      h('div.dlc-bar', {}, h('span.dlc-logo.small', { innerHTML: LOGOS.spotify }), h('b', {}, 'My Spotify playlists'), h('span.dim', {}, ` ${this.myPls.length}`), h('span.spacer'),
+        h('button.dbtn.small', { onclick: () => { this.showMyPls = false; this.renderTab(false); } }, 'Close')),
+      h('div.dlc-list', {}, this.myPls.map((p) => h('div.dlc-row', {},
+        p.cover ? h('img.dlc-thumb.sq', { src: p.cover, loading: 'lazy', alt: '' }) : h('div.dlc-thumb.sq'),
+        h('div.dlc-info', {}, h('div.dlc-title', { title: p.name }, p.name), h('div.dlc-sub', {}, `${p.total} track${p.total > 1 ? 's' : ''}${p.owner ? ` · ${p.owner}` : ''}`)),
+        h('div.dlc-action', {},
+          this.isFollowedList(p.url) ? h('span.dlc-owned', { title: 'Followed: new tracks show in New releases' }, '★') : null,
+          h('button.dbtn.small.dlc-get', { onclick: async () => { this.showMyPls = false; (this.queries ??= {}).spotify = p.url; await this.readLink(p.url); } }, 'Open'))))),
     ];
   }
 
@@ -661,7 +753,7 @@ export class DownloadCenter {
         action.replaceChildren(h('div.dlc-prog', { style: { '--p': `${pct}%` } }, job.state === 'queued' ? 'Queued' : job.state === 'converting' ? 'Converting…' : `${pct}%`));
       } else if (m && (job?.state === 'done' || this.isDone(m.id))) action.replaceChildren(h('span.dlc-done', {}, '✓'));
       else if (m) action.replaceChildren(h('button.dbtn.small.dlc-get', { onclick: () => this.enqueueSpotify(t, this.listOpts?.addToPlaylist !== false, list) }, icon('download')));
-      else if (list?.search && t.status === 'waiting') action.replaceChildren(h('button.dbtn.small.dlc-get', { title: 'Find it on YouTube and download it', onclick: () => this.findOne(t, list) }, icon('download'), ' Download'));
+      else if (list?.search && t.status === 'waiting') action.replaceChildren(h('button.dbtn.small.dlc-get', { title: 'Find it on YouTube and download it', onclick: () => this.findOne(t, list, { addToPlaylist: !!list.followed }) }, icon('download'), ' Download'));
       else action.replaceChildren();
     };
     update();
@@ -681,10 +773,23 @@ export class DownloadCenter {
     const fits = (it) => !c.maxMinutes || !it.duration || it.duration <= c.maxMinutes * 60;
     const items = (this.feedItems ?? []).filter((it) => fits(it) && !(this.hideDone && this.isDone(it.id)));
     const fresh = items.filter((it) => it.isNew && !this.isDone(it.id) && !this.ownedUpload(it)?.sure);
+    const lists = c.lists ?? [];
+    // (the channel list first: list() starts the row updaters afresh)
+    const feedEl = this.checking && !this.feedItems ? h('p.dim', {}, 'Checking followed channels and playlists…') : (c.subs.length ? this.list(items, { showSource: true }) : (this.rows = [], null));
+    // followed Spotify / Deezer playlists: the tracks added to them since last seen
+    const listParts = (this.listNews ?? []).flatMap((x) => [
+      h('div.dlc-bar.dlc-listnew', {}, h('span.dlc-logo.small', { innerHTML: LOGOS[x.list.platform] ?? '' }), h('b', {}, x.list.name),
+        h('span.dlc-new', {}, `${x.tracks.length} NEW`), h('span.spacer'),
+        h('button.dbtn.dlc-primary', { title: 'Find each new track on YouTube and download it (into the playlist named after it)', onclick: () => x.tracks.forEach((t) => { if (t.status === 'waiting' || t.status === 'error') this.findOne(t, x.list, { download: true, addToPlaylist: true }); }) }, `Find & download all ${x.tracks.length}`)),
+      h('div.dlc-list', {}, x.tracks.map((t) => this.spotifyRow(t, x.list))),
+    ]);
     this.body.replaceChildren(
       h('div.dlc-subs', {},
         c.subs.map((s) => h('span.chip', { title: s.url }, s.name, h('button.dlc-unfollow', { title: 'Unfollow', onclick: () => { this.unfollow(s.url); this.feedItems = null; this.checkFeeds(); } }, '×'))),
-        c.subs.length ? null : h('span.dim', {}, 'Follow artists and labels (button "+ follow" in search results, or paste a channel link) to see their new tracks here.')),
+        lists.map((l) => h('span.chip.dlc-chip-list', { title: `${l.url}\nFollowed playlist: its new tracks show here` }, h('span.dlc-logo.tiny', { innerHTML: LOGOS[l.platform] ?? '' }), `★ ${l.name}`,
+          h('button.dlc-unfollow', { title: 'Stop following this playlist', onclick: () => { this.unfollowList(l.url); this.renderTab(false); } }, '×'))),
+        c.subs.length || lists.length ? null : h('span.dim', {}, 'Follow artists and labels (button "+ follow" in search results, or paste a channel link), or Spotify / Deezer playlists (☆ Follow on a playlist), to see their new tracks here.')),
+      ...listParts,
       h('div.dlc-bar', {}, add, h('button.dbtn', { onclick: doAdd }, 'Follow')),
       h('div.dlc-bar.dlc-filters', {},
         h('button.dbtn.dlc-primary', { disabled: this.checking, onclick: () => this.checkFeeds() }, this.checking ? 'Checking…' : 'Check now'),
@@ -693,7 +798,7 @@ export class DownloadCenter {
         h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: c.checkOnStart, onchange: (e) => this.save({ checkOnStart: e.target.checked }) }), ' Check at startup'),
         fresh.length ? h('button.dbtn', { onclick: () => this.enqueue(fresh) }, `Download ${fresh.length} new`) : null,
         this.newCount ? h('button.dbtn', { onclick: () => { this.markSeen(); this.renderTab(false); } }, 'Mark all as seen') : null),
-      this.checking && !this.feedItems ? h('p.dim', {}, 'Checking followed channels…') : this.list(items, { showSource: true }));
+      feedEl);
   }
 
   renderQueue() {

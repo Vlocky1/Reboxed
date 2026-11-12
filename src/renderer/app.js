@@ -97,7 +97,8 @@ class App {
     this.applySettingsToEngine();
 
     this.engine.onCuesChanged = (id, cues) => this.library.update(id, { cues });
-    this.engine.onTrackPlayed = (deck) => this.library.addToHistory(deck.track.id);
+    // History only in PERFORMANCE mode (CLASSIC: testing, preparing… nothing is written)
+    this.engine.onTrackPlayed = (deck) => { if (this.library.settings.playMode === 'performance') this.library.addToHistory(deck.track.id); };
     this.sampler = new Sampler(this.engine);
     // PADS: 64-pad sampler / instrument / light show, on screen and on a Launchpad X.
     this.pads = new PadSampler(this.engine, (path) => this.analyzer.decode(path));
@@ -190,8 +191,14 @@ class App {
       this.mplBtn.classList.toggle('on', this.library.settings.mixPointLink);
     });
     this.mplBtn.classList.toggle('on', !!s.mixPointLink);
-    this.modeSel = h('select.mode-select', { title: 'Mode', onchange: (e) => document.body.classList.toggle('browse-full', e.target.value === 'library') },
-      h('option', { value: 'performance' }, 'PERFORMANCE'), h('option', { value: 'library' }, 'LIBRARY'));
+    // CLASSIC / PERFORMANCE: the decks, with or without the history; LIBRARY: the full browser
+    this.modeSel = h('select.mode-select', {
+      title: 'CLASSIC: play freely, nothing goes into the history · PERFORMANCE: every track played goes into the day\'s history (a set) · LIBRARY: the full browser',
+      onchange: (e) => this.setMode(e.target.value),
+    },
+    h('option', { value: 'classic' }, 'CLASSIC'), h('option', { value: 'performance' }, 'PERFORMANCE'), h('option', { value: 'library' }, 'LIBRARY'));
+    this.modeSel.value = this.library.settings.playMode === 'performance' ? 'performance' : 'classic';
+    this.modeSel.classList.toggle('perf', this.modeSel.value === 'performance');
     this.layoutBtns = [
       h('button.lbtn', { title: '2 decks', onclick: () => { this.library.setSetting('deckCount', 2); this.applyLayout(); } }, icon('layout2')),
       h('button.lbtn', { title: '4 decks', onclick: () => { this.library.setSetting('deckCount', 4); this.applyLayout(); } }, icon('layout4')),
@@ -257,8 +264,11 @@ class App {
     if (!new URLSearchParams(location.search).has('smoke') && !new URLSearchParams(location.search).has('shots')) {
       setTimeout(() => this.downloads.recoverLost().catch((err) => console.warn('recover downloads', err)), 4000);
     }
-    if (!new URLSearchParams(location.search).has('smoke') && this.downloads.cfg.checkOnStart && this.downloads.cfg.subs.length) {
-      setTimeout(() => this.downloads.checkFeeds().catch(() => {}), 8000);
+    // New releases: followed channels and playlists, at startup then every hour
+    if (!new URLSearchParams(location.search).has('smoke') && this.downloads.cfg.checkOnStart) {
+      const followed = () => this.downloads.cfg.subs.length || this.downloads.cfg.lists?.length;
+      setTimeout(() => { if (followed()) this.downloads.checkFeeds().catch(() => {}); }, 8000);
+      setInterval(() => { if (followed() && !this.downloads.checking) this.downloads.checkFeeds().catch(() => {}); }, 3600 * 1000);
     }
     window.addEventListener('beforeunload', () => { this.library.saveNow(); });
   }
@@ -313,7 +323,23 @@ class App {
 
   toggleLayout() {
     const full = document.body.classList.toggle('browse-full');
-    if (this.modeSel) this.modeSel.value = full ? 'library' : 'performance';
+    if (this.modeSel) this.modeSel.value = full ? 'library' : this.playMode;
+  }
+
+  get playMode() { return this.library.settings.playMode === 'performance' ? 'performance' : 'classic'; }
+
+  /** The mode select: CLASSIC / PERFORMANCE (decks, history off / on) or LIBRARY (full browser). */
+  setMode(value) {
+    document.body.classList.toggle('browse-full', value === 'library');
+    if (value === 'classic' || value === 'performance') {
+      const changed = value !== this.playMode;
+      this.library.setSetting('playMode', value);
+      if (changed) toast(value === 'performance' ? 'PERFORMANCE: the tracks you play go into today\'s history' : 'CLASSIC: play freely, nothing goes into the history', 4000);
+    }
+    if (this.modeSel) {
+      this.modeSel.value = value;
+      this.modeSel.classList.toggle('perf', this.playMode === 'performance');
+    }
   }
 
   /** FX / MIXER panels shown or hidden from the global section (saved). */
@@ -1557,7 +1583,16 @@ async function measureFrames(app) {
 
 async function smoke(app) {
   const report = { ok: false, steps: [] };
-  const step = (name, ok, info = '') => { report.steps.push({ name, ok, info }); if (!ok) throw new Error(`${name}: ${info}`); };
+  // REBOXED_SMOKE_TIMING=soft (a busy machine): the steps that measure real time (frame rate, play
+  // speed) are reported (ok: false, soft: true) but do not stop the run; the report stays not ok.
+  const softTiming = (await window.rb.smokeEnv?.('REBOXED_SMOKE_TIMING')) === 'soft';
+  const TIMING = /^frame rate|^tempo fader changes the speed|^beat loop holds|^synced deck fader/;
+  const step = (name, ok, info = '') => {
+    const soft = !ok && softTiming && TIMING.test(name);
+    report.steps.push({ name, ok, info, ...(soft ? { soft: true } : {}) });
+    if (soft) { report.softFailed = true; return; }
+    if (!ok) throw new Error(`${name}: ${info}`);
+  };
   try {
     const ctx = app.engine.ctx;
     await ctx.resume();
@@ -2792,6 +2827,47 @@ async function smoke(app) {
             `"${mine.artist} - ${mine.title}" · search rows ${flagged.join()} · list ${ownedSp.join()}`);
         }
       }
+      // 1.28: a followed Spotify playlist: a track added to it later shows in New releases, once
+      {
+        const t1 = { title: 'Follow One', artist: 'Smoke Lister', duration: 201, spotifyId: 'F1' };
+        const t2 = { title: 'Follow Two', artist: 'Smoke Lister', duration: 202, spotifyId: 'F2' };
+        const t3 = { title: 'Follow Three', artist: 'Smoke Lister', duration: 203, spotifyId: 'F3' };
+        const url = 'https://open.spotify.com/playlist/SMOKEFOLLOW0000000001';
+        const realRead = dlc.catalogRead;
+        let served = [t1, t2];
+        dlc.catalogRead = async () => ({ kind: 'playlist', name: 'Smoke follow', tracks: served, via: 'account' });
+        const before = { lists: dlc.cfg.lists ?? [], subs: dlc.cfg.subs, seen: dlc.cfg.seen };
+        dlc.save({ subs: [] });
+        dlc.setSource('spotify', false);
+        await dlc.readSpotify(url);
+        dlc.renderTab(false);
+        await wait(150);
+        const accountBar = document.querySelector('.dlc-account')?.textContent ?? '';
+        document.querySelector('.dlc-star')?.click();
+        const followed = dlc.isFollowedList(url);
+        const star = document.querySelector('.dlc-star')?.textContent ?? '';
+        await dlc.checkFeeds();
+        const quiet = dlc.newCount;
+        served = [t1, t3, t2];
+        await dlc.checkFeeds();
+        const news = (dlc.listNews ?? []).flatMap((x) => x.tracks.map((t) => t.title));
+        const count = dlc.newCount;
+        dlc.showTab('feeds');
+        await wait(150);
+        const shown = [...document.querySelectorAll('.dlc-sprow .dlc-title')].map((x) => x.textContent);
+        const chip = !!document.querySelector('.dlc-chip-list');
+        await window.rb.smokeShot('dl-followed');
+        dlc.markSeen();
+        await dlc.checkFeeds();
+        const after = dlc.newCount;
+        delete dlc.catalogRead; void realRead;
+        dlc.save(before);
+        dlc.listNews = []; dlc.newCount = 0; dlc.sp = null;
+        dlc.setSource('youtube', false);
+        step('followed Spotify playlist: a track added later shows in New releases, once; account hint without sign-in',
+          followed && /Following/.test(star) && quiet === 0 && news.join() === 'Follow Three' && count === 1 && shown.includes('Follow Three') && chip && after === 0 && /Connect my Spotify account/.test(accountBar),
+          `followed ${followed} (${star}) · first check ${quiet} new · after adding: ${news.join()} (${count}) · shown ${shown.join()} · after "seen" ${after} · account bar "${accountBar}"`);
+      }
       const tools = await dlc.tools();
       if (tools.ytdlp && (await window.rb.smokeDlTest())) {
         const found = await window.rb.dl.search('indochine trois nuits par semaine', 5, 'soundcloud');
@@ -3089,6 +3165,24 @@ async function smoke(app) {
       step('Stems list and waveform Preview column', stemRows === withStems && kicks.length > 0 && kicks.every((t) => t.wavePreview?.length > 100) && previews > 0,
         `stems ${stemRows}/${withStems} · previews ${kicks.filter((t) => t.wavePreview).length}/${kicks.length} tracks, ${previews} on screen`);
 
+      // 1.28: CLASSIC writes nothing in the history, PERFORMANCE writes the tracks played
+      {
+        const count = () => lib.histories.reduce((n, x) => n + x.trackIds.length, 0);
+        const plays = () => lib.get(kicks[1].id)?.playCount ?? 0;
+        const modes = [...app.modeSel.options].map((o) => o.value).join();
+        app.setMode('classic');
+        const [h0, p0] = [count(), plays()];
+        app.engine.onTrackPlayed({ track: kicks[1] });
+        const [h1, p1] = [count(), plays()];
+        app.setMode('performance');
+        const perfEdge = app.modeSel.classList.contains('perf');
+        app.engine.onTrackPlayed({ track: kicks[1] });
+        const [h2, p2] = [count(), plays()];
+        app.setMode('classic');
+        step('CLASSIC mode writes nothing in the history; PERFORMANCE writes the tracks played',
+          modes === 'classic,performance,library' && h1 === h0 && p1 === p0 && h2 === h0 + 1 && p2 === p0 + 1 && perfEdge && lib.settings.playMode === 'classic' && app.modeSel.value === 'classic',
+          `options ${modes} · classic: history ${h0}→${h1}, plays ${p0}→${p1} · performance: history →${h2}, plays →${p2}, red edge ${perfEdge}`);
+      }
       lib.addToHistory(kicks[0].id); await wait(100);
       await showRow(kicks[0].id);
       const row =[...b.body.querySelectorAll('.tr')].find((r) => b.rows[Number(r.dataset.i)]?.track.id === kicks[0].id);
@@ -3444,7 +3538,7 @@ async function smoke(app) {
     step('ui frames', app.frames > 10, `${app.frames} frames`);
     await new Promise((r) => setTimeout(r, 1000));
     step('ui hot cue pad (1 s later)', padA.classList.contains('set'), `${padA.className} cues=${JSON.stringify(d1.track.cues)} playing=${d1.playing} bank=${app.deckViews[0].bank} mode=${app.deckViews[0].padMode}`);
-    report.ok = true;
+    report.ok = !report.softFailed; // a soft timing failure still makes the run not ok
     // Back to the default 2-deck layout for the --shot screenshot.
     lib.setSetting('deckCount', 2); app.applyLayout();
     app.browser.select('collection');
