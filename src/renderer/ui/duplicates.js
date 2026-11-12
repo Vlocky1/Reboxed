@@ -5,9 +5,32 @@
 import { h, fmtTime, toast } from './dom.js';
 import { mediaUrl } from '../analysis/analyzer.js';
 import { base64ToU8 } from '../../shared/dsp/waveform.js';
-import { candidatePairs, energyCurves, audioSimilarity, verdict, groupPairs, pickKeeper } from '../../shared/duplicates.js';
+import { candidatePairs, energyCurves, audioSimilarity, verdict, groupPairs, pickKeeper, soundAlike } from '../../shared/duplicates.js';
+import { CollectionIndex } from '../../shared/in-collection.js';
 
 const pairKey = (a, b) => [a, b].sort().join('|');
+
+/** The playlist where downloads that sound like a track already there wait for a decision. */
+export const SUSPECTS_SRC = 'dup-suspects';
+export const SUSPECTS_NAME = 'Suspected duplicates';
+
+/**
+ * A new track (a download) against the collection: its candidates by name (any reading) and by
+ * sound fingerprint, then checked by ear.
+ * @returns {Promise<{pairs: object[], waiting: object[]}>} duplicate pairs with the track; candidates
+ *   not analysed yet (to analyse, then check again)
+ */
+export async function checkNewTrack(app, track, { keywords } = {}) {
+  const others = app.library.all().filter((x) => x.id !== track.id && !x.missing);
+  const byName = new CollectionIndex(others, { keywords }).findAll(track, { upload: !track.artist }).map((f) => f.track);
+  // another name, same recording: the same fingerprint and the same length
+  const bySound = others.filter((x) => Math.abs((x.duration ?? 0) - (track.duration ?? 0)) <= 5 && soundAlike(track, x));
+  const cands = [...new Map([...byName, ...bySound].map((x) => [x.id, x])).values()].slice(0, 12);
+  if (!cands.length) return { pairs: [], waiting: [] };
+  const res = await findDuplicates(app, [track, ...cands], () => {}, { keywords });
+  const pairs = res.groups.flatMap((g) => g.pairs).filter((p) => p.a.id === track.id || p.b.id === track.id);
+  return { pairs, waiting: cands.filter((x) => !x.analyzed) };
+}
 const fmtOf = (t) => `${(t.kind || t.path.split('.').pop() || '').toUpperCase()}${t.bitrate ? ` ${t.bitrate}` : ''}`;
 
 /**
@@ -16,9 +39,9 @@ const fmtOf = (t) => `${(t.kind || t.path.split('.').pop() || '').toUpperCase()}
  * @param {object[]} tracks
  * @param {(done: number, total: number) => void} [onProgress]
  */
-export async function findDuplicates(app, tracks, onProgress = () => {}) {
+export async function findDuplicates(app, tracks, onProgress = () => {}, { keywords } = {}) {
   const ignored = new Set(app.library.settings.dupIgnore ?? []);
-  const pairs = candidatePairs(tracks).filter(([a, b]) => !ignored.has(pairKey(a.id, b.id)));
+  const pairs = candidatePairs(tracks, { keywords }).filter(([a, b]) => !ignored.has(pairKey(a.id, b.id)));
   const curves = new Map();
   const curvesOf = async (t) => {
     if (!t.analyzed) return null;
@@ -53,6 +76,12 @@ export async function openDuplicates(app, playlistId = null) {
   const rows = node ? lib.rowsFor(playlistId) : null;
   const tracks = rows ? [...new Map(rows.map((r) => [r.track.id, r.track])).values()] : lib.all();
   const editable = node?.type === 'playlist';
+  // Suspected duplicates: a group decided (merged, or "not duplicates") leaves the list
+  const settle = (ids) => {
+    if (node?.src !== SUSPECTS_SRC) return;
+    const gone = new Set(ids);
+    lib.removeFromPlaylist(node.id, node.trackIds.map((id, i) => (gone.has(id) ? i : -1)).filter((i) => i >= 0));
+  };
   const where = node ? `"${node.name}"` : 'the collection';
 
   const body = h('div.dup');
@@ -68,7 +97,13 @@ export async function openDuplicates(app, playlistId = null) {
   const bar = h('progress', { max: 1, value: 0 });
   const line = h('p.dim', {}, `Comparing ${tracks.length} tracks: names first, then the sound of the likely pairs…`);
   body.replaceChildren(line, bar);
-  const result = await findDuplicates(app, tracks, (d, n) => { bar.max = Math.max(1, n); bar.value = d; line.textContent = `Listening to the likely pairs: ${d} / ${n}`; });
+  // the suspects list: each one against the whole collection (its twin may not be in the list)
+  let pool = tracks;
+  if (node?.src === SUSPECTS_SRC) {
+    const index = new CollectionIndex(lib.all());
+    pool = [...new Map([...tracks, ...tracks.flatMap((t) => index.findAll(t, { upload: !t.artist }).map((f) => f.track))].map((t) => [t.id, t])).values()];
+  }
+  const result = await findDuplicates(app, pool, (d, n) => { bar.max = Math.max(1, n); bar.value = d; line.textContent = `Listening to the likely pairs: ${d} / ${n}`; });
   if (closed) return result;
   const notAnalysed = tracks.filter((t) => !t.analyzed).length;
 
@@ -111,11 +146,12 @@ export async function openDuplicates(app, playlistId = null) {
           toast('Removed from the playlist (still in the collection)'); render();
         } }, 'Keep it, remove the others from this playlist') : null,
         h('button.dbtn.small.primary', { title: 'The kept version replaces the others in every playlist and gets their cues, tags and plays if it has none; the others leave the collection (files are not deleted)',
-          onclick: () => { lib.mergeDuplicates(keep, drop()); toast('Merged: one version left in the collection'); render(); } }, 'Keep it, merge the others in the collection'),
+          onclick: () => { lib.mergeDuplicates(keep, drop()); settle([keep]); toast('Merged: one version left in the collection'); render(); } }, 'Keep it, merge the others in the collection'),
         h('button.dbtn.small', { onclick: () => {
           const ign = new Set(lib.settings.dupIgnore ?? []);
           g.pairs.forEach((p) => ign.add(pairKey(p.a.id, p.b.id)));
           lib.setSetting('dupIgnore', [...ign]);
+          settle(live.map((t) => t.id));
           result.groups = result.groups.filter((x) => x !== g); render();
         } }, 'Not duplicates'));
       parts.push(h('div.dup-group', {}, ...verdicts, ...trackRows, actions));

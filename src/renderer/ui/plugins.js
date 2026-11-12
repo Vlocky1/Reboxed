@@ -78,16 +78,19 @@ export async function pluginsSection(app) {
   await reg.refresh();
   render();
   renderMods();
-  return h('div', {},
-    h('h3.settings-sub', {}, 'Mods'),
-    h('p.dim', {}, 'A mod changes what part of a controller does, e.g. stem buttons on pads that had effects. They apply at once, the controller can stay connected.'),
-    modsBox,
-    h('h3.settings-sub', {}, 'Plugins'),
-    h('p.dim', {}, 'A plugin teaches Reboxed a piece of hardware: which MIDI messages its buttons send, its LEDs and its sound card. Anyone can write one for a controller that is not supported yet — see docs/PLUGINS.md in the Reboxed repository.'),
-    h('div.frow', {},
-      h('button.dbtn.small', { onclick: install }, 'Install a plugin folder…'),
-      h('button.dbtn.small', { onclick: fromCsv }, 'Create from a controller mapping (CSV)…'),
-      h('button.dbtn.small', { onclick: () => window.rb.plugins.openFolder() }, 'Open the plugins folder'),
-      h('button.dbtn.small', { onclick: changed }, 'Reload')),
-    list);
+  // two columns side by side: Mods | Plugins
+  return h('div.mods-plugins', {},
+    h('section.mp-col', {},
+      h('h3.settings-sub', {}, 'Mods'),
+      h('p.dim', {}, 'A mod changes what part of a controller does, e.g. stem buttons on pads that had effects. They apply at once, the controller can stay connected.'),
+      modsBox),
+    h('section.mp-col', {},
+      h('h3.settings-sub', {}, 'Plugins'),
+      h('p.dim', {}, 'A plugin teaches Reboxed a piece of hardware: which MIDI messages its buttons send, its LEDs and its sound card. Anyone can write one for a controller that is not supported yet — see docs/PLUGINS.md in the Reboxed repository.'),
+      h('div.frow', {},
+        h('button.dbtn.small', { onclick: install }, 'Install a plugin folder…'),
+        h('button.dbtn.small', { onclick: fromCsv }, 'Create from a controller mapping (CSV)…'),
+        h('button.dbtn.small', { onclick: () => window.rb.plugins.openFolder() }, 'Open the plugins folder'),
+        h('button.dbtn.small', { onclick: changed }, 'Reload')),
+      list));
 }

@@ -471,6 +471,8 @@ class App {
       const fresh = this.library.update(trackId, patch);
       // Decks holding this track pick up the new grid/phrases immediately.
       for (const d of this.engine.decks) if (d.track?.id === trackId) d.updateTrack(fresh, this.deckAnalysis(fresh, { ...d.analysis, ...result }));
+      // a download waiting to be checked by ear against the collection
+      this.downloads?.analysed?.(trackId);
     }
     return result;
   }
@@ -2599,6 +2601,19 @@ async function smoke(app) {
     }
 
     // ---- Keyboard: rebind a key in Preferences, then use it; AZERTY preset; pinned close button ----
+    // 1.27: Settings > Mods / Plugins in two columns side by side
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const closed = app.openSettings('plugins');
+      for (let i = 0; i < 60 && document.querySelectorAll('.mods-plugins .mp-col').length < 2; i++) await wait(50);
+      const cols = [...document.querySelectorAll('.mods-plugins .mp-col')].map((c) => c.getBoundingClientRect());
+      const heads = [...document.querySelectorAll('.mods-plugins .mp-col > .settings-sub')].map((x) => x.textContent);
+      await window.rb.smokeShot('mods-plugins');
+      document.querySelector('.settings-close')?.click();
+      await closed;
+      step('settings: Mods and Plugins side by side', cols.length === 2 && heads.join() === 'Mods,Plugins' && cols[1].left >= cols[0].right - 1 && Math.abs(cols[0].top - cols[1].top) < 4,
+        cols.map((r) => `${Math.round(r.left)}-${Math.round(r.right)} @${Math.round(r.top)}`).join(' | '));
+    }
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const closed = app.openSettings('keyboard');
@@ -2768,11 +2783,12 @@ async function smoke(app) {
           const flagged = [...document.querySelectorAll('.dlc-row')].map((r) => !!r.querySelector('.dlc-owned'));
           const sp = { platform: 'deezer', name: 'Smoke list', src: 'deezer:smoke', tracks: [
             { title: mine.title, artist: mine.artist, duration: mine.duration, status: 'waiting', match: null },
-            { title: 'Nothing Alike', artist: 'Zzyzx Unknown', duration: 200, status: 'waiting', match: null }] };
-          const ownedSp = sp.tracks.map((t) => !!dlc.ownedCatalog(t));
+            { title: 'Nothing Alike', artist: 'Zzyzx Unknown', duration: 200, status: 'waiting', match: null },
+            { title: mine.title, artist: mine.artist, duration: mine.duration + 60, status: 'waiting', match: null }] };
+          const ownedSp = sp.tracks.map((t) => { const o = dlc.ownedCatalog(t); return o ? (o.sure ? 'sure' : 'maybe') : 'no'; });
           dlc.searchResults = null;
           if (!oldArtist) app.library.update(pick.id, { artist: oldArtist });
-          step('download centre: tracks already in the collection are flagged', flagged.join() === 'true,false' && ownedSp.join() === 'true,false',
+          step('download centre: tracks already in the collection are flagged (same names, other length: maybe)', flagged.join() === 'true,false' && ownedSp.join() === 'sure,no,maybe',
             `"${mine.artist} - ${mine.title}" · search rows ${flagged.join()} · list ${ownedSp.join()}`);
         }
       }
@@ -3180,6 +3196,16 @@ async function smoke(app) {
           res.groups.length === 1 && groupIds.size === 3 && [0, 1, 2].every((i) => groupIds.has(dupTracks[i].id)) && remixApart
             && g.pairs.some((p) => p.verdict.kind === 'same') && g.pairs.some((p) => p.verdict.kind === 'edit'),
           `${kinds.join(' | ')} · remix apart ${remixApart} (sound ${res.versions.map((p) => p.audio?.score).join(', ')})`);
+        // 1.27: a download checked by ear against the collection: its twins go to "Suspected duplicates"
+        {
+          await app.downloads.checkByEar(dupTracks[1].id);
+          const susp = lib.playlists.find((n) => n.src === 'dup-suspects');
+          const ids = susp?.trackIds ?? [];
+          step('after a download: checked by ear, its twins go to "Suspected duplicates", the remix does not',
+            !!susp && susp.name === 'Suspected duplicates' && ids.includes(dupTracks[1].id) && ids.includes(dupTracks[0].id) && !ids.includes(dupTracks[3].id),
+            `${susp?.name}: ${ids.map((id) => lib.get(id)?.title).join(', ')} · ${(app.downloads.earLog ?? []).join(' | ')}`);
+          if (susp) lib.deleteNode(susp.id);
+        }
         // The window, then a merge: the kept file replaces the others everywhere.
         const shown = openDuplicates(app, pl.id);
         for (let i = 0; i < 100 && !document.querySelector('.dup-group'); i++) await wait(50);

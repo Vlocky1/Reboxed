@@ -130,13 +130,16 @@ export class DownloadCenter {
   get collection() {
     const lib = this.app.library;
     if (!this.colWatch) { this.colWatch = true; lib.addEventListener?.('change', () => { this.colIndex = null; }); }
-    return (this.colIndex ??= new CollectionIndex(lib.all()));
+    return (this.colIndex ??= new CollectionIndex(lib.all(), { keywords: parseKeywords(this.cfg.cleanKeywords) }));
   }
 
-  /** The collection track a video / upload already is (null when it is not there, or was downloaded from here). */
+  /**
+   * The collection track a video / upload already is: {sure: true} same names and length, {sure:
+   * false} same names, another length (null when it is not there, or was downloaded from here).
+   */
   ownedUpload(item) {
     if (!item?.title || this.isDone(item.id)) return null;
-    return this.collection.find({ title: item.title, artist: item.channel, duration: item.duration }, { fromUpload: true });
+    return this.collection.find({ title: item.title, artist: item.channel, duration: item.duration }, { upload: true });
   }
 
   /** The collection track a Spotify / Deezer track already is (kept on the track). */
@@ -145,8 +148,17 @@ export class DownloadCenter {
     return t.forced ? null : t.own;
   }
 
-  /** "Already in your collection: Artist – Title". */
-  ownedLabel(own) { const t = own.track; return `Already in your collection: ${t.artist ? `${t.artist} – ` : ''}${t.title}`; }
+  /** "Already in your collection: Artist – Title" (or "Maybe…" with both lengths). */
+  ownedLabel(own, duration) {
+    const t = own.track; const name = `${t.artist ? `${t.artist} – ` : ''}${t.title}`;
+    return own.sure ? `Already in your collection: ${name}`
+      : `Maybe already in your collection: ${name} (same names, ${t.duration ? fmtTime(t.duration) : '?'} in the collection${duration ? ` vs ${fmtTime(duration)} here` : ''}: another edit? Checked by ear once downloaded)`;
+  }
+
+  /** The badge of a result already (or maybe) in the collection. */
+  ownedBadge(own, duration) {
+    return h(own.sure ? 'span.dlc-owned' : 'span.dlc-owned.maybe', { title: this.ownedLabel(own, duration) }, own.sure ? '✓ In collection' : '≈ Maybe in collection');
+  }
 
   /** A track into the playlist named after a list (created on first use). */
   addToNamed(id, addTo) {
@@ -243,6 +255,55 @@ export class DownloadCenter {
     }
     this.addToNamed(id, item.addTo);
     this.save({ done: { ...this.cfg.done, [item.id]: file } });
+    if (id) this.watchByEar(id);
+  }
+
+  // ---- after the download: the sound against the collection --------------------------------------
+
+  /** Check a download by ear once it is analysed (analysed now when automatic analysis is off). */
+  watchByEar(id) {
+    const t = this.app.library.get(id);
+    if (!t) return;
+    this.earWait ??= new Map();             // track waiting for its analysis → downloads to check then
+    if (t.analyzed) { this.checkByEar(id); return; }
+    this.earWait.set(id, new Set([...(this.earWait.get(id) ?? []), id]));
+    if (!this.app.library.settings.autoAnalyze) this.app.analyzeTracks([id]);
+  }
+
+  /** A track was just analysed (called by the app): the downloads that waited for it are checked. */
+  analysed(id) {
+    const owners = this.earWait?.get(id);
+    if (!owners) return;
+    this.earWait.delete(id);
+    for (const dl of owners) this.checkByEar(dl);
+  }
+
+  /**
+   * The download against the collection: its candidates (names under any reading, sound
+   * fingerprint) compared by ear. Candidates not analysed yet are analysed, then it is checked again.
+   * Duplicates go to the "Suspected duplicates" playlist.
+   */
+  async checkByEar(id) {
+    const lib = this.app.library;
+    const t = lib.get(id);
+    if (!t?.analyzed) return;
+    const { checkNewTrack } = await import('./duplicates.js');
+    const { pairs, waiting } = await checkNewTrack(this.app, t, { keywords: parseKeywords(this.cfg.cleanKeywords) });
+    this.earWait ??= new Map();
+    for (const w of waiting) this.earWait.set(w.id, new Set([...(this.earWait.get(w.id) ?? []), id]));
+    if (waiting.length) this.app.analyzeTracks(waiting.map((w) => w.id));
+    const fresh = pairs.filter((p) => !(this.earSeen ??= new Set()).has(`${p.a.id}|${p.b.id}`));
+    if (!fresh.length) return;
+    fresh.forEach((p) => this.earSeen.add(`${p.a.id}|${p.b.id}`));
+    this.earLog = (this.earLog ?? []).slice(-40);  // what was flagged and why (checks, diagnostics)
+    this.earLog.push(...fresh.map((p) => `${p.a.title} [${Math.round(p.a.duration ?? 0)}] ↔ ${p.b.title} [${Math.round(p.b.duration ?? 0)}]: ${p.verdict.kind} ${p.verdict.score} meta ${p.meta}${p.audio ? ` sound ${p.audio.score} overlap ${p.audio.overlap}` : ''}`));
+    const { SUSPECTS_SRC, SUSPECTS_NAME } = await import('./duplicates.js');
+    let pl = lib.playlists.find((n) => n.src === SUSPECTS_SRC);
+    if (!pl) { pl = lib.createNode('playlist', SUSPECTS_NAME); pl.src = SUSPECTS_SRC; }
+    const ids = [...new Set(fresh.flatMap((p) => [p.a.id, p.b.id]))].filter((x) => !pl.trackIds.includes(x));
+    if (ids.length) lib.addToPlaylist(pl.id, ids);
+    const p = fresh[0]; const twin = p.a.id === id ? p.b : p.a;
+    toast(`"${t.title}" sounds like "${twin.artist ? `${twin.artist} – ` : ''}${twin.title}" already in your collection (${p.verdict.label}). Both are in the playlist "${SUSPECTS_NAME}": right-click it > Find duplicates… to keep one.`, 12000);
   }
 
   /** Followed channels / playlists: latest uploads, newest first, with the "new" ones counted. */
@@ -374,8 +435,8 @@ export class DownloadCenter {
       } else if (job?.state === 'done' || this.isDone(item.id)) {
         action.replaceChildren(h('span.dlc-done', {}, '✓ In collection'));
       } else if (own && !job) {
-        action.replaceChildren(h('span.dlc-owned', { title: this.ownedLabel(own) }, '✓ In collection'),
-          h('button.dbtn.small', { title: `${this.ownedLabel(own)}. Download it anyway`, onclick: () => this.enqueue([item]) }, icon('download')));
+        action.replaceChildren(this.ownedBadge(own, item.duration),
+          h('button.dbtn.small', { title: `${this.ownedLabel(own, item.duration)}. Download it anyway`, onclick: () => this.enqueue([item]) }, icon('download')));
       } else {
         const get = h('button.dbtn.small.dlc-get', { onclick: () => this.enqueue([item]) }, icon('download'), ' Download');
         action.replaceChildren(...(job?.state === 'error' ? [h('span.rbi-error', { title: job.error }, 'Failed '), get] : [get]));
@@ -420,14 +481,14 @@ export class DownloadCenter {
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     const bar = h('div.dlc-bar', {}, h('span.dlc-logo.small', { innerHTML: LOGOS[p] }), input, h('button.dbtn.dlc-primary', { onclick: go }, icon('search'), ' Go'));
-    const opts = this.listOpts ??= { download: true, addToPlaylist: true };
+    const opts = this.listOpts ??= { addToPlaylist: true };
     const check = (key, label) => h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: opts[key], onchange: (e) => { opts[key] = e.target.checked; } }), ` ${label}`);
     this.rows = [];
     const parts = [bar];
     this.statusEl = h('p.dim');
     // a list read from a link (playlist, album, artist page)
     if (catalog && this.sp && (this.sp.platform ?? 'spotify') === p && !this.sp.search) {
-      parts.push(h('div.dlc-bar.dlc-filters', {}, check('download', 'Download as soon as found'), check('addToPlaylist', 'Add to a playlist named after it')));
+      parts.push(h('div.dlc-bar.dlc-filters', {}, check('addToPlaylist', 'Add to a playlist named after it')));
       parts.push(...this.catalogView(this.sp));
     } else if (catalog && this.sp && (this.sp.platform ?? 'spotify') === p && this.sp.search) {
       parts.push(h('p.dim', {}, `${PLATFORMS[p]} gives the track; its audio is found on YouTube (same title, artist and length) and downloaded with ${PLATFORMS[p]}'s title and artist.`));
@@ -435,7 +496,7 @@ export class DownloadCenter {
     } else if (!catalog && this.linkList?.platform === p) {
       const L = this.linkList;
       const pending = L.items.filter((it) => !this.isDone(it.id) && !this.jobs.has(it.id));
-      const owned = pending.map((it) => [it, this.ownedUpload(it)]).filter(([, o]) => o);
+      const owned = pending.map((it) => [it, this.ownedUpload(it)]).filter(([, o]) => o?.sure);
       const left = pending.filter((it) => !owned.some(([x]) => x === it));
       if (L.items.length > 1) {
         const addTo = () => (opts.addToPlaylist ? { name: L.name, src: `${p}:${L.url}` } : null);
@@ -486,7 +547,7 @@ export class DownloadCenter {
       if (p === 'spotify' || p === 'deezer') {
         await this.readSpotify(url);
         this.renderTab(false);
-        this.findSpotifyOnYoutube(this.listOpts ?? { download: true, addToPlaylist: true });
+        this.findSpotifyOnYoutube({ download: false, addToPlaylist: this.listOpts?.addToPlaylist !== false });
       } else {
         const r = await window.rb.dl.resolveList(url);
         this.linkList = { platform: p, url, name: r.name, items: r.items };
@@ -514,15 +575,15 @@ export class DownloadCenter {
    * Find every track of the read list on YouTube (two searches at a time) and, when asked,
    * download each one as soon as it is found.
    */
-  async findSpotifyOnYoutube({ download = true, addToPlaylist = true, search = (q) => this.ytSearch(q) } = {}) {
+  async findSpotifyOnYoutube({ download = false, addToPlaylist = true, search = (q) => this.ytSearch(q) } = {}) {
     const sp = this.sp;
     if (!sp || sp.running) return;
     sp.running = true; sp.stop = false;
     this.changed(true);
     // tracks already in the collection are not searched nor downloaded again; they join the list's playlist
     const addTo = addToPlaylist && sp.name && !sp.search ? { name: sp.name, src: sp.src } : null;
-    for (const t of sp.tracks) { const own = this.ownedCatalog(t); if (own) this.addToNamed(own.id, addTo); }
-    const todo = sp.tracks.filter((t) => (t.status === 'waiting' || t.status === 'error') && !this.ownedCatalog(t));
+    for (const t of sp.tracks) { const own = this.ownedCatalog(t); if (own?.sure) this.addToNamed(own.id, addTo); }
+    const todo = sp.tracks.filter((t) => (t.status === 'waiting' || t.status === 'error') && !this.ownedCatalog(t)?.sure);
     const worker = async () => {
       while (todo.length && !sp.stop) {
         const t = todo.shift();
@@ -533,7 +594,7 @@ export class DownloadCenter {
     sp.running = false;
     this.changed(true);
     const found = sp.tracks.filter((t) => t.match).length;
-    const owned = sp.tracks.filter((t) => this.ownedCatalog(t)).length;
+    const owned = sp.tracks.filter((t) => this.ownedCatalog(t)?.sure).length;
     if (sp.tracks.length > 1) toast(`${sp.name}: ${owned ? `${owned} already in your collection, ` : ''}${found} / ${sp.tracks.length - owned} found on YouTube${download ? ', downloading' : ''}`, 6000);
   }
 
@@ -557,9 +618,9 @@ export class DownloadCenter {
 
   /** A Spotify / Deezer list read from a link: its name, progress, download all, the tracks. */
   catalogView(sp) {
-    const opts = this.listOpts ??= { download: true, addToPlaylist: true };
+    const opts = this.listOpts ??= { addToPlaylist: true };
     const found = sp.tracks.filter((t) => t.match).length;
-    const owned = sp.tracks.filter((t) => this.ownedCatalog(t)).length;
+    const owned = sp.tracks.filter((t) => this.ownedCatalog(t)?.sure).length;
     const left = sp.tracks.filter((t) => t.match && !this.isDone(t.match.id) && !this.jobs.has(t.match.id)).length;
     return [
       h('div.dlc-bar', {},
@@ -582,9 +643,9 @@ export class DownloadCenter {
     const update = () => {
       const m = t.match;
       const own = this.ownedCatalog(t);
-      if (own) {
-        right.replaceChildren(h('span.dlc-owned', {}, '✓ In collection'), h('span.dim', {}, ` · ${own.track.artist ? `${own.track.artist} – ` : ''}${own.track.title}`));
-        action.replaceChildren(h('button.dbtn.small', { title: `${this.ownedLabel(own)}. Find it on YouTube and download it anyway`, onclick: () => { t.forced = true; this.findOne(t, list, { download: true, addToPlaylist: this.listOpts?.addToPlaylist !== false }); } }, icon('download')));
+      if (own?.sure) {
+        right.replaceChildren(this.ownedBadge(own, t.duration), h('span.dim', {}, ` · ${own.track.artist ? `${own.track.artist} – ` : ''}${own.track.title}`));
+        action.replaceChildren(h('button.dbtn.small', { title: `${this.ownedLabel(own, t.duration)}. Find it on YouTube and download it anyway`, onclick: () => { t.forced = true; this.findOne(t, list, { download: true, addToPlaylist: this.listOpts?.addToPlaylist !== false }); } }, icon('download')));
         return;
       }
       right.replaceChildren(...(t.status === 'searching' ? [h('span.dim', {}, 'Searching YouTube…')]
@@ -593,6 +654,7 @@ export class DownloadCenter {
             : m ? [t.longer ? h('span.dlc-new', { title: 'The list has the short edit: this is the longer club version of the same track' }, 'EXTENDED') : null,
               h('a.dlc-yt', { href: '#', title: m.url, onclick: (e) => { e.preventDefault(); window.rb.openExternal(m.url); } }, m.title), h('span.dim', {}, ` · ${m.channel ?? ''} · ${m.duration ? fmtTime(m.duration) : ''}`)].filter(Boolean)
               : [h('span.dim', {}, list?.search ? '' : 'Waiting')]));
+      if (own) right.prepend(this.ownedBadge(own, t.duration));
       const job = m ? this.jobs.get(m.id) : null;
       if (job && ACTIVE.has(job.state)) {
         const pct = Math.round(job.pct ?? 0);
@@ -618,7 +680,7 @@ export class DownloadCenter {
     add.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
     const fits = (it) => !c.maxMinutes || !it.duration || it.duration <= c.maxMinutes * 60;
     const items = (this.feedItems ?? []).filter((it) => fits(it) && !(this.hideDone && this.isDone(it.id)));
-    const fresh = items.filter((it) => it.isNew && !this.isDone(it.id) && !this.ownedUpload(it));
+    const fresh = items.filter((it) => it.isNew && !this.isDone(it.id) && !this.ownedUpload(it)?.sure);
     this.body.replaceChildren(
       h('div.dlc-subs', {},
         c.subs.map((s) => h('span.chip', { title: s.url }, s.name, h('button.dlc-unfollow', { title: 'Unfollow', onclick: () => { this.unfollow(s.url); this.feedItems = null; this.checkFeeds(); } }, '×'))),
