@@ -16,7 +16,7 @@ import { NvidiaEngine } from './nvidia-engine.js';
 import { ToolInstaller, TOOLS } from './tools.js';
 import { exportToDrive, listDrives } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
-import { Spotify, REDIRECT_URI } from './spotify.js';
+import { Spotify, REDIRECT_URI, isCoverUrl } from './spotify.js';
 import { Deezer } from './deezer.js';
 import { Lyrics, localLyrics } from './lyrics.js';
 import { Whisper } from './whisper.js';
@@ -262,7 +262,7 @@ function registerIpc(win) {
   });
   /** Cover from a URL (Spotify, Deezer) -> library artwork thumbnail path. */
   ipcMain.handle('artwork:fromUrl', async (_e, url) => {
-    if (!/^https:\/\/(i\.scdn\.co|cdn-images\.dzcdn\.net|e-cdns-images\.dzcdn\.net)\//.test(url)) throw new Error('unsupported artwork URL');
+    if (!isCoverUrl(url)) throw new Error('unsupported artwork URL');
     const res = await net.fetch(url);
     if (!res.ok) throw new Error(`artwork ${res.status}`);
     return saveArtwork(new Uint8Array(await res.arrayBuffer()));

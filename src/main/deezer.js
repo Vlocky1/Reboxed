@@ -47,7 +47,7 @@ export function deezerTrack(t) {
   return {
     title: t.title_short ? `${t.title_short}${version}`.trim() : t.title ?? '',
     artist: t.artist?.name ?? '', duration: t.duration ?? 0, deezerId: t.id, isrc: t.isrc ?? '',
-    album: t.album?.title ?? '', cover: t.album?.cover_medium ?? t.album?.cover_small ?? '',
+    album: t.album?.title ?? '', cover: t.album?.cover_medium ?? t.album?.cover_small ?? '', coverLarge: t.album?.cover_xl ?? t.album?.cover_big ?? t.album?.cover_medium ?? '',
   };
 }
 

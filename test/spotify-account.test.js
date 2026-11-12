@@ -3,7 +3,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { Spotify, pkcePair, authorizeUrl, itemTrack, waitForCode, REDIRECT_URI } from '../src/main/spotify.js';
+import { Spotify, pkcePair, authorizeUrl, itemTrack, waitForCode, REDIRECT_URI, covers, isCoverUrl } from '../src/main/spotify.js';
+
+test('covers: a small one (≥ 64 px) for lists, the largest for the collection; hosts allowed', () => {
+  const imgs = [{ url: 'L', width: 640, height: 640 }, { url: 'M', width: 300, height: 300 }, { url: 'S', width: 64, height: 64 }];
+  assert.deepEqual(covers(imgs), { cover: 'S', coverLarge: 'L' });
+  assert.deepEqual(covers([{ url: 'L', width: 640 }, { url: 'T', width: 32 }]), { cover: 'L', coverLarge: 'L' }, 'nothing under 64 px is used in lists');
+  assert.deepEqual(covers([{ url: 'A', width: null }, { url: 'B', width: null }]), { cover: 'B', coverLarge: 'A' }, 'no widths: Spotify order (largest first)');
+  assert.deepEqual(covers([]), { cover: '', coverLarge: '' });
+  assert.deepEqual(covers(undefined), { cover: '', coverLarge: '' });
+  for (const ok of ['https://i.scdn.co/image/ab67616d0000b273', 'https://mosaic.scdn.co/640/ab67', 'https://image-cdn-ak.spotifycdn.com/image/ab67', 'https://image-cdn-fa.spotifycdn.com/image/x', 'https://cdn-images.dzcdn.net/images/cover/x/500x500.jpg']) assert.ok(isCoverUrl(ok), ok);
+  for (const no of ['http://i.scdn.co/image/x', 'https://evil.example/i.scdn.co/x', 'https://i.scdn.co.evil.example/x', 'file:///C:/x.jpg']) assert.ok(!isCoverUrl(no), no);
+});
 
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) });
 const tr = (n) => ({ name: `Track ${n}`, id: `id${n}`, duration_ms: 200000 + n, artists: [{ name: 'Artist' }], album: { images: [{ url: 'big' }, { url: 'small' }] } });
