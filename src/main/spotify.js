@@ -97,11 +97,26 @@ export function authorizeUrl({ clientId, challenge, state, redirectUri = REDIREC
   return `https://accounts.spotify.com/authorize?${q}`;
 }
 
+/** A cover the app may fetch: Spotify (i.scdn.co, mosaic.scdn.co, image-cdn-*.spotifycdn.com) or Deezer images. */
+export const isCoverUrl = (url) => /^https:\/\/([a-z0-9-]+\.scdn\.co|[a-z0-9-]+\.spotifycdn\.com|cdn-images\.dzcdn\.net|e-cdns-images\.dzcdn\.net)\//.test(String(url ?? ''));
+
+/**
+ * An album's images -> {cover, coverLarge}: the smallest at least 64 px wide (lists), the largest
+ * (the collection's artwork). Spotify lists them largest first; widths may be missing (null).
+ */
+export function covers(images) {
+  const list = (images ?? []).filter((i) => i?.url);
+  if (!list.length) return { cover: '', coverLarge: '' };
+  const sized = list.filter((i) => i.width > 0).sort((a, b) => a.width - b.width);
+  if (!sized.length) return { cover: list.at(-1).url, coverLarge: list[0].url };
+  return { cover: (sized.find((i) => i.width >= 64) ?? sized.at(-1)).url, coverLarge: sized.at(-1).url };
+}
+
 /** One playlist entry -> track fields (2026 playlist items carry `item`, older ones `track`). */
 export function itemTrack(it) {
   const tr = it?.item ?? it?.track ?? it;
   if (!tr?.name || tr.is_local || tr.type === 'episode') return null;
-  return { title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000, spotifyId: tr.id ?? '', isrc: tr.external_ids?.isrc ?? '', cover: tr.album?.images?.at(-1)?.url ?? '' };
+  return { title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000, spotifyId: tr.id ?? '', isrc: tr.external_ids?.isrc ?? '', album: tr.album?.name ?? '', ...covers(tr.album?.images) };
 }
 
 /**
@@ -287,7 +302,7 @@ export class Spotify {
       if (useApi) {
         try {
           const tr = await this.get(`/tracks/${link.id}`);
-          const t = { title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000, spotifyId: tr.id, isrc: tr.external_ids?.isrc ?? '', cover: tr.album?.images?.at(-1)?.url ?? '' };
+          const t = { title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000, spotifyId: tr.id, isrc: tr.external_ids?.isrc ?? '', ...covers(tr.album?.images) };
           return { kind: 'track', name: `${t.artist} - ${t.title}`, tracks: [t], via: 'api' };
         } catch (err) {
           if (/not set up|refused/.test(err.message) === false && !/40[34]/.test(err.message)) throw err;
@@ -313,7 +328,7 @@ export class Spotify {
           for (const it of page.items ?? []) {
             const tr = it.track ?? it; // playlist items wrap the track, album items are the track
             if (!tr?.name || tr.is_local || tr.type === 'episode') continue;
-            tracks.push({ title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000, spotifyId: tr.id ?? '', isrc: tr.external_ids?.isrc ?? '' });
+            tracks.push({ title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000, spotifyId: tr.id ?? '', isrc: tr.external_ids?.isrc ?? '', album: tr.album?.name ?? '', ...covers(tr.album?.images) });
           }
           next = page.next;
         }
@@ -332,7 +347,7 @@ export class Spotify {
     const r = await this.get(`/search?type=track&limit=10&q=${encodeURIComponent(String(q ?? '').slice(0, 200))}`);
     return (r.tracks?.items ?? []).map((tr) => ({
       title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000,
-      spotifyId: tr.id, isrc: tr.external_ids?.isrc ?? '', album: tr.album?.name ?? '', cover: tr.album?.images?.at(-1)?.url ?? '',
+      spotifyId: tr.id, isrc: tr.external_ids?.isrc ?? '', album: tr.album?.name ?? '', ...covers(tr.album?.images),
     }));
   }
 

@@ -39,6 +39,10 @@ const INTRO = {
   deezer: 'Deezer gives the tracks (search, track, album or playlist link; no account needed). Each one is found on YouTube (same title, artist and length), then downloaded with Deezer\'s title and artist.',
 };
 const cleanErr = (err) => String(err?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+/** A square cover: the image, or an empty square when there is none or it does not load (rows stay aligned). */
+const coverThumb = (src) => (src
+  ? h('img.dlc-thumb.sq', { src, loading: 'lazy', alt: '', onerror: (e) => e.target.replaceWith(h('div.dlc-thumb.sq.none')) })
+  : h('div.dlc-thumb.sq.none'));
 // Download sizes of the tools (MB, see src/main/tools.js), shown on the install button.
 const TOOL_MB = { 'yt-dlp': 17, ffmpeg: 87, deno: 41 };
 
@@ -249,6 +253,8 @@ export class DownloadCenter {
     }
     // From a Spotify playlist: Spotify's clean title and artist rather than the video's.
     if (id && item.meta) lib.update(id, item.meta);
+    // from Spotify / Deezer: the album cover rather than the video's thumbnail
+    if (id && item.cover) window.rb.artworkFromUrl(item.cover).then((a) => { if (a && lib.get(id)) lib.update(id, { artwork: a }); }).catch(() => { /* keep the embedded cover */ });
     if (id && this.cfg.playlist) {
       let pl = lib.playlists.find((n) => n.src === 'downloads');
       if (!pl) { pl = lib.createNode('playlist', 'Downloads'); pl.src = 'downloads'; }
@@ -677,7 +683,7 @@ export class DownloadCenter {
 
   enqueueSpotify(t, addToPlaylist = true, list = this.sp) {
     if (!t.match || this.isDone(t.match.id)) return;
-    this.enqueue([{ ...t.match, meta: { title: t.title, artist: t.artist }, addTo: addToPlaylist && list?.name && (!list.search || list.followed) ? { name: list.name, src: list.src } : null }]);
+    this.enqueue([{ ...t.match, meta: { title: t.title, artist: t.artist }, cover: t.coverLarge || t.cover || '', addTo: addToPlaylist && list?.name && (!list.search || list.followed) ? { name: list.name, src: list.src } : null }]);
   }
 
   /** A Spotify / Deezer list read from a link: its name, progress, download all, the tracks. */
@@ -717,7 +723,7 @@ export class DownloadCenter {
       h('div.dlc-bar', {}, h('span.dlc-logo.small', { innerHTML: LOGOS.spotify }), h('b', {}, 'My Spotify playlists'), h('span.dim', {}, ` ${this.myPls.length}`), h('span.spacer'),
         h('button.dbtn.small', { onclick: () => { this.showMyPls = false; this.renderTab(false); } }, 'Close')),
       h('div.dlc-list', {}, this.myPls.map((p) => h('div.dlc-row', {},
-        p.cover ? h('img.dlc-thumb.sq', { src: p.cover, loading: 'lazy', alt: '' }) : h('div.dlc-thumb.sq'),
+        coverThumb(p.cover),
         h('div.dlc-info', {}, h('div.dlc-title', { title: p.name }, p.name), h('div.dlc-sub', {}, `${p.total} track${p.total > 1 ? 's' : ''}${p.owner ? ` · ${p.owner}` : ''}`)),
         h('div.dlc-action', {},
           this.isFollowedList(p.url) ? h('span.dlc-owned', { title: 'Followed: new tracks show in New releases' }, '★') : null,
@@ -759,7 +765,7 @@ export class DownloadCenter {
     update();
     this.rows.push(update);
     return h('div.dlc-row.dlc-sprow', {},
-      t.cover ? h('img.dlc-thumb.sq', { src: t.cover, loading: 'lazy', alt: '' }) : null,
+      coverThumb(t.cover),
       h('div.dlc-info', {}, h('div.dlc-title', { title: t.title }, t.title), h('div.dlc-sub', {}, t.artist, t.duration ? ` · ${fmtTime(t.duration)}` : '', t.album ? ` · ${t.album}` : '')),
       h('div.dlc-arrow', {}, '→'),
       right, action);

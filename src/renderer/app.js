@@ -2829,7 +2829,8 @@ async function smoke(app) {
       }
       // 1.28: a followed Spotify playlist: a track added to it later shows in New releases, once
       {
-        const t1 = { title: 'Follow One', artist: 'Smoke Lister', duration: 201, spotifyId: 'F1' };
+        // covers: one that does not load (undecodable), one missing: both rows still get a square
+        const t1 = { title: 'Follow One', artist: 'Smoke Lister', duration: 201, spotifyId: 'F1', cover: 'data:image/png;base64,AAAA' };
         const t2 = { title: 'Follow Two', artist: 'Smoke Lister', duration: 202, spotifyId: 'F2' };
         const t3 = { title: 'Follow Three', artist: 'Smoke Lister', duration: 203, spotifyId: 'F3' };
         const url = 'https://open.spotify.com/playlist/SMOKEFOLLOW0000000001';
@@ -2843,6 +2844,10 @@ async function smoke(app) {
         dlc.renderTab(false);
         await wait(150);
         const accountBar = document.querySelector('.dlc-account')?.textContent ?? '';
+        await wait(200);
+        const thumbs = [...document.querySelectorAll('.dlc-sprow')].map((r) => (r.querySelector('img.dlc-thumb') ? (r.querySelector('img.dlc-thumb').naturalWidth ? 'img' : 'broken') : r.querySelector('.dlc-thumb.none') ? 'none' : 'missing'));
+        const csp = document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? '';
+        const spotifyImages = /img-src[^;]*\*\.scdn\.co/.test(csp) && /img-src[^;]*\*\.spotifycdn\.com/.test(csp);
         document.querySelector('.dlc-star')?.click();
         const followed = dlc.isFollowedList(url);
         const star = document.querySelector('.dlc-star')?.textContent ?? '';
@@ -2864,9 +2869,10 @@ async function smoke(app) {
         dlc.save(before);
         dlc.listNews = []; dlc.newCount = 0; dlc.sp = null;
         dlc.setSource('youtube', false);
-        step('followed Spotify playlist: a track added later shows in New releases, once; account hint without sign-in',
-          followed && /Following/.test(star) && quiet === 0 && news.join() === 'Follow Three' && count === 1 && shown.includes('Follow Three') && chip && after === 0 && /Connect my Spotify account/.test(accountBar),
-          `followed ${followed} (${star}) · first check ${quiet} new · after adding: ${news.join()} (${count}) · shown ${shown.join()} · after "seen" ${after} · account bar "${accountBar}"`);
+        step('followed Spotify playlist: a track added later shows in New releases, once; account hint without sign-in; covers allowed, a missing or broken one leaves a square',
+          followed && /Following/.test(star) && quiet === 0 && news.join() === 'Follow Three' && count === 1 && shown.includes('Follow Three') && chip && after === 0 && /Connect my Spotify account/.test(accountBar)
+            && thumbs.join() === 'none,none' && spotifyImages,
+          `followed ${followed} (${star}) · first check ${quiet} new · after adding: ${news.join()} (${count}) · shown ${shown.join()} · after "seen" ${after} · account bar "${accountBar}" · covers ${thumbs.join()} · Spotify images allowed ${spotifyImages}`);
       }
       const tools = await dlc.tools();
       if (tools.ytdlp && (await window.rb.smokeDlTest())) {
