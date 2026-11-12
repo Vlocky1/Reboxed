@@ -7,7 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { parseFile } from 'music-metadata';
-import { bestLyrics, embeddedLyrics, mainArtist, splitArtistTitle, titleVariants, toLrc, vttToLines } from '../shared/lrc.js';
+import { bestLyrics, descriptionLyrics, embeddedLyrics, mainArtist, splitArtistTitle, titleVariants, toLrc, vttToLines } from '../shared/lrc.js';
 
 const API = 'https://lrclib.net/api';
 const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -59,14 +59,19 @@ export class Lyrics {
       if (hit) return hit;
     }
     // d. subtitles written for a YouTube video of the song
+    let ytText = null;
     if (youtube) {
       const yt = await this.fromYoutube(split && !track.artist ? { ...track, ...split } : track).catch(() => null);
-      if (yt) return yt;
+      if (yt?.synced) return yt;
+      ytText = yt;                                                   // lyrics from a video description (text only)
     }
-    return plain ? shape(plain) : null;
+    return plain ? shape(plain) : ytText;
   }
 
-  /** The uploader's own subtitles of a matching YouTube video (lyric / music videos), as synced lyrics. */
+  /**
+   * A matching YouTube video (lyric / music videos): the uploader's own subtitles as synced lyrics,
+   * else the lyrics written in its description (text only: the AI sync can time them).
+   */
   async fromYoutube(track) {
     const dl = this.youtube();
     if (!dl || !(await dl.tools()).ytdlp) return null;
@@ -78,8 +83,14 @@ export class Lyrics {
       const name = norm(`${it.title} ${it.channel ?? ''}`);
       return name.includes(want) && (!wantArtist || name.includes(wantArtist)) && (!track.duration || !it.duration || Math.abs(it.duration - track.duration) < 150);
     }).slice(0, 2);                                                  // each video takes yt-dlp ~10-15 s to open
+    let fromDescription = null;
     for (const it of candidates) {
       const info = await dl.json(it.url, ['--skip-download']).catch(() => null);
+      const desc = descriptionLyrics(info?.description);
+      if (desc && !fromDescription) {
+        fromDescription = { source: 'YouTube description', id: info.id ?? it.id, synced: null, plain: desc, instrumental: false,
+          artist: info.uploader ?? it.channel ?? '', title: info.title ?? it.title ?? '', album: '', duration: info.duration ?? it.duration ?? 0, url: info.webpage_url ?? it.url };
+      }
       const subs = info?.subtitles ?? {};                            // uploader subtitles only (not automatic_captions)
       const langs = Object.keys(subs).filter((l) => l !== 'live_chat');
       const lang = ['en', 'fr', 'es', 'de', 'it', 'pt'].find((l) => langs.includes(l)) ?? langs.find((l) => !l.includes('-')) ?? langs[0];
@@ -94,7 +105,7 @@ export class Lyrics {
         artist: info.uploader ?? it.channel ?? '', title: info.title ?? it.title ?? '', album: '', duration: info.duration ?? it.duration ?? 0, url: info.webpage_url ?? it.url,
       };
     }
-    return null;
+    return fromDescription;
   }
 
   /** Free search for the manual picker: every LRCLIB result, synced or not. */

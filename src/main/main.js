@@ -19,6 +19,7 @@ import { PluginStore } from './plugins.js';
 import { Spotify } from './spotify.js';
 import { Deezer } from './deezer.js';
 import { Lyrics, localLyrics } from './lyrics.js';
+import { Whisper } from './whisper.js';
 import { MetadataLookup } from './metadata.js';
 import { Updater } from './updater.js';
 import { LicenseManager } from './license.js';
@@ -199,6 +200,16 @@ function registerIpc(win) {
     if (typeof o.fullscreen === 'boolean') lw.setFullScreen(o.fullscreen);
     return { onTop: lw.isAlwaysOnTop(), fullscreen: lw.isFullScreen() };
   });
+  // AI lyrics sync: speech recognition on this computer (whisper.cpp), installed on request.
+  const whisper = new Whisper({ dir: join(appDir, 'whisper'), fetch: (url, o) => net.fetch(url, o), version: app.getVersion(),
+    send: (ch, ...args) => { if (!win.isDestroyed()) win.webContents.send(ch, ...args); } });
+  ipcMain.handle('whisper:status', () => whisper.status());
+  ipcMain.handle('whisper:install', (_e, model) => whisper.install(model === 'small' ? 'small' : 'base'));
+  ipcMain.handle('whisper:transcribe', (_e, samples, o = {}) => {
+    if (!(samples instanceof Float32Array) || samples.length > 16000 * 60 * 20) throw new Error('audio missing or longer than 20 minutes');
+    return whisper.transcribe(samples, { model: o.model === 'small' ? 'small' : 'base', language: String(o.language ?? 'auto'), prompt: String(o.prompt ?? '') });
+  });
+  ipcMain.handle('whisper:cancel', () => whisper.cancel());
   ipcMain.handle('discogs:status', () => ({ hasToken: !!storage.cfg.discogs?.token }));
   ipcMain.handle('discogs:setToken', async (_e, token) => {
     if (token) await genres.checkDiscogs(token); // refused tokens are not saved

@@ -2,7 +2,7 @@
 // and the LRCLIB lookup itself with a stand-in fetch.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bestLyrics, embeddedLyrics, formatStamp, lineAt, lineProgress, mainArtist, parseLrc, plainLines, splitArtistTitle, titleVariants, toLrc, vttToLines } from '../src/shared/lrc.js';
+import { descriptionLyrics, bestLyrics, embeddedLyrics, formatStamp, lineAt, lineProgress, mainArtist, parseLrc, plainLines, splitArtistTitle, titleVariants, toLrc, vttToLines } from '../src/shared/lrc.js';
 import { Lyrics } from '../src/main/lyrics.js';
 
 test('parseLrc: stamps, several stamps per line, word stamps, tags, offset', () => {
@@ -87,6 +87,15 @@ test('embeddedLyrics: synced tag (ms) → LRC, LRC text in a plain tag stays LRC
   assert.equal(embeddedLyrics([]), null);
   assert.deepEqual(splitArtistTitle('Nova Drift - Afterglow (Lyrics)'), { artist: 'Nova Drift', title: 'Afterglow (Lyrics)' });
   assert.equal(splitArtistTitle('Afterglow'), null);
+});
+
+test('descriptionLyrics: the lyrics in a video description, without links and credits', () => {
+  const verse = ['Feeling my way through the darkness', 'Guided by a beating heart', 'I can\'t tell where the journey will end', 'But I know where to start'];
+  const desc = ['Official lyric video', 'Stream: https://example.com/stream', 'Follow on Instagram @artist', '', 'Lyrics:', ...verse, '', ...verse, '', 'Produced by Someone', '© 2026 Label'].join('\n');
+  assert.equal(descriptionLyrics(desc), [...verse, ...verse].join('\n'));
+  // no heading: the longest clean run
+  assert.equal(descriptionLyrics(['Out now everywhere', 'https://x.y', '', ...verse, '', ...verse, '#music #edm'].join('\n')), [...verse, ...verse].join('\n'));
+  assert.equal(descriptionLyrics('Official video\nhttps://x.y\nThanks for watching'), null);
 });
 
 test('Lyrics.find: the title alone within 3 s, then YouTube uploader subtitles, plain lyrics kept as a last answer', async () => {
