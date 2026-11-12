@@ -73,6 +73,30 @@ automatically; a plugin makes it work anywhere and lets you tune it.
 | `tempoInvert` | no | `true` when the pitch fader's value grows toward the top (Numark): top = slower, like the others. |
 | `padModeCycle` | no | Pages a single PAD MODE button (`PadModeSelect`) steps through, e.g. `["HOT CUE", "BEAT LOOP", "SAMPLER", "STEMS"]`. |
 | `padsSetMode` | no | `true` when the pads send one note per mode without mode messages: pressing a `PADn_PadModeM` pad opens its page. |
+| `mods` | no | Optional changes the user turns on in Preferences ▸ Mods / Plugins (see below). |
+
+### Mods
+
+A mod changes what part of a controller does, without a second plugin. Each one is turned on or off per controller in Preferences ▸ Mods / Plugins, and it applies at once.
+
+```json
+"mods": [{
+  "id": "stems",
+  "name": "Stems on the pads + EQ part isolator",
+  "description": "What it changes, in one or two sentences (shown under its switch).",
+  "default": false,
+  "rename": { "PadFx1": "Stems", "PAD*_PadFx1": "PAD*_Stems", "JumpToTrackStart": "PartIsolator" },
+  "features": ["eqPartIsolator"]
+}]
+```
+
+| Field | What it does |
+|---|---|
+| `rename` | Input function name → the function it does with the mod (`*` stands for a number, e.g. a pad). The LEDs follow: the new function's state lights the physical button, and the button's old function no longer lights it. |
+| `features` | Named behaviours. `eqPartIsolator`: while PART ISOLATOR is on (e.g. a renamed button sending `PartIsolator`), the `EQHigh` / `EQMid` / `EQLow` knobs control the parts (HI vocal, MID inst + bass, LOW drums) instead of the EQ; the parts start where the knobs are, and the EQ comes back to them when it is turned off. For controllers whose EQ knobs always send the same messages. |
+| `default` | `true`: on until the user turns it off. |
+
+Useful targets: `Stems` (opens the STEMS pads), `PADn_Stems` (pads 1-4 mute / unmute vocal, inst, bass, drums; 5-8 Beat FX on that part only), `PartIsolator`, and any function the driver knows.
 
 ## mapping.json
 

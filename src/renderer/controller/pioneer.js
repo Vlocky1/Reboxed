@@ -45,6 +45,13 @@ const ALIAS = {
   ActivePartButtonDrums: 'ActivePartDrums', ActivePartButtonVocal: 'ActivePartVocal', ActivePartButtonInst: 'ActivePartInst',
   SampleScratch: 'Sampler', // DDJ-FLX6 SAMPLE SCRATCH mode: the sampler pads
 };
+/** A mod rename rule: "PAD*_PadFx1" → "PAD*_Stems" ("*" = a number). Returns the new name, or null. */
+function pattern(from, to) {
+  if (!from.includes('*')) return (name) => (name === from ? to : null);
+  const re = new RegExp(`^${from.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace('*', '(\\d+)')}$`);
+  return (name) => { const m = re.exec(name); return m ? to.replace('*', m[1]) : null; };
+}
+
 /** One Beat FX unit in Reboxed: FX2 controls drive it too; Parameter2 = Parameter1 pages. */
 export function normalizeFunction(name) {
   if (ALIAS[name]) return ALIAS[name];
@@ -89,6 +96,44 @@ export class PioneerController {
 
   get engine() { return this.app.engine; }
   deck(i) { return this.engine.decks[i]; }
+
+  // ---- mods (Preferences ▸ Mods / Plugins): plugin.json "mods", turned on per plugin -------------
+  //   rename:   {"PadFx1": "Stems", "PAD*_PadFx1": "PAD*_Stems"}: a control does another function
+  //             ("*" = a number); its LEDs follow (the function's state lights the physical button).
+  //   features: named behaviours, e.g. "eqPartIsolator": while PART ISOLATOR is on, the EQ knobs
+  //             control the parts (for controllers whose EQ knobs never change their messages).
+
+  /** Rebuild the mod tables when the mods turned on changed (cheap check, every event / LED pass). */
+  syncMods() {
+    const list = this.app.plugins?.enabledMods?.(this.plugin);
+    const mods = Array.isArray(list) ? list : [];
+    const key = mods.map((m) => m.id).join('|');
+    if (key === this.modKey) return;
+    this.modKey = key;
+    this.renameIn = []; this.renameOut = []; this.renamedAway = [];
+    this.features = new Set();
+    for (const m of mods) {
+      for (const [from, to] of Object.entries(m.rename ?? {})) {
+        this.renameIn.push(pattern(from, to));
+        this.renameOut.push(pattern(to, from));
+        this.renamedAway.push(pattern(from, from));
+      }
+      for (const f of m.features ?? []) this.features.add(f);
+    }
+  }
+
+  /** Input name after the mods. */
+  modIn(name) {
+    for (const r of this.renameIn ?? []) { const x = r(name); if (x) return x; }
+    return name;
+  }
+
+  /** LED output through the mods: a renamed function lights its physical button; the button's own function no longer does. */
+  out(name, deck, v, force) {
+    for (const r of this.renameOut ?? []) { const x = r(name); if (x) return this.core.output(x, deck, v, force); }
+    if ((this.renamedAway ?? []).some((r) => r(name))) return undefined;
+    return this.core.output(name, deck, v, force);
+  }
   ctl(id) { return this.app.mixer.controls.get(id); }
 
   receive(bytes) {
@@ -106,7 +151,8 @@ export class PioneerController {
 
   dispatch(ev) {
     const { press } = ev;
-    const name = normalizeFunction(ev.name);
+    this.syncMods();
+    const name = normalizeFunction(this.modIn(ev.name));
     if (IGNORED.test(name)) return;
     const missing = UNSUPPORTED.find(([re]) => re.test(name));
     if (missing) { if (press && !this.warned.has(missing[1])) { this.warned.add(missing[1]); toast(`${missing[1]}: not available in Reboxed`, 2500); } return; }
@@ -119,7 +165,7 @@ export class PioneerController {
     const fx = this.engine.fx;
 
     // Pads: PADn_<Mode>[+Shift]
-    const pad = /^PAD(\d+)_(HotCue|BeatJump|Sampler|Keyboard|PadFx1|PadFx2|BeatLoop|KeyShift|Slicer|MemoryCue)(\+Shift)?$/.exec(name);
+    const pad = /^PAD(\d+)_(HotCue|BeatJump|Sampler|Keyboard|PadFx1|PadFx2|BeatLoop|KeyShift|Slicer|MemoryCue|Stems)(\+Shift)?$/.exec(name);
     if (pad && d) { this.padEvent(i, Number(pad[1]), pad[2], !!pad[3], press); return; }
     // Generic pads: PADn_PadModeM, their meaning comes from the plugin's padModes.
     const gpad = /^PAD(\d+)_PadMode(\d)(\+Shift)?$/.exec(name);
@@ -312,11 +358,27 @@ export class PioneerController {
       case 'ChannelFader': this.ctl(`ch${i + 1}.fader`)?.apply(ev.value01); break;
       case 'Gain': this.ctl(`ch${i + 1}.trim`)?.apply(ev.value01); break;
       // EQ knobs share the on-screen curve: centre detent = 0 dB, left = kill, right = +6 dB.
-      case 'EQHigh': this.ctl(`ch${i + 1}.hi`)?.apply(ev.value01); break;
-      case 'EQMid': this.ctl(`ch${i + 1}.mid`)?.apply(ev.value01); break;
-      case 'EQLow': this.ctl(`ch${i + 1}.low`)?.apply(ev.value01); break;
+      case 'EQHigh': case 'EQMid': case 'EQLow': {
+        const band = { EQHigh: 0, EQMid: 1, EQLow: 2 }[name];
+        (s.eqKnobs ??= [0.5, 0.5, 0.5])[band] = ev.value01;
+        // mod "eqPartIsolator": while PART ISOLATOR is on, the same knobs control the parts
+        if (this.features?.has('eqPartIsolator') && d?.partIso) { d.setIsoKnob(band, ev.value01); break; }
+        this.ctl(`ch${i + 1}.${['hi', 'mid', 'low'][band]}`)?.apply(ev.value01);
+        break;
+      }
       case 'HeadphoneCue': if (press) this.ctl(`ch${i + 1}.cue`)?.apply(); break;
-      case 'PartIsolator': if (press) { d.setPartIso(!d.partIso); if (d.partIso) this.requireStems(d); } break;
+      case 'PartIsolator': if (press) {
+        const on = !d.partIso;
+        if (this.features?.has('eqPartIsolator')) {
+          // the knobs keep their place: the parts start where the knobs are, the EQ comes back to them
+          const k = s.eqKnobs ?? [0.5, 0.5, 0.5];
+          if (on) d.isoKnobs = [...k];
+          else ['hi', 'mid', 'low'].forEach((b, j) => this.ctl(`ch${i + 1}.${b}`)?.apply(k[j]));
+          toast(on ? `Deck ${i + 1}: EQ knobs → stems (HI vocal · MID inst + bass · LOW drums)` : `Deck ${i + 1}: EQ knobs → EQ`, 2200);
+        }
+        d.setPartIso(on);
+        if (on) this.requireStems(d);
+      } break;
       case 'MasterCue': if (press) { this.masterCue = !this.masterCue; this.engine.setPhonesMix(this.masterCue ? 1 : 0); } break;
       case 'CFXOn': if (press) this.toggleCfx(); break;
       case 'CFXSelect': if (press) this.cycleCfx(); break;
@@ -442,7 +504,13 @@ export class PioneerController {
       case 'PadFx1': this.padFx(i, slot, press); break; // PAD9..16 arrive as PADn (shift layer)
       case 'PadFx2': this.padFx(i, (slot + 8) % 16, press); break; // second PAD FX bank
       case 'BeatLoopPads': if (press) d.beatLoop(padValue('BEAT LOOP', this.page(i), slot)); break; // pads 1-8: 1/4 .. 32 beats (page 2: 4 .. 512)
-      case 'Stems': if (press && slot < 4 && this.requireStems(d)) { const stem = [3, 2, 1, 0][slot]; d.setStemOn(stem, d.stemGains[stem] === 0); } break;
+      // STEMS pads, like the screen: 1-4 ACTIVE PART (mute / unmute), 5-8 FX PART SELECT (Beat FX on that
+      // part only); left to right vocal, inst, bass, drums (the 8 stem buttons of a DDJ-GRV6).
+      case 'Stems': if (press && this.requireStems(d)) {
+        const stem = [3, 2, 1, 0][slot % 4];
+        // PAD9..16 (the SHIFT layer of some controllers) do the same as 1..8
+        if (slot % 8 < 4) d.setStemOn(stem, d.stemGains[stem] === 0); else d.setFxPart(stem, !d.fxParts?.[stem]);
+      } break;
       case 'Slicer': if (press) d.slicerDown(slot); else d.slicerUp(); break;
       case 'MemoryCue': if (press) { if (shift) d.deleteMemoryCue(slot); else d.callMemorySlot(slot); } break;
       default: break;
@@ -547,7 +615,8 @@ export class PioneerController {
     const now = performance.now();
     if (!force && now - this.lastLed < 33) return;
     this.lastLed = now;
-    const o = (name, deck, v) => this.core.output(name, deck, v, force);
+    this.syncMods();
+    const o = (name, deck, v) => this.out(name, deck, v, force);
     const levels = this.engine.levels();
     const app = this.app;
     this.engine.decks.forEach((d, i) => {
@@ -601,9 +670,11 @@ export class PioneerController {
   padLeds(i, force = false) {
     const d = this.deck(i);
     const s = this.decks[i];
-    const o = (name, v) => this.core.output(name, i, v, force);
+    const o = (name, v) => this.out(name, i, v, force);
     for (let n = 1; n <= 8; n++) {
       const slot = n - 1;
+      const stem = [3, 2, 1, 0][slot % 4];
+      o(`PAD${n}_Stems`, slot < 4 ? d.stemsReady && d.stemGains[stem] > 0 : !!d.fxParts?.[stem]);
       o(`PAD${n}_HotCue`, !!d.hotCue(slot));
       o(`PAD${n}_HotCue+Shift`, !!d.hotCue(slot));
       o(`PAD${n}_BeatJump`, d.loaded);

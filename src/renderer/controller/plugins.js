@@ -27,6 +27,28 @@ export class PluginRegistry {
     this.library.setSetting('pluginsDisabled', on ? rest : [...rest, id]);
   }
 
+  // ---- mods: optional changes a controller plugin offers (plugin.json "mods"), on / off per plugin ----
+
+  /** The mods a plugin offers. */
+  modsOf(p) { return Array.isArray(p?.mods) ? p.mods.filter((m) => m && m.id) : []; }
+
+  /** Ids of the mods turned on for a plugin (a mod marked "default": true is on until turned off). */
+  enabledModIds(p) {
+    const saved = this.library.settings.pluginMods?.[p?.id];
+    return Array.isArray(saved) ? saved : this.modsOf(p).filter((m) => m.default).map((m) => m.id);
+  }
+
+  /** The mods turned on for a plugin (their definitions). */
+  enabledMods(p) {
+    const on = new Set(this.enabledModIds(p));
+    return this.modsOf(p).filter((m) => on.has(m.id));
+  }
+
+  setModEnabled(p, modId, on) {
+    const rest = this.enabledModIds(p).filter((x) => x !== modId);
+    this.library.setSetting('pluginMods', { ...(this.library.settings.pluginMods ?? {}), [p.id]: on ? [...rest, modId] : rest });
+  }
+
   /** Problem that keeps a plugin from loading, or null. */
   problem(p) {
     if (p.error) return p.error;

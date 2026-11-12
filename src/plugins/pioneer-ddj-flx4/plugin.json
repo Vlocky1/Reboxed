@@ -1,7 +1,7 @@
 {
   "id": "pioneer-ddj-flx4",
   "name": "Pioneer DDJ-FLX4",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "Reboxed",
   "kind": "controller",
   "description": "2-deck controller, from the manufacturer's MIDI mapping: 8 pad modes, CALL < > that halve / double a playing loop (like the DDJ-GRV6), SHIFT + CALL for MEMORY / DELETE, SHIFT + jog search. Every mapped control is handled; not yet tried on the hardware: report problems with the MIDI monitor (Preferences > MIDI).",
@@ -10,5 +10,18 @@
   ],
   "driver": "pioneer",
   "mapping": "mapping.json",
-  "decks": 2
+  "decks": 2,
+  "mods": [
+    {
+      "id": "stems",
+      "name": "Stems on the pads + EQ part isolator",
+      "description": "PAD FX becomes STEMS: top row = mute / unmute the vocal, inst, bass and drums parts, bottom row = Beat FX on that part only (the 8 stem buttons of a DDJ-GRV6). SHIFT + CUE switches the deck's EQ knobs to the parts (HI vocal, MID inst + bass, LOW drums) and back. Pad effects stay on SHIFT + PAD FX; jump to the track start is no longer on SHIFT + CUE.",
+      "rename": {
+        "PadFx1": "Stems",
+        "PAD*_PadFx1": "PAD*_Stems",
+        "JumpToTrackStart": "PartIsolator"
+      },
+      "features": ["eqPartIsolator"]
+    }
+  ]
 }
