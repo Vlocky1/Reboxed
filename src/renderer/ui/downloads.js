@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS } from '../library.js';
 import { cleanTrackName, parseKeywords } from '../../shared/clean-name.js';
 import { findOnYoutube } from '../../shared/yt-match.js';
 import { matchLostDownloads } from '../../shared/dl-recover.js';
+import { CollectionIndex } from '../../shared/in-collection.js';
 
 const FORMAT_NAMES = { m4a: 'M4A', mp3: 'MP3 320', flac: 'FLAC', wav: 'WAV' };
 const PLATFORMS = { youtube: 'YouTube', soundcloud: 'SoundCloud', spotify: 'Spotify', deezer: 'Deezer' };
@@ -125,6 +126,37 @@ export class DownloadCenter {
 
   isDone(id) { return !!this.cfg.done[id]; }
 
+  /** The collection, as compared with what is offered for download (rebuilt after any change). */
+  get collection() {
+    const lib = this.app.library;
+    if (!this.colWatch) { this.colWatch = true; lib.addEventListener?.('change', () => { this.colIndex = null; }); }
+    return (this.colIndex ??= new CollectionIndex(lib.all()));
+  }
+
+  /** The collection track a video / upload already is (null when it is not there, or was downloaded from here). */
+  ownedUpload(item) {
+    if (!item?.title || this.isDone(item.id)) return null;
+    return this.collection.find({ title: item.title, artist: item.channel, duration: item.duration }, { fromUpload: true });
+  }
+
+  /** The collection track a Spotify / Deezer track already is (kept on the track). */
+  ownedCatalog(t) {
+    if (t.own === undefined) t.own = this.collection.find({ title: t.title, artist: t.artist, duration: t.duration, mixName: t.mixName }) ?? null;
+    return t.forced ? null : t.own;
+  }
+
+  /** "Already in your collection: Artist – Title". */
+  ownedLabel(own) { const t = own.track; return `Already in your collection: ${t.artist ? `${t.artist} – ` : ''}${t.title}`; }
+
+  /** A track into the playlist named after a list (created on first use). */
+  addToNamed(id, addTo) {
+    if (!id || !addTo) return;
+    const lib = this.app.library;
+    let pl = lib.playlists.find((n) => n.src === addTo.src);
+    if (!pl) { pl = lib.createNode('playlist', addTo.name); pl.src = addTo.src; }
+    if (!pl.trackIds.includes(id)) lib.addToPlaylist(pl.id, [id]);
+  }
+
   /** Queue items (from search, links or feeds). */
   async enqueue(items) {
     const folder = await this.folder();
@@ -209,11 +241,7 @@ export class DownloadCenter {
       if (!pl) { pl = lib.createNode('playlist', 'Downloads'); pl.src = 'downloads'; }
       if (!pl.trackIds.includes(id)) lib.addToPlaylist(pl.id, [id]);
     }
-    if (id && item.addTo) {
-      let pl = lib.playlists.find((n) => n.src === item.addTo.src);
-      if (!pl) { pl = lib.createNode('playlist', item.addTo.name); pl.src = item.addTo.src; }
-      if (!pl.trackIds.includes(id)) lib.addToPlaylist(pl.id, [id]);
-    }
+    this.addToNamed(id, item.addTo);
     this.save({ done: { ...this.cfg.done, [item.id]: file } });
   }
 
@@ -345,11 +373,15 @@ export class DownloadCenter {
         h('button.dbtn.small', { title: 'Cancel', onclick: () => this.cancel(item.id) }, '✕'));
       } else if (job?.state === 'done' || this.isDone(item.id)) {
         action.replaceChildren(h('span.dlc-done', {}, '✓ In collection'));
+      } else if (own && !job) {
+        action.replaceChildren(h('span.dlc-owned', { title: this.ownedLabel(own) }, '✓ In collection'),
+          h('button.dbtn.small', { title: `${this.ownedLabel(own)}. Download it anyway`, onclick: () => this.enqueue([item]) }, icon('download')));
       } else {
         const get = h('button.dbtn.small.dlc-get', { onclick: () => this.enqueue([item]) }, icon('download'), ' Download');
         action.replaceChildren(...(job?.state === 'error' ? [h('span.rbi-error', { title: job.error }, 'Failed '), get] : [get]));
       }
     };
+    const own = this.ownedUpload(item);
     update();
     this.rows.push(update);
     const follow = item.channelUrl
@@ -402,11 +434,18 @@ export class DownloadCenter {
       parts.push(h('div.dlc-list', {}, this.sp.tracks.map((t) => this.spotifyRow(t, this.sp))));
     } else if (!catalog && this.linkList?.platform === p) {
       const L = this.linkList;
-      const left = L.items.filter((it) => !this.isDone(it.id) && !this.jobs.has(it.id));
+      const pending = L.items.filter((it) => !this.isDone(it.id) && !this.jobs.has(it.id));
+      const owned = pending.map((it) => [it, this.ownedUpload(it)]).filter(([, o]) => o);
+      const left = pending.filter((it) => !owned.some(([x]) => x === it));
       if (L.items.length > 1) {
+        const addTo = () => (opts.addToPlaylist ? { name: L.name, src: `${p}:${L.url}` } : null);
         parts.push(h('div.dlc-bar.dlc-filters', {}, check('addToPlaylist', 'Add to a playlist named after it')));
-        parts.push(h('div.dlc-bar', {}, h('b', {}, L.name), h('span.dim', {}, ` ${L.items.length} tracks`), h('span.spacer'),
-          left.length ? h('button.dbtn.dlc-primary', { onclick: () => this.enqueue(left.map((it) => ({ ...it, addTo: opts.addToPlaylist ? { name: L.name, src: `${p}:${L.url}` } : null }))) }, `Download all ${left.length}`) : null));
+        parts.push(h('div.dlc-bar', {}, h('b', {}, L.name),
+          h('span.dim', {}, ` ${L.items.length} tracks${owned.length ? ` · ${owned.length} already in your collection (skipped)` : ''}`), h('span.spacer'),
+          left.length ? h('button.dbtn.dlc-primary', {
+            title: owned.length ? 'The tracks already in your collection are not downloaded again (they join the playlist when that option is on)' : '',
+            onclick: () => { owned.forEach(([, o]) => this.addToNamed(o.id, addTo())); this.enqueue(left.map((it) => ({ ...it, addTo: addTo() }))); },
+          }, `Download all ${left.length}`) : null));
       }
       parts.push(this.list(L.items));
     } else if (!catalog && this.searchResults && this.searchPlatform === p) {
@@ -480,7 +519,10 @@ export class DownloadCenter {
     if (!sp || sp.running) return;
     sp.running = true; sp.stop = false;
     this.changed(true);
-    const todo = sp.tracks.filter((t) => t.status === 'waiting' || t.status === 'error');
+    // tracks already in the collection are not searched nor downloaded again; they join the list's playlist
+    const addTo = addToPlaylist && sp.name && !sp.search ? { name: sp.name, src: sp.src } : null;
+    for (const t of sp.tracks) { const own = this.ownedCatalog(t); if (own) this.addToNamed(own.id, addTo); }
+    const todo = sp.tracks.filter((t) => (t.status === 'waiting' || t.status === 'error') && !this.ownedCatalog(t));
     const worker = async () => {
       while (todo.length && !sp.stop) {
         const t = todo.shift();
@@ -491,7 +533,8 @@ export class DownloadCenter {
     sp.running = false;
     this.changed(true);
     const found = sp.tracks.filter((t) => t.match).length;
-    if (sp.tracks.length > 1) toast(`${sp.name}: ${found} / ${sp.tracks.length} found on YouTube${download ? ', downloading' : ''}`, 6000);
+    const owned = sp.tracks.filter((t) => this.ownedCatalog(t)).length;
+    if (sp.tracks.length > 1) toast(`${sp.name}: ${owned ? `${owned} already in your collection, ` : ''}${found} / ${sp.tracks.length - owned} found on YouTube${download ? ', downloading' : ''}`, 6000);
   }
 
   /** One track of a list: its YouTube upload, downloaded when asked. */
@@ -516,11 +559,12 @@ export class DownloadCenter {
   catalogView(sp) {
     const opts = this.listOpts ??= { download: true, addToPlaylist: true };
     const found = sp.tracks.filter((t) => t.match).length;
+    const owned = sp.tracks.filter((t) => this.ownedCatalog(t)).length;
     const left = sp.tracks.filter((t) => t.match && !this.isDone(t.match.id) && !this.jobs.has(t.match.id)).length;
     return [
       h('div.dlc-bar', {},
         h('span.dlc-logo.small', { innerHTML: LOGOS[sp.platform] ?? '' }), h('b', {}, sp.name),
-        h('span.dim', {}, ` ${sp.tracks.length} track${sp.tracks.length > 1 ? 's' : ''} · ${found} found on YouTube${sp.via === 'embed' && sp.tracks.length >= 100 ? ' · only the first 100 without Spotify keys' : ''}`),
+        h('span.dim', {}, ` ${sp.tracks.length} track${sp.tracks.length > 1 ? 's' : ''} · ${found} found on YouTube${owned ? ` · ${owned} already in your collection` : ''}${sp.via === 'embed' && sp.tracks.length >= 100 ? ' · only the first 100 without Spotify keys' : ''}`),
         h('span.spacer'),
         sp.running ? h('button.dbtn', { onclick: () => { sp.stop = true; } }, 'Stop') : h('button.dbtn', { onclick: () => this.findSpotifyOnYoutube(opts) }, 'Search again (not found)'),
         left ? h('button.dbtn.dlc-primary', { onclick: () => sp.tracks.forEach((t) => this.enqueueSpotify(t, opts.addToPlaylist, sp)) }, `Download all ${left}`) : null),
@@ -537,6 +581,12 @@ export class DownloadCenter {
     const action = h('div.dlc-action');
     const update = () => {
       const m = t.match;
+      const own = this.ownedCatalog(t);
+      if (own) {
+        right.replaceChildren(h('span.dlc-owned', {}, '✓ In collection'), h('span.dim', {}, ` · ${own.track.artist ? `${own.track.artist} – ` : ''}${own.track.title}`));
+        action.replaceChildren(h('button.dbtn.small', { title: `${this.ownedLabel(own)}. Find it on YouTube and download it anyway`, onclick: () => { t.forced = true; this.findOne(t, list, { download: true, addToPlaylist: this.listOpts?.addToPlaylist !== false }); } }, icon('download')));
+        return;
+      }
       right.replaceChildren(...(t.status === 'searching' ? [h('span.dim', {}, 'Searching YouTube…')]
         : t.status === 'none' ? [h('span.rbi-error', {}, 'Not found on YouTube')]
           : t.status === 'error' ? [h('span.rbi-error', { title: t.error }, 'Search failed')]
@@ -568,7 +618,7 @@ export class DownloadCenter {
     add.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
     const fits = (it) => !c.maxMinutes || !it.duration || it.duration <= c.maxMinutes * 60;
     const items = (this.feedItems ?? []).filter((it) => fits(it) && !(this.hideDone && this.isDone(it.id)));
-    const fresh = items.filter((it) => it.isNew && !this.isDone(it.id));
+    const fresh = items.filter((it) => it.isNew && !this.isDone(it.id) && !this.ownedUpload(it));
     this.body.replaceChildren(
       h('div.dlc-subs', {},
         c.subs.map((s) => h('span.chip', { title: s.url }, s.name, h('button.dlc-unfollow', { title: 'Unfollow', onclick: () => { this.unfollow(s.url); this.feedItems = null; this.checkFeeds(); } }, '×'))),

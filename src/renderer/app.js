@@ -2749,6 +2749,33 @@ async function smoke(app) {
         tabs.join('|') === 'YouTube|SoundCloud|Spotify|Deezer|New releases|Queue' && logos === 4 && /SoundCloud/.test(scPlaceholder) && remembered === 'soundcloud'
           && kinds.join() === 'youtube,soundcloud,spotify,spotify,deezer,deezer,' && switched === 'deezer',
         `tabs ${tabs.join('|')} · logos ${logos} · ${scPlaceholder} · kinds ${kinds.join()} · switched ${switched}`);
+      // 1.26.1: what is offered for download is compared with the collection
+      {
+        const pick = app.library.all().find((x) => x.title && x.duration > 0);
+        const oldArtist = pick?.artist ?? '';
+        if (pick && !pick.artist) app.library.update(pick.id, { artist: 'Smoke Owner' });
+        const mine = pick && app.library.get(pick.id);
+        if (!mine) step('download centre: tracks already in the collection are flagged', false, 'no track with a length in the smoke library');
+        else {
+          dlc.setSource('youtube', false);
+          dlc.searchResults = [
+            { id: 'smoke:own', platform: 'youtube', url: 'https://youtu.be/x', title: `${mine.artist} - ${mine.title} (Official Video)`, channel: `${mine.artist.replace(/\s+/g, '')}VEVO`, duration: Math.round(mine.duration) + 1 },
+            { id: 'smoke:other', platform: 'youtube', url: 'https://youtu.be/y', title: 'Zzyzx Unknown - Nothing Alike', channel: 'Nobody', duration: 200 },
+          ];
+          dlc.searchPlatform = 'youtube'; dlc.linkList = null;
+          dlc.renderTab(false);
+          await wait(100);
+          const flagged = [...document.querySelectorAll('.dlc-row')].map((r) => !!r.querySelector('.dlc-owned'));
+          const sp = { platform: 'deezer', name: 'Smoke list', src: 'deezer:smoke', tracks: [
+            { title: mine.title, artist: mine.artist, duration: mine.duration, status: 'waiting', match: null },
+            { title: 'Nothing Alike', artist: 'Zzyzx Unknown', duration: 200, status: 'waiting', match: null }] };
+          const ownedSp = sp.tracks.map((t) => !!dlc.ownedCatalog(t));
+          dlc.searchResults = null;
+          if (!oldArtist) app.library.update(pick.id, { artist: oldArtist });
+          step('download centre: tracks already in the collection are flagged', flagged.join() === 'true,false' && ownedSp.join() === 'true,false',
+            `"${mine.artist} - ${mine.title}" · search rows ${flagged.join()} · list ${ownedSp.join()}`);
+        }
+      }
       const tools = await dlc.tools();
       if (tools.ytdlp && (await window.rb.smokeDlTest())) {
         const found = await window.rb.dl.search('indochine trois nuits par semaine', 5, 'soundcloud');
