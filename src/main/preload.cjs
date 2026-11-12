@@ -47,6 +47,13 @@ const api = {
     open: () => ipcRenderer.invoke('lyrics:open'),
     window: (o) => ipcRenderer.invoke('lyrics:window', o),
   },
+  whisper: {
+    status: () => ipcRenderer.invoke('whisper:status'),
+    install: (model) => ipcRenderer.invoke('whisper:install', model),
+    transcribe: (samples, o) => ipcRenderer.invoke('whisper:transcribe', samples, o),
+    cancel: () => ipcRenderer.invoke('whisper:cancel'),
+    onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('whisper:progress', l); return () => ipcRenderer.off('whisper:progress', l); },
+  },
   discogs: {
     status: () => ipcRenderer.invoke('discogs:status'),
     setToken: (token) => ipcRenderer.invoke('discogs:setToken', token),

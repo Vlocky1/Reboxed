@@ -128,6 +128,40 @@ export function embeddedLyrics(tags) {
   return null;
 }
 
+/**
+ * The lyrics written in a video description (lyric videos often have them): the lines after a
+ * "Lyrics:" / "Paroles :" heading, else the longest run of short lines without links, hashtags or
+ * credits. At least 8 lines, else null.
+ */
+export function descriptionLyrics(description) {
+  const lines = String(description ?? '').replace(/\r/g, '').split('\n').map((l) => l.trim());
+  const bad = (l) => /https?:\/\/|www\.|@\w|#\w|©|℗|\b(follow|subscribe|stream|listen|download|spotify|apple music|instagram|tiktok|facebook|twitter|soundcloud|produced|mixed|mastered|records|label|management|booking|director|video by|out now)\b/i.test(l);
+  const ok = (l) => l.length > 0 && l.length <= 90 && !bad(l);
+  const runFrom = (start) => {
+    const out = [];
+    let blanks = 0;
+    for (let i = start; i < lines.length; i++) {
+      const l = lines[i];
+      if (!l) { if (++blanks >= 2 && out.length) break; continue; }
+      if (!ok(l)) { if (out.length >= 8) break; else continue; }
+      blanks = 0;
+      out.push(l);
+    }
+    return out;
+  };
+  const head = lines.findIndex((l) => /^(lyrics|paroles|letra|testo|songtext)\s*[:：-]?\s*$/i.test(l) || /^\[?(lyrics|paroles)\]?\s*[:：]/i.test(l));
+  let best = head >= 0 ? runFrom(head + 1) : [];
+  if (best.length < 8) {
+    // the longest run of short, clean lines (blank lines between verses allowed)
+    let cur = [];
+    for (let i = 0; i <= lines.length; i++) {
+      const l = lines[i];
+      if (l !== undefined && (ok(l) || (!l && cur.length && lines[i + 1] && ok(lines[i + 1])))) { if (l) cur.push(l); } else { if (cur.length > best.length) best = cur; cur = []; }
+    }
+  }
+  return best.length >= 8 ? best.join('\n') : null;
+}
+
 /** The main artist ("A, B", "A & B", "A feat. B", "A x B" → "A"). */
 export function mainArtist(artist) {
   return String(artist ?? '').split(/\s*(?:,|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\bx\b|\bvs\.?)\s*/i)[0].trim();

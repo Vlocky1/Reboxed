@@ -66,6 +66,16 @@ async function readStem(meta, name) {
   return out;
 }
 
+/** An audio buffer as 16 kHz mono samples (what the speech recogniser reads). */
+async function to16k(buffer) {
+  const ctx = new OfflineAudioContext(1, Math.max(1, Math.ceil(buffer.duration * 16000)), 16000);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  src.start();
+  return (await ctx.startRendering()).getChannelData(0);
+}
+
 /** Stem file format from the settings: {format: 'mp3', kbps} or {format: 'wav'}. */
 function stemsFormat(s) {
   const f = s.stemsFormat ?? 'mp3';
@@ -886,6 +896,25 @@ class App {
     this.engine.decks.forEach((d) => d.emit('stems'));
     this.refreshStemStatus();
     if (this.browser.lib.settings.columns.includes('stems')) this.browser.renderBody();
+  }
+
+  /**
+   * A track's singing for the AI lyrics sync, as 16 kHz mono: its vocals stem when it has stems (the
+   * recogniser hears the words much better without the music), else the whole track.
+   */
+  async voiceForAi(t) {
+    const meta = await window.rb.stems.meta(t.id, t.path).catch(() => null);
+    if (meta?.stems?.includes('vocals')) {
+      try {
+        const pcm = await readStem(meta, 'vocals');
+        const n = pcm.length >> 1;
+        const buf = new AudioBuffer({ numberOfChannels: 1, length: Math.max(1, n), sampleRate: meta.rate });
+        const ch = buf.getChannelData(0);
+        for (let i = 0; i < n; i++) ch[i] = (pcm[2 * i] + pcm[2 * i + 1]) / 65536;
+        return { samples: await to16k(buf), vocals: true };
+      } catch (err) { console.warn('vocals stem', err); }
+    }
+    return { samples: await to16k(await this.analyzer.decode(t.path)), vocals: false };
   }
 
   async loadStemsInto(deck, meta) {

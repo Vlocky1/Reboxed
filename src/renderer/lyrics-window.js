@@ -12,7 +12,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(`lyrics.${k}`, JSON.stringify(v)); } catch { /* private storage off */ } },
 };
 /** Where the lyrics came from, as the badge says it. */
-const SOURCE = { LRCLIB: 'LRCLIB', file: '.LRC FILE', tags: 'FILE TAGS', YouTube: 'YOUTUBE SUBTITLES' };
+const SOURCE = { LRCLIB: 'LRCLIB', file: '.LRC FILE', tags: 'FILE TAGS', YouTube: 'YOUTUBE SUBTITLES', 'YouTube description': 'YOUTUBE DESCRIPTION', AI: 'AI' };
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 const S = {
@@ -49,7 +49,8 @@ el.plain = h('div.ly-plain', { hidden: true });
 el.empty = h('div.ly-empty', { hidden: true });
 el.view = h('div.ly-view', {}, el.lines, el.plain, el.empty);
 el.edit = h('div.ed', { hidden: true });
-el.root = h('div.ly', {}, el.head, el.note, el.view, el.edit);
+el.ai = h('div.ly-note.ai', { hidden: true });
+el.root = h('div.ly', {}, el.head, el.note, el.ai, el.view, el.edit);
 document.body.replaceChildren(el.root);
 setSize(S.size);
 
@@ -65,6 +66,9 @@ function onMessage(m) {
   else if (m.type === 'lyrics' && m.trackId === S.trackId) setLyrics(m);
   else if (m.type === 'changed' && m.trackId === S.trackId && S.mode === 'view') post({ type: 'get', trackId: S.trackId });
   else if (m.type === 'results') { S.searches.get(m.id)?.(m); S.searches.delete(m.id); }
+  else if (m.type === 'aiAsk' && m.id === S.ai?.id) aiAsk(m);
+  else if (m.type === 'aiProgress' && S.ai) { S.ai.progress = m; renderAi(); }
+  else if (m.type === 'aiResult' && m.id === S.ai?.id) aiResult(m);
 }
 
 /** The deck to follow: the chosen one, or the deck on air (after it stays on air for a moment). */
@@ -130,7 +134,7 @@ function renderHead() {
   if (S.mode === 'edit') { el.badge.textContent = 'SYNCING BY HAND'; el.badge.classList.add('hand'); }
   else if (S.status === 'loading') el.badge.textContent = 'SEARCHING…';
   else if (L?.instrumental && !synced && !S.plain) el.badge.textContent = 'INSTRUMENTAL';
-  else if (synced) { el.badge.textContent = L?.edited ? 'SYNCED BY HAND' : `SYNCED · ${SOURCE[L?.source] ?? 'LRCLIB'}`; el.badge.classList.add(L?.edited ? 'hand' : L?.source === 'YouTube' ? 'warn' : 'ok'); }
+  else if (synced) { el.badge.textContent = L?.edited ? (L?.source === 'AI' ? 'SYNCED BY AI' : 'SYNCED BY HAND') : `SYNCED · ${SOURCE[L?.source] ?? 'LRCLIB'}`; el.badge.classList.add(L?.edited ? 'hand' : L?.source === 'YouTube' ? 'warn' : 'ok'); }
   else if (S.plain) { el.badge.textContent = `TEXT ONLY · NOT SYNCED${SOURCE[L?.source] ? ` · ${SOURCE[L.source]}` : ''}`; el.badge.classList.add('warn'); }
   else if (S.trackId) el.badge.textContent = S.status === 'error' ? 'OFFLINE?' : 'NO LYRICS';
   else el.badge.textContent = '';
@@ -145,8 +149,11 @@ function renderHead() {
   const off = S.mode === 'view' && synced && !L?.edited && md && td && Math.abs(md - td) > 8;
   // YouTube subtitles follow the video (an intro, a clip edit): always worth a check
   const yt = S.mode === 'view' && synced && !L?.edited && L?.source === 'YouTube';
-  el.note.hidden = !off && !yt;
-  if (yt) el.note.replaceChildren('These lyrics come from the subtitles of a YouTube video: their timing follows the video. Check it, shift them with − / + or sync them by hand.',
+  // text only: the AI can time it
+  const textOnly = S.mode === 'view' && !synced && !!S.plain;
+  el.note.hidden = !off && !yt && !textOnly;
+  if (textOnly) el.note.replaceChildren('These lyrics are not synced.', h('button', { onclick: () => aiStart('sync') }, 'SYNC WITH AI'), h('button', { onclick: () => enterEdit() }, 'SYNC BY HAND'));
+  else if (yt) el.note.replaceChildren('These lyrics come from the subtitles of a YouTube video: their timing follows the video. Check it, shift them with − / + or sync them by hand.',
     h('button', { onclick: () => enterEdit() }, 'SYNC'));
   else if (off) el.note.replaceChildren(`These lyrics come from a ${mmss(md)} version; this track lasts ${mmss(td)}. Shift them with − / + or sync them by hand.`,
     h('button', { onclick: () => enterEdit() }, 'SYNC'));
@@ -175,6 +182,7 @@ function renderBody() {
     el.empty.replaceChildren(h('div', {}, msg), S.trackId && S.status !== 'loading' ? h('div.actions', {},
       h('button', { onclick: () => openSearch() }, 'SEARCH…'),
       h('button', { onclick: () => openPaste() }, 'PASTE LYRICS…'),
+      h('button', { title: 'The AI listens to the singing and writes the lyrics with their times (check them before a gig)', onclick: () => aiStart('transcribe') }, 'TRANSCRIBE WITH AI'),
       h('button', { onclick: () => { S.status = 'loading'; renderBody(); post({ type: 'get', trackId: S.trackId, force: true }); } }, 'TRY AGAIN')) : '');
   }
 }
@@ -254,15 +262,77 @@ window.addEventListener('resize', () => { S.shownLine = -2; setWin({}); });
 let idle = 0;
 window.addEventListener('mousemove', () => { el.root.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(() => el.root.classList.add('idle'), 2500); });
 
+// ---- AI sync (speech recognition on this computer, through the decks' window) ------------------------
+/** sync: time the lyrics we have (text only, pasted, or the editor's lines); transcribe: none at all. */
+function aiStart(mode, install = false) {
+  if (!S.trackId || S.ai?.busy) return;
+  const texts = S.mode === 'edit' ? S.edit.lines.map((l) => l.text).filter(Boolean)
+    : S.plain ? plainLines(S.plain).map((l) => l.text).filter(Boolean)
+    : S.lines.map((l) => l.text).filter(Boolean);
+  if (mode === 'sync' && !texts.length) { mode = 'transcribe'; }
+  S.ai = { id: Math.random().toString(36).slice(2), mode, trackId: S.trackId, deck: S.deck, busy: true, progress: { stage: 'start' }, texts };
+  post({ type: 'ai', id: S.ai.id, mode, trackId: S.trackId, texts, install });
+  renderAi();
+}
+
+/** First use: the speech recogniser must be downloaded once. */
+function aiAsk(m) {
+  S.ai.busy = false;
+  el.ai.hidden = true;                                   // the question is in the box below
+  const box = modal(h('h3', {}, 'AI lyrics sync'),
+    h('div', {}, 'A speech recogniser listens to the singing (its vocals stem when the track has stems, else the whole track) and finds when each line starts. It runs on this computer: nothing is sent online.'),
+    h('div.dim', {}, `It needs a one-time download of about ${m.mb} MB (whisper.cpp and the Whisper "base" model, both MIT licence).`),
+    h('div.foot', {}, h('button', { onclick: () => { box.remove(); S.ai = null; renderAi(); } }, 'CANCEL'),
+      h('button.primary', { onclick: () => { box.remove(); const mode = S.ai?.mode ?? m.mode; S.ai = null; aiStart(mode, true); } }, 'DOWNLOAD AND START')));
+}
+
+function renderAi() {
+  const a = S.ai;
+  el.ai.hidden = !a;
+  if (!a) return;
+  const p = a.progress ?? {};
+  const pct = (x) => `${Math.round(x)} %`;
+  let text = a.done ?? '';
+  if (a.busy) {
+    text = p.stage === 'download' ? `Downloading the speech recogniser${p.total ? ` (${p.label ?? ''}) ${pct((100 * p.received) / p.total)}` : '…'}`
+      : p.stage === 'extract' || p.stage === 'installed' ? 'Installing the speech recogniser…'
+      : p.stage === 'prepare' ? 'Getting the singing out of the track…'
+      : p.stage === 'listen' ? `The AI listens to the singing… ${p.pct ? pct(p.pct) : ''}`
+      : 'Starting…';
+  }
+  el.ai.replaceChildren(h('span', {}, text),
+    a.busy ? h('button', { onclick: () => { post({ type: 'aiCancel' }); S.ai = null; renderAi(); } }, 'CANCEL') : h('button', { onclick: () => { S.ai = null; renderAi(); } }, 'OK'));
+}
+
+function aiResult(m) {
+  const a = S.ai;
+  a.busy = false;
+  if (!m.ok) { a.done = `AI sync failed: ${m.error}`; renderAi(); return; }
+  const tip = m.vocals ? '' : ' Separate the stems first (vocals) for a better result.';
+  if (m.mode === 'sync') {
+    a.done = `AI sync done: ${Math.round((m.matched ?? 0) * 100)} % of the words heard. Check the lines (click a time to hear it again), then SAVE.${tip}`;
+    if (S.mode === 'edit' && S.edit.trackId === m.trackId) {
+      S.edit.lines = m.lines.map((l) => ({ t: l.t, text: l.text }));
+      S.edit.source = 'AI'; S.edit.dirty = true; S.edit.sel = 0;
+      renderRows();
+    } else if (S.trackId === m.trackId) enterEdit(null, m.lines);
+  } else {
+    a.done = `AI transcription: ${m.lines.length} lines heard (${m.language || '?'}). Check the words and times, then SAVE.${tip}`;
+    if (S.trackId === m.trackId) enterEdit(null, m.lines);
+  }
+  renderAi();
+}
+
 // ---- manual sync ------------------------------------------------------------------------------------
-function enterEdit(fromText = null) {
+function enterEdit(fromText = null, fromLines = null) {
   if (!S.trackId) return;
-  const lines = fromText !== null ? plainLines(fromText).filter((l) => l.text)
+  const lines = fromLines ? fromLines.map((l) => ({ t: l.t ?? null, text: l.text }))
+    : fromText !== null ? plainLines(fromText).filter((l) => l.text)
     : S.lines.length ? S.lines.map((l) => ({ t: Math.max(0, Math.round((l.t + S.offset) * 100) / 100), text: l.text }))
     : S.plain ? plainLines(S.plain).filter((l) => l.text) : [];
   if (!lines.length) lines.push({ t: null, text: '' });
   const firstUntimed = lines.findIndex((l) => l.t === null);
-  S.edit = { deck: S.deck, trackId: S.trackId, lines, sel: firstUntimed >= 0 ? firstUntimed : 0, dirty: fromText !== null, rows: [] };
+  S.edit = { deck: S.deck, trackId: S.trackId, lines, sel: firstUntimed >= 0 ? firstUntimed : 0, dirty: fromText !== null || !!fromLines, rows: [], source: fromLines ? 'AI' : null };
   S.mode = 'edit';
   buildEditor();
   renderBody(); renderHead();
@@ -282,7 +352,8 @@ function buildEditor() {
       d ? h('span.dim', {}, `  Deck ${E.deck + 1}: ${d.title}`) : ''),
     h('div.ed-bar', {},
       h('button', { onclick: () => post({ type: 'nudge', deck: E.deck, by: -5 }) }, '−5 s'), el.playBtn,
-      h('button', { onclick: () => post({ type: 'nudge', deck: E.deck, by: 5 }) }, '+5 s'), el.pos, el.tapBtn),
+      h('button', { onclick: () => post({ type: 'nudge', deck: E.deck, by: 5 }) }, '+5 s'), el.pos, el.tapBtn,
+      h('button', { title: 'The AI listens to the singing and times every line (then check and SAVE)', onclick: () => aiStart('sync') }, 'AI SYNC')),
     el.list,
     h('div.ed-foot', {},
       h('span.dim', {}, 'Every line'),
@@ -365,7 +436,7 @@ function saveEdit() {
   const timed = E.lines.filter((l) => l.t !== null).sort((a, b) => a.t - b.t);
   const plain = E.lines.map((l) => l.text).join('\n').trim();
   post({ type: 'save', trackId: E.trackId, lyrics: {
-    source: S.lyrics?.source && S.lyrics.source !== 'manual' ? S.lyrics.source : 'manual',
+    source: E.source ?? (S.lyrics?.source && S.lyrics.source !== 'manual' ? S.lyrics.source : 'manual'),
     lrc: timed.length ? toLrc(timed) : null, plain: plain || null, offset: 0, edited: true, match: S.lyrics?.match ?? null,
   } });
   leaveEdit(true);

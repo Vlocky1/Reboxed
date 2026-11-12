@@ -5,6 +5,7 @@
 // play / seek commands for manual syncing and the lyrics the DJ edited.
 import { crossfaderGains, faderGain } from '../audio/engine.js';
 import { LYRICS_CHANNEL } from '../../shared/lrc.js';
+import { linesFromWords, syncLines } from '../../shared/align.js';
 const RECHECK_MISSING_DAYS = 7;
 const now = () => performance.timeOrigin + performance.now();   // the same clock in both windows
 
@@ -17,6 +18,7 @@ export class LyricsLink {
     this.aliveAt = 0;
     this.loading = new Map();                                    // trackId → promise
     this.timer = setInterval(() => this.tick(), 50);
+    window.rb.whisper?.onProgress((p) => this.post({ type: 'aiProgress', ...p }));
     // a track changed (edited elsewhere, lyrics saved): the lyrics window reloads it
     app.library.addEventListener('change', (e) => { const { kind, id } = e.detail ?? {}; if (kind === 'track' && id && this.open) this.post({ type: 'changed', trackId: id }); });
   }
@@ -59,6 +61,8 @@ export class LyricsLink {
         try { this.post({ type: 'results', id: m.id, results: await window.rb.lyrics.list(m.q) }); } catch (err) { this.post({ type: 'results', id: m.id, error: err.message, results: [] }); }
         break;
       }
+      case 'ai': this.runAi(m); break;
+      case 'aiCancel': window.rb.whisper.cancel(); break;
       case 'seek': { const d = this.deck(m.deck); if (d?.loaded) d.seek(Math.max(0, Math.min(d.duration, Number(m.t) || 0))); break; }
       case 'nudge': { const d = this.deck(m.deck); if (d?.loaded) d.seek(Math.max(0, Math.min(d.duration, d.position() + (Number(m.by) || 0)))); break; }
       case 'play': { const d = this.deck(m.deck); if (d?.loaded) { if (d.playing) d.pause(); else d.play(); } break; }
@@ -67,6 +71,39 @@ export class LyricsLink {
   }
 
   deck(i) { return Number.isInteger(i) ? this.app.engine.decks[i] : null; }
+
+  /**
+   * AI lyrics: the speech recogniser (whisper.cpp, on this computer) listens to the track's singing.
+   * mode 'sync': times the given lines (lyrics known, not synced); 'transcribe': makes the lines from
+   * what it heard (no lyrics anywhere). Asks before the first download (~150 MB).
+   */
+  async runAi({ id, mode, trackId, texts = [], install = false }) {
+    const reply = (o) => this.post({ type: 'aiResult', id, mode, trackId, ...o });
+    try {
+      const st = await window.rb.whisper.status();
+      if (!st.installed || !st.models.base) {
+        if (!install) { this.post({ type: 'aiAsk', id, mode, trackId, texts, mb: (st.sizes?.base ?? 142) + 10 }); return; }
+        this.post({ type: 'aiProgress', stage: 'download', received: 0, total: 0 });
+        await window.rb.whisper.install('base');
+      }
+      const t = this.app.library.get(trackId);
+      if (!t) throw new Error('track not in the collection');
+      this.post({ type: 'aiProgress', stage: 'prepare' });
+      const { samples, vocals } = await this.app.voiceForAi(t);
+      this.post({ type: 'aiProgress', stage: 'listen', pct: 0 });
+      // the lyrics guide the recogniser towards their words
+      const heard = await window.rb.whisper.transcribe(samples, { prompt: mode === 'sync' ? texts.join(' ') : '' });
+      if (mode === 'sync') {
+        const { lines, matched } = syncLines(texts, heard.words);
+        reply({ ok: true, lines, matched, vocals, language: heard.language, heard: heard.words.length });
+      } else {
+        const lines = linesFromWords(heard.words);
+        reply({ ok: !!lines.length, lines, vocals, language: heard.language, heard: heard.words.length, error: lines.length ? '' : 'no words heard' });
+      }
+    } catch (err) {
+      reply({ ok: false, error: err.message });
+    }
+  }
 
   /** The stored lyrics of a track; fetched once (".lrc" file, then LRCLIB) when it has none. */
   async lyricsOf(trackId, { force = false } = {}) {

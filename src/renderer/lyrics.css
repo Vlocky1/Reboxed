@@ -34,6 +34,7 @@ input:focus, textarea:focus { border-color: var(--accent-2); }
 
 .ly-note { padding: 6px 12px; font-size: 12px; color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); border-bottom: 1px solid var(--line); }
 .ly-note button { margin-left: 8px; padding: 2px 8px; }
+.ly-note.ai { color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 10%, transparent); }
 
 /* view: the line sung now in the middle, big */
 .ly-view { position: relative; flex: 1; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); }
