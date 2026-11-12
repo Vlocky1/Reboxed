@@ -39,10 +39,21 @@ export function toFields(tr, genres = []) {
   };
 }
 
-/** A Spotify playlist / album link (or spotify:playlist:… URI) -> {kind, id}, or null. */
+/** A Spotify track / playlist / album link (or spotify:…:… URI) -> {kind, id}, or null. */
 export function spotifyLink(url) {
-  const m = /(?:open\.spotify\.com\/(?:intl-[a-z-]+\/)?(?:embed\/)?|spotify:)(playlist|album)[/:]([A-Za-z0-9]{16,})/.exec(String(url ?? '').trim());
+  const m = /(?:open\.spotify\.com\/(?:intl-[a-z-]+\/)?(?:embed\/)?|spotify:)(playlist|album|track)[/:]([A-Za-z0-9]{16,})/.exec(String(url ?? '').trim());
   return m ? { kind: m[1], id: m[2] } : null;
+}
+
+/** One track from Spotify's public embed page of a track. */
+export function embedTrack(html) {
+  const m = /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
+  if (!m) throw new Error('Spotify page not understood');
+  const e = JSON.parse(m[1])?.props?.pageProps?.state?.data?.entity;
+  const title = e?.name ?? e?.title;
+  if (!title) throw new Error('No track on this Spotify page');
+  const artist = (e.artists ?? []).map((a) => a.name).filter(Boolean).join(', ') || String(e.subtitle ?? '').replace(/ /g, ' ');
+  return { title, artist, duration: (e.duration ?? 0) / 1000, spotifyId: String(e.uri ?? e.id ?? '').split(':').pop(), cover: e.visualIdentity?.image?.[0]?.url ?? e.coverArt?.sources?.[0]?.url ?? '' };
 }
 
 /**
@@ -104,7 +115,22 @@ export class Spotify {
    */
   async playlist(url, useApi = true) {
     const link = spotifyLink(url);
-    if (!link) throw new Error('Not a Spotify playlist or album link');
+    if (!link) throw new Error('Not a Spotify track, playlist or album link');
+    if (link.kind === 'track') {
+      if (useApi) {
+        try {
+          const tr = await this.get(`/tracks/${link.id}`);
+          const t = { title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000, spotifyId: tr.id, isrc: tr.external_ids?.isrc ?? '', cover: tr.album?.images?.at(-1)?.url ?? '' };
+          return { kind: 'track', name: `${t.artist} - ${t.title}`, tracks: [t], via: 'api' };
+        } catch (err) {
+          if (/not set up|refused/.test(err.message) === false && !/40[34]/.test(err.message)) throw err;
+        }
+      }
+      const res = await this.fetch(`https://open.spotify.com/embed/track/${link.id}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36' } });
+      if (!res.ok) throw new Error(res.status === 404 ? 'This Spotify track does not exist' : `Spotify error ${res.status}`);
+      const t = embedTrack(await res.text());
+      return { kind: 'track', name: `${t.artist} - ${t.title}`, tracks: [t], via: 'embed' };
+    }
     if (useApi) {
       try {
         const head = await this.get(`/${link.kind}s/${link.id}?fields=name`);
@@ -119,14 +145,23 @@ export class Spotify {
           }
           next = page.next;
         }
-        return { name: head.name ?? 'Spotify playlist', tracks, via: 'api' };
+        return { kind: link.kind, name: head.name ?? 'Spotify playlist', tracks, via: 'api' };
       } catch (err) {
         if (/not set up|refused/.test(err.message) === false && !/40[34]/.test(err.message)) throw err;
       }
     }
     const res = await this.fetch(`https://open.spotify.com/embed/${link.kind}/${link.id}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36' } });
     if (!res.ok) throw new Error(res.status === 404 ? 'This Spotify playlist is private or does not exist' : `Spotify error ${res.status}`);
-    return { ...embedTracks(await res.text()), via: 'embed' };
+    return { kind: link.kind, ...embedTracks(await res.text()), via: 'embed' };
+  }
+
+  /** Tracks of a Spotify search (needs the user's Spotify keys). */
+  async searchTracks(q) {
+    const r = await this.get(`/search?type=track&limit=10&q=${encodeURIComponent(String(q ?? '').slice(0, 200))}`);
+    return (r.tracks?.items ?? []).map((tr) => ({
+      title: tr.name, artist: (tr.artists ?? []).map((a) => a.name).join(', '), duration: (tr.duration_ms ?? 0) / 1000,
+      spotifyId: tr.id, isrc: tr.external_ids?.isrc ?? '', album: tr.album?.name ?? '', cover: tr.album?.images?.at(-1)?.url ?? '',
+    }));
   }
 
   /**
