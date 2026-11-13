@@ -70,7 +70,7 @@ export class MetadataLookup {
       const candidates = await this.deezer.lookup(q, opts);
       return { candidates, errors: [], sources: ['Deezer'] };
     }
-    if (!this.spotifyReady()) throw new Error('Spotify is not set up: add your Client ID and Client Secret in Preferences > Library, or choose Deezer');
+    if (!this.spotifyReady()) throw new Error('Spotify is not set up: add your Client ID and Client Secret in Preferences > Accounts, or choose Deezer');
     const sp = await this.spotify.lookup(q, opts);
     if (opts.complete === false) return { candidates: sp, errors: [], sources: ['Spotify'] };
     // Spotify gives no genre for most artists: take it from the same recording on Deezer when found.

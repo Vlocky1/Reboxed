@@ -163,6 +163,31 @@ export function confirmDialog(title, text) {
   return modal(title, h('p', {}, text), [{ label: 'OK', primary: true, value: true }, { label: 'Cancel', value: false }]);
 }
 
+/**
+ * Help text that stays out of the way: one short line, and a "?" that unfolds the details (kept
+ * folded: screens show what a thing is for, the how-to is one click away).
+ * @param {string} short one sentence
+ * @param {string | (string | Node)[] | {steps: (string | Node)[], notes?: string[]}} [more]
+ *   details: a paragraph, several, or numbered steps (with optional notes under them)
+ * @param {{tag?: string}} [o] tag of the short line ('p' in a page, 'small' under a control)
+ */
+export function help(short, more = null, { tag = 'p' } = {}) {
+  const line = h(`${tag}.hint`, {}, short);
+  if (!more) return line;
+  const parts = typeof more === 'string' ? [h('p', {}, more)]
+    : Array.isArray(more) ? more.map((m) => (typeof m === 'string' ? h('p', {}, m) : m))
+      : [h('ol', {}, more.steps.map((s) => h('li', {}, s))), ...(more.notes ?? []).map((n) => h('p', {}, n))];
+  const body = h('div.help-more', { hidden: true }, ...parts);
+  const btn = h('button.help-btn', { type: 'button', title: 'More details', 'aria-expanded': 'false' }, '?');
+  btn.onclick = () => {
+    body.hidden = !body.hidden;
+    btn.classList.toggle('on', !body.hidden);
+    btn.setAttribute('aria-expanded', String(!body.hidden));
+  };
+  line.append(' ', btn);
+  return h('div.help', {}, line, body);
+}
+
 export function toast(text, ms = 3000) {
   let host = document.querySelector('.toasts');
   if (!host) { host = h('div.toasts'); document.body.append(host); }

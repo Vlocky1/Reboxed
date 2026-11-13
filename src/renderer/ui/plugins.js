@@ -1,6 +1,13 @@
 // Preferences > Plugins: hardware plugins (built-in and installed), enable/disable, install, create
 // from a rekordbox controller mapping, remove. Format: docs/PLUGINS.md.
-import { h, modal, toast } from './dom.js';
+import { h, modal, toast, help } from './dom.js';
+
+/** A description kept to two lines; a click (or hover) shows all of it. */
+function clamped(text) {
+  const el = h('div.dim.clamp', { title: text ?? '' }, text ?? '');
+  el.onclick = (e) => { e.preventDefault(); el.classList.toggle('open'); };
+  return el;
+}
 
 export async function pluginsSection(app) {
   const reg = app.plugins;
@@ -20,7 +27,7 @@ export async function pluginsSection(app) {
           h('b', {}, p.name ?? p.id), h('span.dim', {}, ` ${p.version ?? ''}`),
           p.builtin ? h('span.plugin-tag', {}, 'built in') : h('span.plugin-tag.user', {}, p.overrides ? 'installed · replaces built in' : 'installed'),
           live.has(p.id) ? h('span.plugin-tag.live', {}, '● connected') : null),
-        h('div.dim', {}, p.description ?? ''),
+        clamped(p.description),
         h('div.plugin-meta', {},
           h('span', {}, `MIDI port: ${(p.match ?? []).join(', ') || '—'}`),
           p.decks ? h('span', {}, `${p.decks} decks`) : null,
@@ -71,7 +78,7 @@ export async function pluginsSection(app) {
         h('div.plugin-head', {}, h('b', {}, p.name ?? p.id), live.has(p.id) ? h('span.plugin-tag.live', {}, '● connected') : null),
         ...reg.modsOf(p).map((m) => h('label.mod-row', {},
           h('input', { type: 'checkbox', checked: on.has(m.id), onchange: (e) => { reg.setModEnabled(p, m.id, e.target.checked); toast(`${m.name ?? m.id}: ${e.target.checked ? 'on' : 'off'}`, 1500); renderMods(); } }),
-          h('span', {}, h('b', {}, m.name ?? m.id), h('div.dim', {}, m.description ?? '')))));
+          h('span', {}, h('b', {}, m.name ?? m.id), clamped(m.description)))));
     }) : [h('p.dim', {}, 'No controller plugin offers mods yet.')]));
   };
 
@@ -82,11 +89,13 @@ export async function pluginsSection(app) {
   return h('div.mods-plugins', {},
     h('section.mp-col', {},
       h('h3.settings-sub', {}, 'Mods'),
-      h('p.dim', {}, 'A mod changes what part of a controller does, e.g. stem buttons on pads that had effects. They apply at once, the controller can stay connected.'),
+      help('A mod changes what some of a controller\'s buttons do. It applies at once.',
+        'Example: stem buttons on pads that had effects. The controller can stay connected while you turn a mod on or off.'),
       modsBox),
     h('section.mp-col', {},
       h('h3.settings-sub', {}, 'Plugins'),
-      h('p.dim', {}, 'A plugin teaches Reboxed a piece of hardware: which MIDI messages its buttons send, its LEDs and its sound card. Anyone can write one for a controller that is not supported yet — see docs/PLUGINS.md in the Reboxed repository.'),
+      help('A plugin makes Reboxed understand a controller.',
+        'It describes the MIDI messages of the buttons, the LEDs and the sound card. Anyone can write one for a controller that is not supported yet: see docs/PLUGINS.md in the Reboxed repository.'),
       h('div.frow', {},
         h('button.dbtn.small', { onclick: install }, 'Install a plugin folder…'),
         h('button.dbtn.small', { onclick: fromCsv }, 'Create from a controller mapping (CSV)…'),

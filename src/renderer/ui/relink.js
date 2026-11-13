@@ -28,7 +28,7 @@ export async function openRelink(app, dir = null) {
     function start() {
       body.replaceChildren(
         h('p', {}, 'Choose the folder of your USB drive that holds your music (for example ', h('code', {}, 'E:\\Music'), '). Nothing is picked for you.'),
-        h('p.dim', {}, 'Reboxed finds, for every track still on this computer, the same music on the drive — same file name, another format, or a similar name confirmed by the tags and the duration — and lets you check before anything changes.'));
+        h('p.dim', {}, 'Finds each of your tracks on the drive (same name, another format, or a close name with the same tags and length). You check before anything changes.'));
       setButtons([{ label: 'Cancel', onclick: () => close(null) }, { label: 'Choose folder…', primary: true, onclick: choose }]);
     }
 

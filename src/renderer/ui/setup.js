@@ -1,7 +1,7 @@
 // Setup assistant, on the first launch with an empty library (Preferences > General can open it
 // again): folders and quality, stem models, download tools, online track information. Every step
 // can be skipped, the whole assistant too; everything stays in Preferences.
-import { h, toast } from './dom.js';
+import { h, toast, help } from './dom.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 import { FORMAT_LABELS, stemsSection, spotifySection, discogsSection } from './settings.js';
 
@@ -20,25 +20,25 @@ async function foldersStep(app) {
     h('label', {}, 'Downloaded tracks go to'), h('div', {}, folder, ' ',
       h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { save({ folder: d }); show(); } } }, 'Change…')),
     h('label', {}, 'Library (cues, analysis…)'), h('div', {}, h('code.path', {}, info.databaseDir),
-      h('small', {}, 'It can live on a USB drive to use the same library on several computers: Preferences > Library.')));
+      h('small.hint', {}, 'It can live on a USB drive (Preferences > Library).')));
 }
 
 const STEPS = [
   ['welcome', 'Welcome to Reboxed', async () => h('div', {},
-    h('p', {}, 'A few quick choices so everything is ready: where your music goes and in what quality, the stem separation models, the tools that download tracks, and the online track information.'),
-    h('p.dim', {}, 'Every step can be skipped and everything can be changed later in Preferences (the gear, top right).'))],
+    h('p', {}, 'Four quick choices and you are ready to mix.'),
+    h('p.dim', {}, 'Every step can be skipped, and changed later in Preferences (the gear, top right).'))],
   ['folders', 'Folders and quality', (app) => foldersStep(app)],
-  ['stems', 'Stems (separate vocals, drums, bass…)', (app) => stemsSection(app.library, (k, v) => app.applySetting(k, v), app).then((el) => h('div', {},
-    h('p.dim', {}, 'FAST starts at once; HQ sounds cleaner and takes longer. Download at least one model to use the STEMS buttons; "Test the engines" picks the fastest engine of this computer (CPU or GPU).'), el))],
-  ['tools', 'Download tracks (yt-dlp, ffmpeg, deno)', async (app) => h('div', {},
-    h('p.dim', {}, 'Reboxed downloads tracks from YouTube and SoundCloud with free tools: yt-dlp (downloads), ffmpeg (MP3 / FLAC conversion, covers) and deno (needed by YouTube for some videos). Install them here in one click.'),
+  ['stems', 'Stems: vocals, drums and bass apart', (app) => stemsSection(app.library, (k, v) => app.applySetting(k, v), app).then((el) => h('div', {},
+    help('Download at least one model to use the STEMS buttons.', 'FAST starts at once. HQ sounds cleaner and takes longer. "Test the engines" finds the fastest engine of this computer (CPU or GPU).'), el))],
+  ['tools', 'Download tracks', async (app) => h('div', {},
+    help('Downloading needs three free tools. Install them in one click.', 'yt-dlp downloads, ffmpeg converts to MP3 / FLAC and adds covers, deno is needed by YouTube for some videos.'),
     app.downloads.toolsPanel())],
-  ['online', 'Track information online', async () => h('div', {},
-    h('p.dim', {}, 'Auto-tag and "Search info" fill titles, artists, genres, labels and covers. Deezer and MusicBrainz work without anything; Spotify (clean titles) and Discogs (the most precise genres) need a free key, set up below or later.'),
+  ['online', 'Online accounts (optional)', async () => h('div', {},
+    h('p.dim', {}, 'Titles, genres and covers already work without any account. These two add more, now or later.'),
     await spotifySection(), await discogsSection())],
   ['done', 'All set', async () => h('div', {},
-    h('p', {}, 'Add your music with "+ Folder" or "+ Files" at the bottom left, or drop files on the window. Tracks are analysed on import (BPM, key, beatgrid, phrases).'),
-    h('p.dim', {}, 'This assistant can be opened again from Preferences > General.'))],
+    h('p', {}, 'Add your music with "+ Folder" or "+ Files" (bottom left), or drop files on the window.'),
+    h('p.dim', {}, 'Tracks are analysed as they arrive. This assistant stays in Preferences > General.'))],
 ];
 
 /** Open the assistant; resolves when it is closed (finished or skipped). */

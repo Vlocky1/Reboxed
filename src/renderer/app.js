@@ -2600,7 +2600,7 @@ async function smoke(app) {
         `${lic.mode} · ${licText} · pill "${app.trialPill.textContent}" · ${licErr}`);
       document.querySelector('.settings-close').click();
       await closed;
-      step('preferences tabs', tabs.length === 11 && tabs.at(-1) === 'About' && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
+      step('preferences tabs', tabs.length === 12 && tabs.includes('Accounts') && tabs.at(-1) === 'About' && active === 'Downloads' && quality && libPath === info.databaseDir && info.databaseDir === dir,
         `${tabs.join(' | ')} — active ${active}, library ${libPath}, stems ${info.stemsRoot}`);
       step('plugins manager', cards.length >= 5 && cards.includes('Pioneer DDJ-GRV6') && live === [...app.midi.controllers.values()].filter((d) => d.plugin?.id).length, `${cards.join(', ')} — connected ${live}`);
     }
@@ -2636,6 +2636,43 @@ async function smoke(app) {
     }
 
     // ---- Keyboard: rebind a key in Preferences, then use it; AZERTY preset; pinned close button ----
+    // 1.29: Preferences read at a glance: no wall of text (details fold behind "?"), online services
+    // in their own Accounts tab, pad instructions behind a "?" on the deck
+    {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const closed = app.openSettings('accounts');
+      for (let i = 0; i < 60 && document.querySelectorAll('.acct-card').length < 3; i++) await wait(50);
+      const cards = [...document.querySelectorAll('.acct-card .acct-head b')].map((x) => x.textContent).join();
+      const card = document.querySelector('.acct-card');
+      const foldedAtFirst = !!card?.querySelector('.help-more')?.hidden;
+      card?.querySelector('.help-btn')?.click();
+      const steps = card?.querySelector('.help-more')?.hidden === false ? card.querySelectorAll('.help-more ol li').length : 0;
+      await window.rb.smokeShot('accounts');
+      // every tab: the longest text shown without unfolding anything
+      const tabIds = [...document.querySelectorAll('.settings-tabs button[data-tab]')].map((b) => b.dataset.tab);
+      let longest = { len: 0, tab: '', text: '' };
+      const walls = [];   // every text over the limit, to fix them all in one go
+      for (const id of tabIds) {
+        document.querySelector(`.settings-tabs button[data-tab="${id}"]`).click();
+        for (let i = 0; i < 60 && /Loading…/.test(document.querySelector('.settings-pane')?.textContent ?? ''); i++) await wait(50);
+        await wait(80);
+        for (const el of document.querySelectorAll('.settings-pane p, .settings-pane small, .settings-pane .dim')) {
+          if (el.closest('[hidden]') || el.closest('.help-more') || el.querySelector('p, small')) continue;
+          // a clamped description shows two lines: what is on screen is what counts
+          if (el.classList.contains('clamp')) { if (el.clientHeight > 40) longest = { len: 999, tab: id, text: `clamp ${el.clientHeight}px` }; continue; }
+          const text = el.textContent.trim();
+          if (text.length > 140) walls.push(`${id} ${text.length}: "${text.slice(0, 50)}…"`);
+          if (text.length > longest.len) longest = { len: text.length, tab: id, text: text.slice(0, 60) };
+        }
+      }
+      document.querySelector('.settings-close')?.click();
+      await closed;
+      const padHint = document.querySelector('.deck .page-hint');
+      step('preferences at a glance: Accounts tab with folded how-to steps, no wall of text in any tab, pad help behind "?"',
+        cards === 'Spotify,Discogs,Gemini' && foldedAtFirst && steps >= 3 && tabIds.includes('accounts') && longest.len <= 140
+          && padHint?.textContent === '?' && (padHint.title ?? '').length > 10,
+        `cards ${cards} · folded ${foldedAtFirst} → ${steps} steps · ${tabIds.length} tabs · longest text ${longest.len} chars (${longest.tab}: "${longest.text}…")${walls.length ? ` · over 140: ${walls.join(" | ")}` : ""} · pad hint "${padHint?.textContent}"`);
+    }
     // 1.27: Settings > Mods / Plugins in two columns side by side
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));

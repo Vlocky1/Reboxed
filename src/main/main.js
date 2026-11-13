@@ -223,7 +223,7 @@ function registerIpc(win) {
   ipcMain.handle('catalog:search', (_e, platform, q) => {
     if (platform === 'deezer') return deezer.searchTracks(q);
     if (platform === 'spotify') {
-      if (!spotifyKeys()) throw new Error('Searching Spotify needs your Spotify keys (Preferences > Library). Spotify links work without them, and Deezer search needs no account.');
+      if (!spotifyKeys()) throw new Error('Searching Spotify needs your Spotify keys (Preferences > Accounts). Spotify links work without them, and Deezer search needs no account.');
       return spotify.searchTracks(q);
     }
     throw new Error(`no catalog search for ${platform}`);
@@ -313,7 +313,9 @@ function registerIpc(win) {
       // Shop (licence, beta key) and donations.
       || /^https:\/\/reboxed\.lemonsqueezy\.com\//.test(url)
       || /^https:\/\/(www\.)?(ko-fi\.com|buymeacoffee\.com)\/[\w.-]+\/?$/.test(url)
-      || /^https:\/\/(www\.)?instagram\.com\/rebox\.ed\/?$/.test(url);
+      || /^https:\/\/(www\.)?instagram\.com\/rebox\.ed\/?$/.test(url)
+      // Preferences > Accounts: where each key is made (these exact pages only).
+      || ['https://developer.spotify.com/dashboard', 'https://www.discogs.com/settings/developers', 'https://aistudio.google.com/apikey'].includes(url);
     if (allowed) shell.openExternal(url);
     return allowed;
   });

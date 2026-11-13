@@ -59,7 +59,7 @@ export class AiClient {
   /** Send a prompt, return the model's text answer. */
   async ask(prompt) {
     const c = await this.load();
-    if (!c.geminiKey) throw new Error('No Gemini API key (Preferences > Library > Track suggestion)');
+    if (!c.geminiKey) throw new Error('No Gemini API key (Preferences > Accounts)');
     if (typeof prompt !== 'string' || prompt.length > 60000) throw new Error('prompt too long');
     const res = await this.fetch(`${ENDPOINT}/${encodeURIComponent(c.model || DEFAULT_MODEL)}:generateContent`, {
       method: 'POST',

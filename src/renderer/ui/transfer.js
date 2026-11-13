@@ -30,7 +30,7 @@ export async function openTransferExport(app, preselect = null, opts = {}) {
   renderList();
   const copy = h('input', { type: 'checkbox', checked: true });
   const ok = await modal('Send to another Reboxed', h('div.transfer', {},
-    h('p', {}, 'Puts the music and an XML file (playlists, cues, beatgrids, ratings, colours, tags, comments) on a USB drive. On the other computer: ⋯ ▸ "Import from another Reboxed…" copies the music into a folder there and keeps all of it.'),
+    h('p', {}, 'Puts your music and everything about it (playlists, cues, grids, ratings, tags) on a USB drive. On the other computer: ⋯ ▸ "Import from another Reboxed…".'),
     h('label.transfer-row', {}, radios.all, h('b', {}, 'The whole collection'), h('span.dim', {}, ` ${lib.tracks.size} tracks, every playlist`)),
     h('label.transfer-row', {}, radios.some, h('b', {}, 'Only these playlists')),
     list,
@@ -95,7 +95,7 @@ export async function openTransferImport(app, opts = {}) {
     h('p', {}, `${parsed.tracks.length} track(s), ${countPlaylists(parsed.playlists)} playlist(s). Music found: ${found.size} / ${paths.length}.`),
     h('p', {}, 'The music is copied to this folder (so it stays here once the USB drive is gone):'),
     h('div', {}, destEl, ' ', h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { dest = d; destEl.textContent = d; } } }, 'Change…')),
-    h('p.dim', {}, 'Cues, beatgrids, ratings, colours, tags and comments are kept; the playlists go into a folder "Imported <date>". Tracks already in your collection are updated.')),
+    h('p.dim', {}, 'Everything is kept. Playlists go into a folder "Imported <date>", and tracks you already have are updated.')),
   [{ label: 'Copy and import', primary: true, value: true }, { label: 'Cancel', value: null }]);
   if (!ok) return null;
   const relocated = new Map();

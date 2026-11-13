@@ -87,7 +87,7 @@ export function openDrumSwapEditor(app, i) {
   g.addEventListener('change', onChange);
   render();
   body.append(
-    h('p.dim', {}, 'Each slot replaces the track\'s drums when it plays, in time with the deck. Pick a built-in loop, an audio file (a drum loop), or capture the drums of the track playing.'),
+    h('p.dim', {}, 'Each slot replaces the drums of the track, in time. Pick a built-in loop, a drum loop file, or capture the drums now playing.'),
     grid,
     h('div.dse-row', {}, h('span.dim', {}, 'DRUM CAPTURE length'), length));
   return modal(`DRUM SWAP — Deck ${i + 1}`, body, [{ label: 'Close', value: true, primary: true }])

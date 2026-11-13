@@ -42,7 +42,7 @@ export function lookupPanel(t, inputs, pending) {
   let source = savedSource();
   const srcBtns = Object.entries(SOURCE).map(([id, label]) => h(`button.seg-btn${id === source ? '.on' : ''}`, {
     type: 'button', dataset: { source: id },
-    title: id === 'deezer' ? 'Deezer: no account needed; has genres and labels' : 'Spotify: needs your Client ID / Secret (Preferences > Library); genres come from the same track on Deezer',
+    title: id === 'deezer' ? 'Deezer: no account needed; has genres and labels' : 'Spotify: needs your Client ID / Secret (Preferences > Accounts); genres come from the same track on Deezer',
     onclick: () => { source = id; saveSource(id); srcBtns.forEach((b) => b.classList.toggle('on', b.dataset.source === id)); search(); },
   }, label));
 

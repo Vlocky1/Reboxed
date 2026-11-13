@@ -1,4 +1,4 @@
-import { h, modal, toast } from './dom.js';
+import { h, modal, toast, help } from './dom.js';
 import { icon } from './icons.js';
 import { BPM_RANGES } from '../analysis/analyzer.js';
 import { keyboardSection } from './keyboard.js';
@@ -49,9 +49,10 @@ function stemEngineRows(app, library, apply, nvidia = null) {
       .map(([v, l]) => h('option', { value: v, selected: (s.stemsProvider ?? 'auto') === v }, l)));
   render();
   return [
-    h('label', {}, 'Engine'), h('div', {}, choice, h('small', {}, 'A GPU engine that crashes falls back to the CPU, and Auto stops using it.')),
+    h('label', {}, 'Engine'), h('div', {}, choice, h('small.hint', {}, 'A GPU engine that crashes falls back to the CPU.')),
     h('label', {}, 'Speed on this computer'), h('div', {}, h('div.frow', {}, test, status), table,
-      h('small', {}, 'Separates a short test mix with each engine (HQ takes a minute or two). Integrated graphics are often slower than the CPU; a dedicated GPU is usually much faster.')),
+      help('Measures each engine on a short test mix, so Auto can pick the fastest.',
+        'HQ takes a minute or two. Integrated graphics are often slower than the CPU; a dedicated GPU is usually much faster.', { tag: 'small' })),
   ];
 }
 
@@ -107,7 +108,8 @@ function nvidiaRows(app, library, apply, nv, reopen) {
         toast('NVIDIA engine removed'); reopen();
       } }, 'Remove (frees about 1.5 GB)'));
   } else {
-    info.textContent = `${nv.gpu.name}: separates stems with CUDA, many times faster than WebGPU or the CPU (HQ about 30× real time on an RTX 3070 Ti). Downloads about ${gb(nv.downloadSize)} of official files — onnxruntime GPU (Microsoft) and the CUDA, cuBLAS, cuFFT and cuDNN libraries (NVIDIA) — each checked; about 1.5 GB on disk.`;
+    info.textContent = `${nv.gpu.name}: much faster stems (HQ about 30× real time on an RTX 3070 Ti).`;
+    info.title = `Downloads about ${gb(nv.downloadSize)} of official files, each checked: onnxruntime GPU (Microsoft) and the CUDA, cuBLAS, cuFFT and cuDNN libraries (NVIDIA). About 1.5 GB on disk.`;
     buttons.append(h('button.dbtn.small.primary', { onclick: install }, `Install the NVIDIA engine (${gb(nv.downloadSize)})`));
     if (nv.installing) { buttons.replaceChildren(); info.textContent = 'Installing…'; }
   }
@@ -220,7 +222,7 @@ async function librarySection(app) {
       h('div', {}, path(info.databaseDir), ' ',
         h('button.dbtn.small', { onclick: async () => changeDb(await pick()) }, 'Change…'),
         info.database ? h('button.dbtn.small', { onclick: () => changeDb(info.appDir) }, 'Back to this computer') : null),
-      h('label', {}, ''), h('span.dim', {}, 'Collection, playlists, cues, analysis, artwork. Can be on a USB drive: if its letter changes on another computer, the paths follow.'),
+      h('label', {}, ''), h('small.hint', {}, 'Your collection, playlists, cues and analysis. It can live on a USB drive.'),
       h('label', {}, 'Stems folder'), h('div', {}, stemsMode, h('div', { style: { marginTop: '4px' } }, stemsPath))),
     h('h4', {}, 'Music on a USB drive'),
     h('p', {}, (() => {
@@ -229,12 +231,22 @@ async function librarySection(app) {
       const n = app.library.all().filter((t) => t.path.slice(0, 2).toUpperCase() === drive).length;
       return n ? `${n} track(s) of the collection are still on this computer (${drive}).` : '✓ No track of the collection is on this computer.';
     })()),
-    h('p.dim', {}, 'Move the collection to a folder you choose on your drive: each track is linked to the same music there — same name, another format, or a similar name confirmed by tags and duration — or copied there. You check every doubtful match first. Cues, tags, analysis and playlists are kept, stems move along, and the local files can go to the Recycle Bin.'),
-    h('button.dbtn', { onclick: () => openRelink(app) }, 'Move my collection to a USB drive…'),
-    await spotifySection(),
-    await discogsSection(),
-    await aiSection());
+    help('Moves your music to a USB drive and keeps cues, playlists, analysis and stems.', [
+      'Each track is linked to the same music on the drive (same name, another format, or a similar name confirmed by tags and length), or copied there.',
+      'You check every doubtful match first. The files left on the computer can then go to the Recycle Bin.']),
+    h('button.dbtn', { onclick: () => openRelink(app) }, 'Move my collection to a USB drive…'));
 }
+
+/** Preferences > Accounts: the optional online services, one card each. */
+async function accountsSection() {
+  return h('div', {}, await spotifySection(), await discogsSection(), await aiSection());
+}
+
+/** One online service: name, state, what it adds (one line), how to set it up (behind "?"), its fields. */
+function accountCard(name, badge, summary, more, ...body) {
+  return h('div.acct-card', {}, h('div.acct-head', {}, h('b', {}, name), badge), help(summary, more), ...body);
+}
+const acctBadge = (on, text) => h(`span.acct-badge${on ? '.on' : ''}`, {}, text);
 
 /** Track suggestion: the optional Gemini key (stored encrypted, never shown again). */
 export async function aiSection() {
@@ -251,13 +263,15 @@ export async function aiSection() {
       status.textContent = r.hasKey ? '✓ Saved' : 'No key: suggestions stay local';
     } catch (e) { status.textContent = err(e); }
   };
-  return h('div', {},
-    h('h4', {}, 'Track suggestion (AI)'),
-    h('p.dim', {}, 'Browser ▸ Track Suggestion works without any account: it listens to your tracks (sound, key, tempo, energy) and learns from your histories what you play next. Optionally, a free Gemini API key (aistudio.google.com ▸ Get API key) adds "✦ Ask Gemini": it re-ranks the best matches and names tracks to discover. Only titles, artists, BPM, keys and genres are sent to Google, never your audio. The key is stored encrypted on this computer.'),
+  return accountCard('Gemini', acctBadge(st.hasKey, st.hasKey ? 'SET UP' : 'OPTIONAL'),
+    'Adds "✦ Ask Gemini" to Track Suggestion. Suggestions already work without it.',
+    { steps: ['Click "Get a key" and sign in with a Google account.', 'Create an API key (free).', 'Paste it here and Save.'],
+      notes: ['Only titles, artists, BPM, keys and genres are sent to Google, never your audio. The key is stored encrypted on this computer.'] },
+    h('div.frow', {}, h('button.dbtn.small', { onclick: () => window.rb.openExternal('https://aistudio.google.com/apikey') }, 'Get a key ↗')),
     h('div.form-grid', {},
       h('label', {}, 'API key'), key,
       h('label', {}, 'Model'), model,
-      h('label', {}, ''), h('div', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
+      h('label', {}, ''), h('div.frow', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
         h('button.dbtn.small', { onclick: async () => { try { await window.rb.ai.configure({ key: '' }); key.placeholder = 'Gemini API key (optional)'; status.textContent = 'Removed'; } catch (e) { status.textContent = err(e); } } }, 'Remove'), ' ', status)));
 }
 
@@ -265,7 +279,7 @@ export async function aiSection() {
 export async function discogsSection() {
   const st = await window.rb.discogs.status();
   const token = h('input.text', { type: 'password', placeholder: st.hasToken ? '•••••••• (saved — type to replace)' : 'Personal access token', spellcheck: false });
-  const status = h('span.dim', {}, st.hasToken ? '✓ Set up' : 'Not set up (the genre then comes from MusicBrainz and Deezer only)');
+  const status = h('span.dim', {}, st.hasToken ? '✓ Set up' : '');
   const save = async () => {
     status.textContent = 'Checking…';
     try {
@@ -274,12 +288,14 @@ export async function discogsSection() {
       token.value = '';
     } catch (err) { status.textContent = `✗ ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`; }
   };
-  return h('div', {},
-    h('h4', {}, 'Precise genres (Discogs)'),
-    h('p.dim', {}, 'Auto-tag ▸ Genre asks Discogs, MusicBrainz and Deezer and keeps the DJ genre they agree on (Tech House, Melodic House & Techno, Drum & Bass…), checked against the BPM. Discogs has the most precise styles for club music and needs a free token: sign in on discogs.com, open Settings ▸ Developers and click "Generate new token", then paste it here. It is stored encrypted on this computer.'),
+  return accountCard('Discogs', acctBadge(st.hasToken, st.hasToken ? 'SET UP' : 'OPTIONAL'),
+    'More precise club genres in Auto-tag (Tech House, Drum & Bass…).',
+    { steps: ['Click "Get a token" and sign in on Discogs (free account).', 'Click "Generate new token".', 'Paste it here and Save.'],
+      notes: ['Without it, genres come from MusicBrainz and Deezer only. The token is stored encrypted on this computer.'] },
+    h('div.frow', {}, h('button.dbtn.small', { onclick: () => window.rb.openExternal('https://www.discogs.com/settings/developers') }, 'Get a token ↗')),
     h('div.form-grid', {},
       h('label', {}, 'Discogs token'), token,
-      h('label', {}, ''), h('div', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
+      h('label', {}, ''), h('div.frow', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
         h('button.dbtn.small', { onclick: async () => { token.value = ''; await window.rb.discogs.setToken(''); status.textContent = 'Removed'; } }, 'Remove'), ' ', status)));
 }
 
@@ -311,16 +327,22 @@ export async function spotifySection() {
       : h('div', {}, h('button.dbtn.small', { disabled: !st.clientId, onclick: connect }, 'Connect my Spotify account…'), ' ', msg));
   };
   showAccount();
-  return h('div', {},
-    h('h4', {}, 'Spotify, Deezer (track information, playlists)'),
-    h('p.dim', {}, 'Track information ▸ "Search info" fills genre, album, year, label, cover… from the service you pick there: Deezer works without any setup (and has the genres). Spotify is optional and needs a free Spotify app: on developer.spotify.com/dashboard create an app (any name; redirect URI: http://127.0.0.1:8888/callback; tick Web API), then copy its Client ID and Client Secret here. The secret is stored encrypted on this computer.'),
+  const ready = !!(st.clientId && st.hasSecret);
+  return accountCard('Spotify', acctBadge(ready, ready ? 'SET UP' : 'OPTIONAL'),
+    'Reads your Spotify playlists in full and adds Spotify to "Search info". Deezer needs no setup.',
+    { steps: [
+      'Click "Open the Spotify dashboard", sign in, and create an app (any name).',
+      h('span', {}, 'Redirect URI: ', h('code', {}, 'http://127.0.0.1:8888/callback'), ' · tick "Web API".'),
+      'Copy the app\'s Client ID and Client Secret here, then Save.',
+      'Click "Connect my Spotify account…" and accept in your browser (once).'],
+    notes: ['Without the account, Spotify shows only the first 100 tracks of a playlist. Reboxed only reads your playlists. The secret is stored encrypted on this computer.'] },
+    h('div.frow', {}, h('button.dbtn.small', { onclick: () => window.rb.openExternal('https://developer.spotify.com/dashboard') }, 'Open the Spotify dashboard ↗')),
     h('div.form-grid', {},
       h('label', {}, 'Client ID'), id,
       h('label', {}, 'Client Secret'), secret,
-      h('label', {}, ''), h('div', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
+      h('label', {}, ''), h('div.frow', {}, h('button.dbtn.small', { onclick: save }, 'Save'), ' ',
         h('button.dbtn.small', { onclick: async () => { id.value = ''; secret.value = ''; await window.rb.spotify.setCredentials('', ''); status.textContent = 'Removed'; } }, 'Remove'), ' ', status),
-      h('label', {}, 'Spotify account'), acct),
-    h('p.dim', {}, 'Spotify gives the tracks of a playlist only to a signed-in account: connect yours (once, in the browser, on your Spotify app above) to read whole playlists, not only their first 100 tracks, and to list your playlists in the download window. Reboxed only reads your playlists.'));
+      h('label', {}, 'My account'), acct));
 }
 
 /** Track downloader preferences (moved here from the download window). */
@@ -361,7 +383,8 @@ export async function openSettings(library, engine, apply, midi, app) {
         h('label', {}, 'BPM range'), h('select', { onchange: (e) => apply('bpmRange', e.target.value.split('-').map(Number)) },
           BPM_RANGES.map(([a, b]) => h('option', { value: `${a}-${b}`, selected: s.bpmRange[0] === a && s.bpmRange[1] === b }, `${a} - ${b}`))),
         h('label', {}, 'Beatgrid mode'), h('div', {}, sel('analysisMode', [['normal', 'Normal (constant tempo)'], ['dynamic', 'Dynamic (variable tempo)']]),
-          h('small', {}, 'Normal: the BPM stays fixed through the track. A track analysed in dynamic mode becomes constant the next time it is loaded, except a locked grid, one re-analysed as dynamic from its deck, or an imported grid with real tempo changes.')),
+          help('Normal keeps one BPM for the whole track (right for almost all club music).',
+            'In Normal, a track analysed as dynamic becomes constant the next time it is loaded. Kept variable: a locked grid, a track re-analysed as dynamic from its deck, an imported grid with real tempo changes.', { tag: 'small' })),
         h('label', {}, 'Variable grids'), (() => {
           const count = () => library.all().filter((t) => t.beatgrid?.beats && !t.gridLocked).length;
           const info = h('small', {}, `${count()} track(s) have a variable grid.`);
@@ -381,7 +404,8 @@ export async function openSettings(library, engine, apply, midi, app) {
       h('h4', {}, 'Small computers'),
       h('div.form-grid', {},
         h('label', {}, 'Low memory mode'), h('div', {}, sel('lowMemory', [['auto', `Automatic (${lowMemoryWanted('auto', app.ramGB ?? 0) ? 'on' : 'off'} here: ${Math.round(app.ramGB ?? 0)} GB of RAM)`], ['on', 'On'], ['off', 'Off']]),
-          h('small', {}, 'Each deck holds its track in half the memory (about 58 MB instead of 115 for 5 minutes), for a very small loss of precision (16 bits, like a CD). Applies to the next track loaded.'))),
+          help('Halves the memory each deck uses. No audible difference.',
+            'About 58 MB instead of 115 for a 5-minute track, at CD precision (16 bits). Applies to the next track loaded.', { tag: 'small' }))),
       h('h4', {}, 'View'),
       h('div.form-grid', {},
         h('label', {}, 'Waveform color'), sel('waveformColor', [['3band', '3Band'], ['rgb', 'RGB'], ['blue', 'BLUE']]),
@@ -389,16 +413,16 @@ export async function openSettings(library, engine, apply, midi, app) {
           const sel = h('select', { disabled: true, onchange: (e) => window.rb.setFullscreen({ startMode: e.target.value }) },
             [['maximized', 'Full screen windowed (maximised)'], ['fullscreen', 'Full screen'], ['window', 'Normal window']].map(([v, l]) => h('option', { value: v }, l)));
           window.rb.fullscreen().then((f) => { sel.value = f.startMode; sel.disabled = false; });
-          return h('div', {}, sel, h('span.dim', {}, '  F11 switches full screen on / off at any time'));
+          return h('div', {}, sel, h('small.hint', {}, 'F11 switches full screen at any time.'));
         })(),
         h('label', {}, 'Setup assistant'), h('div', {}, h('button.dbtn.small', { onclick: () => import('./setup.js').then((m) => m.openSetup(app)) }, 'Open the setup assistant'),
-          h('small', {}, 'Folders and quality, stem models, download tools, Spotify and Discogs, step by step.'))))],
+          h('small.hint', {}, 'The first-run choices, step by step.'))))],
     ['appearance', 'Appearance', () => appearanceSection(library, apply)],
     ['decks', 'Decks & Mixer', () => h('div.form-grid', {},
       h('label', {}, 'Decks'), sel('deckCount', [[2, '2 decks'], [4, '4 decks']], Number),
       h('label', {}, 'Sync mode'), sel('syncMode', [['beat', 'BEAT SYNC (tempo + phase)'], ['bpm', 'BPM SYNC (tempo only)']]),
       h('label', {}, 'Sync double/half BPM'), check('syncDoubleHalf'),
-      h('label', {}, 'Load while playing'), h('div', {}, check('loadOnPlaying'), h('small', {}, 'On: a track can be loaded onto a playing deck. Off: a playing deck is protected (pause it to load another track), a load lock. Also in each deck\'s menu (⋯).')),
+      h('label', {}, 'Load while playing'), h('div', {}, check('loadOnPlaying'), h('small.hint', {}, 'Off: a playing deck is protected, pause it to load another track.')),
       h('label', {}, 'Default tempo range'), sel('defaultTempoRange', [[6, '±6%'], [10, '±10%'], [16, '±16%'], [100, 'WIDE']], Number),
       h('label', {}, 'Auto gain'), check('autoGain'),
       h('label', {}, 'Channel fader curve'), sel('faderCurve', [['linear', 'Linear'], ['exp', 'Exponential'], ['log', 'Logarithmic']]),
@@ -407,10 +431,12 @@ export async function openSettings(library, engine, apply, midi, app) {
       h('label', {}, 'Master out'), sel('masterDevice', deviceOptions),
       h('label', {}, 'Headphones (cue)'), sel('phonesDevice', [['', 'Off'], ...deviceOptions.slice(1)]),
       h('label', {}, 'Also play the master on'), h('div', {}, sel('masterCopyDevice', [['', 'Nothing else'], ['default', "This computer's speakers (system default)"], ...deviceOptions.slice(1)]),
-        h('small', {}, 'With a controller plugged in, the sound still comes out of the computer too. Two sound cards are never perfectly in time: use it to listen, not to play to a crowd on both.')),
+        help('To also hear the master on the computer when a controller is plugged in.',
+          'Two sound cards are never perfectly in time: use it to listen, not to play to a crowd on both.', { tag: 'small' })),
       h('label', {}, 'Output channels'), sel('outputLayout', [['stereo', 'Stereo (headphones on a 2nd device)'], ['quad', '4 channels: master 1/2, headphones 3/4 (DJ controller)']]),
       h('label', {}, 'Use controller sound card automatically'), check('controllerAudioAuto'))],
     ['library', 'Library', () => librarySection(app)],
+    ['accounts', 'Accounts', () => accountsSection()],
     ['stems', 'Stems', () => stemsSection(library, apply, app, () => show('stems'))],
     ['downloads', 'Downloads', () => downloadsSection(app, library)],
     ['midi', 'MIDI', () => (midi ? midi.renderSettings() : h('p.dim', {}, 'MIDI not initialised'))],
@@ -424,12 +450,13 @@ export async function openSettings(library, engine, apply, midi, app) {
     appearance: ['palette', 'Theme, accent colour, size of the interface.'],
     decks: ['layout2', 'Number of decks, sync, tempo range and mixer curves.'],
     audio: ['headphones', 'Sound cards for the master and the headphones.'],
-    library: ['collection', 'Where your library and stems live, USB drive, Spotify.'],
-    stems: ['wave', 'Stem separation models, quality, engine (CPU or GPU) and files.'],
+    library: ['collection', 'Where your library and stems live, and moving your music to a USB drive.'],
+    accounts: ['link', 'Optional online services: Spotify, Discogs, Gemini.'],
+    stems: ['wave', 'Stem models, quality, engine and files.'],
     downloads: ['download', 'Quality, folder, name cleaner and tools.'],
     midi: ['midi', 'Connected controllers, MIDI monitor and learn.'],
-    plugins: ['plug', 'Mods that change what a controller\'s buttons do, and hardware plugins: install, create, enable.'],
-    keyboard: ['keyboard', 'Keyboard shortcuts: presets for QWERTY and AZERTY, every key can be changed.'],
+    plugins: ['plug', 'Mods for your controller, and hardware plugins.'],
+    keyboard: ['keyboard', 'Shortcuts, with QWERTY and AZERTY presets.'],
     about: ['info', 'Version, updates, links and credits.'],
   };
   const pane = h('div.settings-pane');
