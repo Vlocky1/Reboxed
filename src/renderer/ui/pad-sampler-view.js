@@ -343,7 +343,7 @@ export class PadSamplerView {
     bright.addEventListener('change', () => set({ brightness: Number(bright.value) }));
     bright.addEventListener('input', () => { L.brightness = Number(bright.value); });
     return h('div.pads-edit', {},
-      h('p.dim', {}, 'SHOW: the background animation covers the whole grid and every pad plays its sound and its light effect. In SAMPLER mode the animation fills the empty pads.'),
+      h('p.dim', {}, 'SHOW: the animation covers the grid, every pad plays its sound and light. SAMPLER: the animation fills the empty pads.'),
       this.row('Background', this.select2(L.idle, LIGHT_IDLE, (v) => set({ idle: v }))),
       this.row('Brightness', bright),
       this.row('Pad colours', h('button.dbtn.small', { onclick: () => recolor((_, i) => hue((i % 8) / 8 + Math.floor(i / 8) / 32, 1)) }, 'Rainbow'),
@@ -373,7 +373,7 @@ export class PadSamplerView {
       : sel !== null ? this.padEditor(sel)
         : h('div.pads-help', {},
           h('p', {}, 'Click a pad to play it (Shift = full velocity). Right-click a pad to choose its sound, or EDIT then click it to set it up.'),
-          h('p.dim', {}, 'Drop tracks or audio files on the pads. Capture (or right-click ▸ Capture) takes the deck’s loop. Loops start on the master’s beat and follow its tempo when synced.'),
+          h('p.dim', {}, 'Drop audio on the pads, or Capture the deck’s loop. Synced loops follow the master’s beat and tempo.'),
           h('p.dim', {}, 'With a Launchpad X: Session = pads, Note = instrument, Custom = light show, ▲ ▼ = kits, right column = stop a row.')));
   }
 

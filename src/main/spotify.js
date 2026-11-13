@@ -1,6 +1,6 @@
 // Track information lookup on Spotify (Web API, client credentials flow: no user login). The user
 // creates a free app on developer.spotify.com and pastes its Client ID / Client Secret in
-// Preferences > Library; the secret is encrypted with the OS keychain (safeStorage) on this machine.
+// Preferences > Accounts; the secret is encrypted with the OS keychain (safeStorage) on this machine.
 // Development-mode limits (2026): 10 search results, no album label / popularity. Genres come from
 // the artist (Spotify gives no genre per track).
 
@@ -171,7 +171,7 @@ export class Spotify {
    */
   async signIn(open) {
     const c = this.credentials();
-    if (!c?.clientId) throw new Error('Add your Spotify Client ID first (Preferences > Library)');
+    if (!c?.clientId) throw new Error('Add your Spotify Client ID first (Preferences > Accounts)');
     const { verifier, challenge } = pkcePair();
     const state = b64url(randomBytes(12));
     const waiting = waitForCode({ state });
@@ -266,7 +266,7 @@ export class Spotify {
   async auth() {
     if (this.token && this.token.until > Date.now()) return this.token.value;
     const c = this.credentials();
-    if (!c?.clientId || !c?.secret) throw new Error('Spotify is not set up: add your Client ID and Client Secret in Preferences > Library');
+    if (!c?.clientId || !c?.secret) throw new Error('Spotify is not set up: add your Client ID and Client Secret in Preferences > Accounts');
     const res = await this.fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: { Authorization: `Basic ${Buffer.from(`${c.clientId}:${c.secret}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },

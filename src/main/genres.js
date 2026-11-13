@@ -72,7 +72,7 @@ export class GenreSources {
   }
 
   /**
-   * Discogs styles of the release holding the track (needs a personal token: Preferences > Library).
+   * Discogs styles of the release holding the track (needs a personal token: Preferences > Accounts).
    * @returns {Promise<{source: 'discogs', tags: string[]} | null>}
    */
   async discogs({ artist, title }) {
@@ -92,7 +92,7 @@ export class GenreSources {
     return { source: 'discogs', tags: sorted.map(([n]) => n), weights: sorted.map(([, c]) => Math.max(0.3, c / top)) };
   }
 
-  /** Check a Discogs token (Preferences > Library > Save). */
+  /** Check a Discogs token (Preferences > Accounts > Save). */
   async checkDiscogs(token) {
     await this.json('https://api.discogs.com/oauth/identity', { Authorization: `Discogs token=${token}` });
   }

@@ -1,4 +1,4 @@
-import { h, fmtTime, fader, contextMenu, promptText } from './dom.js';
+import { h, fmtTime, fader, contextMenu, promptText, toast } from './dom.js';
 import { Overview } from './waveform.js';
 import { TEMPO_RANGES, BEAT_LOOP_SIZES, BEAT_JUMP_SIZES } from '../audio/deck.js';
 import { PAD_FX } from '../audio/fx.js';
@@ -207,7 +207,8 @@ export class DeckView {
   buildPageBar() {
     const d = this.deck;
     const btn = (label, cls, onclick, title) => h(`button.dbtn${cls ? `.${cls}` : ''}`, { onclick, title }, label);
-    const hint = (text) => h('span.page-hint', {}, text);
+    // what the pads of this mode do: a quiet "?" (hover, or click to read it), not a line of text
+    const hint = (text) => h('button.page-hint', { type: 'button', title: text, 'aria-label': text, onclick: () => toast(text, 5000) }, '?');
     const parts = [];
     if (padPages(this.padMode) > 1) {
       this.pageLabel = h('span.val');

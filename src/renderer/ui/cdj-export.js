@@ -70,7 +70,7 @@ export async function openCdjExport(app) {
     function start() {
       body.replaceChildren(
         h('div.form-grid', {}, h('label', {}, 'Drive'), h('div', {}, driveSel, ' ', other)),
-        h('p.dim', {}, 'Tracks already on the drive are used where they are; the others are copied to \\Contents\\<artist>\\<album>. An export already on the drive is backed up first (backup-<date>).'),
+        h('p.dim', {}, 'Tracks already on the drive stay where they are, the others are copied. An earlier export on the drive is backed up first.'),
         h('div.rbi-cols', {},
           h('div.rbi-col', {},
             h('h3', {}, 'What to export'),

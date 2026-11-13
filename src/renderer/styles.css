@@ -217,7 +217,8 @@ canvas.overview { display: block; cursor: pointer; }
 .dbtn.bank { min-width: 40px; }
 /* Row under the pads: what the current page needs. */
 .row.page { flex-wrap: nowrap; min-height: 22px; overflow: hidden; }
-.page-hint { color: var(--dim); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.page-hint { flex: 0 0 auto; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--line-2); background: transparent; color: var(--dim); font-size: 10px; font-weight: 700; line-height: 1; cursor: help; }
+.page-hint:hover { color: var(--text); border-color: var(--text-2); }
 .pad.fx .pad-letter { font-size: 10px; letter-spacing: .02em; }
 
 /* Pads grow with the free height of the deck (big performance pads), within limits. */
@@ -285,7 +286,6 @@ canvas.overview { display: block; cursor: pointer; }
 .decks.four .deck-info { order: 10; flex: 1 1 60%; }
 .decks.four .deck-headbtns { order: 11; }
 .decks.four .deck-headbtns .dbtn.master, .decks.four .deck-headbtns .dbtn.sync, .decks.four .deck-headbtns .dbtn.keysync { min-width: 0; height: 22px; }
-.decks.four .page-hint { display: none; }
 .decks.four .dbtn.padmode { min-width: 0; }
 .decks.four .deck-headbtns .dbtn { height: 22px; }
 .decks.four .dbtn.stem { min-width: 0; padding: 0 4px; font-size: 9px; }
@@ -1072,3 +1072,32 @@ button.suggest-chip.discover:hover { color: #fff; background: var(--accent-bg); 
 .manual-win .man-group summary { cursor: pointer; font-weight: 600; }
 .manual-win .man-group ul { margin: 6px 0; padding-left: 18px; color: var(--text-2); line-height: 1.5; }
 .manual-win .manual-tip { color: var(--text-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+
+/* Help that stays out of the way: one short line, "?" unfolds the details (dom.js help()) */
+.help { margin: 0 0 10px; }
+.hint { margin: 0; font-size: 12px; line-height: 1.45; color: var(--dim); }
+small.hint { display: block; font-size: 11.5px; margin-top: 4px; }
+.form-grid .help { margin: 4px 0 0; }
+.help-btn { width: 16px; height: 16px; padding: 0; margin-left: 2px; border-radius: 50%; border: 1px solid var(--line-2); background: transparent; color: var(--dim); font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; vertical-align: 1px; }
+.help-btn:hover, .help-btn.on { color: #fff; background: var(--accent); border-color: var(--accent); }
+.help-more { margin-top: 6px; padding: 8px 12px; border-left: 2px solid var(--accent); background: var(--panel-2); border-radius: 0 var(--radius) var(--radius) 0; font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.help-more p { margin: 0 0 6px; }
+.help-more p:last-child { margin-bottom: 0; }
+.help-more ol { margin: 0 0 6px; padding-left: 18px; }
+.help-more li { margin: 2px 0; }
+.help-more code { user-select: all; background: var(--bg); padding: 0 4px; border-radius: 3px; }
+/* A long description kept to two lines; a click opens it */
+.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.clamp.open { display: block; }
+/* Preferences > Accounts: one card per online service */
+.acct-card { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); padding: 14px 16px; margin-bottom: 12px; }
+.acct-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.acct-head b { font-size: 13px; }
+.acct-badge { font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--line-2); color: var(--dim); }
+.acct-badge.on { color: var(--green); border-color: var(--green); }
+.acct-card .form-grid { margin-top: 10px; }
+/* the card is the frame: no second frame around its fields */
+.settings-content .acct-card .form-grid { padding: 0; background: none; border: 0; border-radius: 0; }
+/* a row of buttons in a settings cell stays a row (Save · Remove · status) */
+.settings-content .form-grid > div.frow { flex-direction: row; align-items: center; justify-content: flex-start; }
+.acct-card .frow { flex-wrap: wrap; }

@@ -29,7 +29,7 @@ export function openCleanNames(app, ids) {
     const overlay = h('div.overlay', {}, h('div.dialog.autotag-dialog', { role: 'dialog' },
       h('h2', {}, `Clean names: ${props.length} of ${tracks.length} track(s)`),
       h('div.dialog-body.autotag', {},
-        h('p.dim', {}, 'Removes "(Paroles)", "[Official Video]", "| Lyrics", "Visualizer", "- Topic", "VEVO"… and splits "Artist - Title". Mixes, remixes, edits, featurings and live versions stay. The keywords are in Preferences > Downloads.'),
+        h('p.dim', {}, 'Removes "(Official Video)", "| Lyrics", "- Topic", "VEVO"… and splits "Artist - Title". Mix, remix, edit, feat. and live names stay. Keywords: Preferences > Downloads.'),
         h('div.at-list', {}, props.map((p, i) => h('label.at-clean', {}, boxes[i],
           h('div', {}, h('div', {}, h('span.at-k', {}, 'Title '), cell(p.track.title ?? '', p.title)), h('div', {}, h('span.at-k', {}, 'Artist '), cell(p.track.artist ?? '', p.artist))))))),
       h('div.dialog-buttons', {}, h('button', { onclick: () => close(null) }, 'Cancel'), apply)));
@@ -64,7 +64,7 @@ export function cleanerSettings(cfg, save) {
   return [
     h('label', {}, 'Clean names when adding'), h('div', {}, h('input', { type: 'checkbox', checked: cfg.cleanNames !== false, onchange: (e) => save({ cleanNames: e.target.checked }) }),
       h('span.dim', {}, '  removes (Paroles), [Official Video], Lyrics, Visualizer, - Topic, VEVO… from downloaded tracks')),
-    h('label', {}, 'Words to remove'), h('div', {}, area, h('small.dim', {}, 'Comma separated, whole words, case and accents ignored. Empty = the default list. Brackets that also name a mix, remix, edit, feat. or live version are kept.')),
+    h('label', {}, 'Words to remove'), h('div', {}, area, h('small.dim', {}, 'Comma separated. Empty = the default list. Mix, remix, edit, feat. and live names are always kept.')),
     h('label', {}, 'Try it'), h('div', {}, h('div.frow', {}, testArtist, test), out),
   ];
 }

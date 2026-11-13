@@ -411,7 +411,7 @@ export class Browser {
       this.whyEl = h('div.suggest-why');
       this.discoverEl = h('div.suggest-discover');
       window.rb.ai?.status().then((st) => {
-        if (!st?.hasKey) { this.aiBtn.disabled = true; this.aiBtn.title = 'Optional: add a Gemini API key in Preferences > Library > Track suggestion'; }
+        if (!st?.hasKey) { this.aiBtn.disabled = true; this.aiBtn.title = 'Optional: add a Gemini API key in Preferences > Accounts'; }
       }).catch(() => {});
       this.relatedEl.replaceChildren(h('div.filter-panel.related-panel.suggest-panel', {},
         h('div.frow', {}, h('span.ftoggle', {}, 'SUGGEST'), seedSel, moodSel, this.aiBtn, this.aiStatus,
@@ -1007,7 +1007,7 @@ export class Browser {
 
     const body = h('div.trackinfo', {},
       h('div.ti-top', {},
-        h('p.ti-note', {}, 'Every field below can be edited. Changes are saved in your Reboxed library (they appear everywhere in Reboxed and in exports); the audio file itself is not modified.'),
+        h('p.ti-note', {}, 'Edits are saved in your Reboxed library (and its exports), not in the audio file.'),
         sp.button),
       sp.panel,
       h('div.ti-cols', {},

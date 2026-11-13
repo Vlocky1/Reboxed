@@ -30,7 +30,7 @@ export function openUpdateDialog(app, info = app.updateInfo) {
     const notes = h('pre.update-notes', {}, info.notes || 'See the release page for the changes.');
     const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
     body.replaceChildren(
-      h('p', {}, `You have ${info.current}. The update downloads the installer (${info.asset?.size ? mb(info.asset.size) : ''}), installs it and restarts Reboxed. Your library and settings are kept.`),
+      h('p', {}, `You have ${info.current}. The update (${info.asset?.size ? mb(info.asset.size) : ''}) installs itself and restarts Reboxed. Your library and settings are kept.`),
       notes);
     const later = h('button', { onclick: () => close(null) }, 'Later');
     const page = h('button', { onclick: () => window.rb.openExternal(info.page) }, 'Release page');
@@ -107,6 +107,7 @@ export function aboutSection(app, version) {
     h('h4', {}, 'Links'),
     h('div.about-links', {}, link('Website', LINKS.website), link('GitHub', LINKS.github), link('Release notes', LINKS.releases), link('Report a bug', LINKS.issues), link('Instagram @rebox.ed', LINKS.instagram)),
     h('h4', {}, 'Credits'),
-    h('p.dim', {}, 'Stems: Spleeter (Deezer) and HT-Demucs (Meta) models, run with ONNX Runtime. Downloads: yt-dlp, ffmpeg and deno, fetched from their own releases. ',
-      'Independent software, not affiliated with AlphaTheta / Pioneer DJ.'));
+    h('p.dim', {}, 'Stems: Spleeter (Deezer), HT-Demucs (Meta), ONNX Runtime.'),
+    h('p.dim', {}, 'Downloads: yt-dlp, ffmpeg, deno (fetched from their own releases).'),
+    h('p.dim', {}, 'Independent software, not affiliated with AlphaTheta / Pioneer DJ.'));
 }

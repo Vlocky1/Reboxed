@@ -35,7 +35,7 @@ const PLACEHOLDER = {
 const INTRO = {
   youtube: 'Search YouTube, or paste any YouTube link: a playlist lists its tracks, with "Download all". A link from Spotify, Deezer or SoundCloud also works here.',
   soundcloud: 'Search SoundCloud, or paste a track, a set or an artist page.',
-  spotify: 'Spotify gives the tracks (no account needed for links; with your Spotify keys in Preferences > Library: search, and playlists of any length). Each one is found on YouTube (same title, artist and length; no live, cover or sped-up versions), then downloaded with Spotify\'s title and artist.',
+  spotify: 'Spotify gives the tracks (no account needed for links; with your Spotify keys in Preferences > Accounts: search, and playlists of any length). Each one is found on YouTube (same title, artist and length; no live, cover or sped-up versions), then downloaded with Spotify\'s title and artist.',
   deezer: 'Deezer gives the tracks (search, track, album or playlist link; no account needed). Each one is found on YouTube (same title, artist and length), then downloaded with Deezer\'s title and artist.',
 };
 const cleanErr = (err) => String(err?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -548,7 +548,7 @@ export class DownloadCenter {
       window.rb.spotify.account().then((a) => {
         acct.replaceChildren(...(a.signedIn
           ? [h('span.dim', {}, `Spotify: ${a.user ?? 'connected'} · whole playlists`), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.renderMyPlaylists() }, '♫ My playlists')]
-          : [h('span.dim', {}, 'Without a Spotify account, Spotify shows only the first 100 tracks of a playlist.'), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.app.openSettings('library') }, 'Connect my Spotify account…')]));
+          : [h('span.dim', {}, 'Without a Spotify account, Spotify shows only the first 100 tracks of a playlist.'), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.app.openSettings('accounts') }, 'Connect my Spotify account…')]));
       }).catch(() => acct.remove());
     }
     if (p === 'spotify' && this.showMyPls && this.myPls) {
@@ -558,7 +558,7 @@ export class DownloadCenter {
       parts.push(h('div.dlc-bar.dlc-filters', {}, check('addToPlaylist', 'Add to a playlist named after it')));
       parts.push(...this.catalogView(this.sp));
     } else if (catalog && this.sp && (this.sp.platform ?? 'spotify') === p && this.sp.search) {
-      parts.push(h('p.dim', {}, `${PLATFORMS[p]} gives the track; its audio is found on YouTube (same title, artist and length) and downloaded with ${PLATFORMS[p]}'s title and artist.`));
+      parts.push(h('p.dim', {}, `The audio is found on YouTube and saved with ${PLATFORMS[p]}'s title, artist and cover.`));
       parts.push(h('div.dlc-list', {}, this.sp.tracks.map((t) => this.spotifyRow(t, this.sp))));
     } else if (!catalog && this.linkList?.platform === p) {
       const L = this.linkList;
@@ -703,7 +703,7 @@ export class DownloadCenter {
       // Spotify's public page stops at 100 tracks: the whole list needs the Spotify account
       sp.via === 'embed' && sp.platform !== 'deezer' && sp.tracks.length >= 100 ? h('div.dlc-bar.dlc-note', {},
         h('span', {}, `Only the first 100 tracks: Spotify gives a whole playlist only to a signed-in account${sp.accountError ? ` (${sp.accountError})` : ''}.`), h('span.spacer'),
-        h('button.dbtn.small', { onclick: () => this.app.openSettings('library') }, 'Connect my Spotify account…')) : null,
+        h('button.dbtn.small', { onclick: () => this.app.openSettings('accounts') }, 'Connect my Spotify account…')) : null,
       h('div.dlc-list', {}, sp.tracks.map((t) => this.spotifyRow(t, sp))),
     ];
   }
@@ -794,7 +794,7 @@ export class DownloadCenter {
         c.subs.map((s) => h('span.chip', { title: s.url }, s.name, h('button.dlc-unfollow', { title: 'Unfollow', onclick: () => { this.unfollow(s.url); this.feedItems = null; this.checkFeeds(); } }, '×'))),
         lists.map((l) => h('span.chip.dlc-chip-list', { title: `${l.url}\nFollowed playlist: its new tracks show here` }, h('span.dlc-logo.tiny', { innerHTML: LOGOS[l.platform] ?? '' }), `★ ${l.name}`,
           h('button.dlc-unfollow', { title: 'Stop following this playlist', onclick: () => { this.unfollowList(l.url); this.renderTab(false); } }, '×'))),
-        c.subs.length || lists.length ? null : h('span.dim', {}, 'Follow artists and labels (button "+ follow" in search results, or paste a channel link), or Spotify / Deezer playlists (☆ Follow on a playlist), to see their new tracks here.')),
+        c.subs.length || lists.length ? null : h('span.dim', {}, 'Follow channels ("+ follow" in results) or playlists (☆ Follow) to see their new tracks here.')),
       ...listParts,
       h('div.dlc-bar', {}, add, h('button.dbtn', { onclick: doAdd }, 'Follow')),
       h('div.dlc-bar.dlc-filters', {},
