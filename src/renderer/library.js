@@ -5,6 +5,7 @@ import { normalizeKeyText } from '../shared/keys.js';
 import { evaluateSmartList } from '../shared/smartlist.js';
 import { DEFAULT_RELATED } from '../shared/related.js';
 import { selectPlaylists, playlistPaths, remapPath, trackPatch } from '../shared/rekordbox-import.js';
+import { pickedPatch } from '../shared/merge-fields.js';
 
 export const DEFAULT_SETTINGS = {
   keyNotation: 'camelot',      // 'camelot' | 'musical'
@@ -167,13 +168,15 @@ export class Library extends EventTarget {
    * playlist holding both keeps one entry), takes what it lacks from them (cues, grid, tags, rating,
    * colour, comments, plays), and they leave the collection (their files are not touched).
    */
-  mergeDuplicates(keepId, dropIds) {
+  mergeDuplicates(keepId, dropIds, { picks = null } = {}) {
     const keep = this.tracks.get(keepId);
     const drops = dropIds.map((id) => this.tracks.get(id)).filter((t) => t && t.id !== keepId);
     if (!keep || !drops.length) return null;
     const gone = new Set(drops.map((t) => t.id));
-    const patch = {};
-    for (const d of drops) {
+    // picks (field by field, chosen by the user): exactly what was ticked; else the kept track
+    // takes what it lacks from the others
+    const patch = picks ? pickedPatch(keep, [keep, ...drops], picks) : {};
+    for (const d of picks ? [] : drops) {
       if (!(keep.cues?.length || patch.cues?.length) && d.cues?.length) patch.cues = d.cues;
       if (!keep.beatgrid && !patch.beatgrid && d.beatgrid) patch.beatgrid = d.beatgrid;
       for (const k of ['color', 'comments', 'genre', 'label', 'album']) if (!keep[k] && !patch[k] && d[k]) patch[k] = d[k];

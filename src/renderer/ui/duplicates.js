@@ -7,6 +7,7 @@ import { mediaUrl } from '../analysis/analyzer.js';
 import { base64ToU8 } from '../../shared/dsp/waveform.js';
 import { candidatePairs, energyCurves, audioSimilarity, verdict, groupPairs, pickKeeper, soundAlike } from '../../shared/duplicates.js';
 import { CollectionIndex } from '../../shared/in-collection.js';
+import { MERGE_FIELDS, defaultPicks, fieldText } from '../../shared/merge-fields.js';
 
 const pairKey = (a, b) => [a, b].sort().join('|');
 
@@ -67,6 +68,49 @@ export async function findDuplicates(app, tracks, onProgress = () => {}, { keywo
 }
 
 /**
+ * The versions side by side: one column per track (▶ to listen, "keep this file"), one row per
+ * piece of information with a tick in each column. Rows where the versions differ are marked;
+ * the kept file gets exactly what is ticked.
+ */
+function fieldPicker(app, g, live, keepId, { merge, notDuplicates }) {
+  let keep = keepId;
+  const picks = g.picks ?? defaultPicks(live.find((t) => t.id === keep), live.filter((t) => t.id !== keep));
+  g.picks = picks;
+  const grid = h('div.dup-grid', { style: { '--cols': live.length } });
+  const name = `dupf-${g.pairs[0].a.id}`;
+  const renderGrid = () => {
+    const cells = [h('div.dup-gh.dup-gcorner', {}, '')];
+    for (const t of live) {
+      cells.push(h(`div.dup-gh${t.id === keep ? '.kept' : ''}`, {},
+        h('div.dup-gh-top', {},
+          h('button.dbtn.small.dup-play', { type: 'button', title: 'Listen (headphones)', onclick: () => app.engine.preview(mediaUrl(t.path)) }, '▶'),
+          h('div.dup-info', {}, h('div.dup-title', { title: t.title }, t.title), h('div.dup-sub', {}, [fmtOf(t), t.duration ? fmtTime(t.duration) : ''].filter(Boolean).join(' · ')))),
+        h('label.dup-keepfile', { title: t.path },
+          h('input', { type: 'radio', name: `${name}-file`, checked: t.id === keep, onchange: () => { keep = t.id; g.keep = t.id; renderGrid(); } }),
+          t.id === keep ? ' Audio file kept' : ' Keep this file')));
+    }
+    for (const f of MERGE_FIELDS) {
+      const texts = live.map((t) => fieldText(t, f));
+      if (texts.every((x) => x === '—')) continue;              // nothing to choose
+      const same = texts.every((x) => x === texts[0]);
+      cells.push(h(`div.dup-gl${same ? '.same' : ''}`, {}, f.label, same ? h('span.dup-same', {}, 'same') : null));
+      live.forEach((t, k) => {
+        cells.push(h(`label.dup-cell${picks[f.key] === t.id ? '.on' : ''}${same ? '.same' : ''}`, { title: texts[k] },
+          h('input', { type: 'radio', name: `${name}-${f.key}`, checked: picks[f.key] === t.id, onchange: () => { picks[f.key] = t.id; renderGrid(); } }),
+          h('span', {}, texts[k])));
+      });
+    }
+    grid.replaceChildren(...cells);
+  };
+  renderGrid();
+  return h('div.dup-picker', {},
+    grid,
+    h('div.dup-actions', {},
+      h('button.dbtn.small', { onclick: notDuplicates }, 'Not duplicates'),
+      h('button.dbtn.small.primary', { title: 'The kept file gets every ticked value and replaces the others in every playlist; the others leave the collection (files are not deleted)', onclick: () => merge(keep, { ...picks }) }, 'Merge with these choices')));
+}
+
+/**
  * @param {object} app
  * @param {string|null} playlistId a playlist / intelligent playlist, or null for the collection
  */
@@ -106,6 +150,15 @@ export async function openDuplicates(app, playlistId = null) {
   const result = await findDuplicates(app, pool, (d, n) => { bar.max = Math.max(1, n); bar.value = d; line.textContent = `Listening to the likely pairs: ${d} / ${n}`; });
   if (closed) return result;
   const notAnalysed = tracks.filter((t) => !t.analyzed).length;
+  // Field-by-field mode: for each piece of information, tick the version to keep (remembered)
+  let fieldMode = false;
+  try { fieldMode = localStorage.getItem('reboxed.dupFieldMode') === '1'; } catch { /* private storage */ }
+  const modeSwitch = () => h('label.dup-mode', { title: 'Compare the versions side by side and tick, for each piece of information, the one the kept track gets' },
+    h('input', { type: 'checkbox', checked: fieldMode, onchange: (e) => {
+      fieldMode = e.target.checked;
+      try { localStorage.setItem('reboxed.dupFieldMode', fieldMode ? '1' : '0'); } catch { /* private storage */ }
+      render();
+    } }), ' Choose field by field');
 
   const render = () => {
     const parts = [];
@@ -119,10 +172,10 @@ export async function openDuplicates(app, playlistId = null) {
       }
     }
     const groups = result.groups.filter((g) => g.tracks.filter((t) => lib.get(t.id)).length > 1);
-    parts.push(h('p.dim', {}, groups.length
-      ? `${groups.length} group(s) of duplicates, surest first. ▶ plays a version in the headphones; pick the one to keep.`
+    parts.push(h('div.dup-top', {}, h('p.dim', {}, groups.length
+      ? `${groups.length} group(s) of duplicates, surest first. ▶ plays a version in the headphones.`
       : 'No duplicates found.',
-    notAnalysed ? ` ${notAnalysed} track(s) are not analysed: they are compared by name and length only (analyse them for a real check).` : ''));
+    notAnalysed ? ` ${notAnalysed} track(s) not analysed: compared by name and length only.` : ''), groups.length ? modeSwitch() : null));
     for (const g of groups) {
       const live = g.tracks.map((t) => lib.get(t.id)).filter(Boolean);
       let keep = (g.keep && lib.get(g.keep)) ? g.keep : pickKeeper(live).id;
@@ -154,7 +207,17 @@ export async function openDuplicates(app, playlistId = null) {
           settle(live.map((t) => t.id));
           result.groups = result.groups.filter((x) => x !== g); render();
         } }, 'Not duplicates'));
-      parts.push(h('div.dup-group', {}, ...verdicts, ...trackRows, actions));
+      if (fieldMode) {
+        parts.push(h('div.dup-group', {}, ...verdicts, fieldPicker(app, g, live, keep, {
+          merge: (keepId, picks) => {
+            lib.mergeDuplicates(keepId, live.filter((t) => t.id !== keepId).map((t) => t.id), { picks });
+            settle([keepId]);
+            toast('Merged with your choices: one version left in the collection');
+            render();
+          },
+          notDuplicates: () => actions.lastChild.click(),
+        }), h('div.dup-hidden-actions', { hidden: true }, actions)));
+      } else parts.push(h('div.dup-group', {}, ...verdicts, ...trackRows, actions));
     }
     if (result.versions.length) {
       parts.push(h('details.dup-versions', {}, h('summary', {}, `${result.versions.length} pair(s) with the same name but different audio (remixes, other versions): not duplicates`),

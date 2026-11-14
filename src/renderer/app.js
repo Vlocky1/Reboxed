@@ -2518,7 +2518,8 @@ async function smoke(app) {
     {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const closed = app.openSettings('downloads');
-      await wait(400);
+      for (let k = 0; k < 120 && !document.querySelector('.settings-tabs button[data-tab="library"]'); k++) await wait(50);
+      await wait(150);
       const tabs = [...document.querySelectorAll('.settings-tabs button')].map((b) => b.textContent);
       const active = document.querySelector('.settings-tabs button.on')?.textContent;
       const quality = [...document.querySelectorAll('.settings-pane select option')].some((o) => /MP3 320/.test(o.textContent));
@@ -3156,7 +3157,9 @@ async function smoke(app) {
       const refused = lib.findNode(folder.id)?.parent === null;
       drag(row(pl.id), document.querySelector('.tree-section[title^="Drop"]'), 'inside');
       await wait(100);
-      const top = lib.findNode(pl.id)?.parent === null && lib.playlists.at(-1).id === pl.id;
+      // back at the top level (another playlist, e.g. "Suspected duplicates" made by a download
+      // checked in the background, may have been added after it)
+      const top = lib.findNode(pl.id)?.parent === null && lib.playlists.some((n) => n.id === pl.id);
       step('playlist tree: drag into a folder and back', inside && /drop-into/.test(mark) && refused && top, `inside=${inside} (${mark}) refused=${refused} top=${top}`);
       lib.deleteNode(folder.id); lib.deleteNode(pl.id);
     }
@@ -3292,15 +3295,34 @@ async function smoke(app) {
       }
 
       lib.setSetting('setupDone', false);
-      const setup = openSetup(app); await wait(200);
-      const first = document.querySelector('.setup-dialog h2')?.textContent;
-      document.querySelector('.setup-dialog .dialog-buttons button.primary').click(); await wait(300);
-      const second = document.querySelector('.setup-dialog h2')?.textContent;
-      const hasQuality = !!document.querySelector('.setup-dialog select');
-      document.querySelector('.setup-dialog').closest('.overlay').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      const setup = openSetup(app); await wait(250);
+      const sd = () => document.querySelector('.setup-dialog');
+      const first = sd()?.querySelector('h2')?.textContent;
+      const railSteps = [...sd().querySelectorAll('.setup-step b')].map((x) => x.textContent).join();
+      const welcomeCards = sd().querySelectorAll('.setup-card').length;
+      // every button is a real button: no "null" (an empty slot shown as text)
+      const firstButtons = [...sd().querySelector('.dialog-buttons').childNodes].map((n) => (n.nodeType === 3 ? `text:${n.textContent}` : n.textContent)).filter((x) => x).join('|');
+      sd().querySelector('.dialog-buttons button.primary').click(); await wait(300);
+      const second = sd()?.querySelector('h2')?.textContent;
+      const hasQuality = !!sd()?.querySelector('select');
+      const count = sd()?.querySelector('.setup-count')?.textContent;
+      sd().querySelector('.dialog-buttons button.primary').click();
+      for (let k = 0; k < 60 && sd()?.querySelectorAll('.acct-card').length < 3; k++) await wait(50);
+      const third = sd()?.querySelector('h2')?.textContent;
+      const acctCards = sd()?.querySelectorAll('.acct-card').length;
+      await window.rb.smokeShot('setup-accounts');
+      [...sd().querySelectorAll('.setup-step')].at(-1).click();
+      for (let k = 0; k < 160 && !sd()?.querySelector('.setup-sum'); k++) await wait(50);
+      const summary = [...sd().querySelectorAll('.setup-sum b')].map((x) => x.textContent).join();
+      await window.rb.smokeShot('setup-done');
+      sd().closest('.overlay').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await setup;
-      step('setup assistant: steps, skippable', first === 'Welcome to Reboxed' && second === 'Folders and quality' && hasQuality && lib.settings.setupDone && !document.querySelector('.setup-dialog'),
-        `${first} → ${second} · quality select ${hasQuality} · done ${lib.settings.setupDone}`);
+      step('setup assistant: step list, accounts step with the 3 cards, summary, no "null" button, skippable',
+        first === 'Welcome to Reboxed' && railSteps === 'Welcome,Your music,Your accounts,Stems,Downloads,Ready' && welcomeCards === 4
+          && firstButtons === "Skip the setup|Let's go" && second === 'Your music' && hasQuality && count === 'Step 1 of 4'
+          && third === 'Link your accounts' && acctCards === 3 && summary === 'Your music,Spotify,Discogs,Gemini,Stems,Downloads'
+          && lib.settings.setupDone && !sd(),
+        `${first} [${railSteps}] buttons ${firstButtons} · ${second} (${count}, quality ${hasQuality}) · ${third}: ${acctCards} cards · summary ${summary} · done ${lib.settings.setupDone}`);
 
       let copyErr = '';
       try { await app.engine.setMasterCopyDevice('default'); await app.engine.setMasterCopyDevice(''); } catch (err) { copyErr = err.message; }
@@ -3356,6 +3378,54 @@ async function smoke(app) {
         step('duplicates window and merge: the kept version replaces the others in the playlists',
           repeats && groupsShown >= 1 && lib.tracks.size === before - 2 && plIds.join() === [dupTracks[0].id, dupTracks[3].id].join(),
           `repeats shown ${repeats} · ${groupsShown} box(es) · tracks ${before} → ${lib.tracks.size} · playlist ${plIds.map((id) => lib.get(id)?.title).join(', ')}`);
+        // 1.30: field by field: the kept file gets exactly what is ticked from each version
+        {
+          await app.importPaths([ddir]);  // the merged copies come back (their files are still there)
+          while (app.analyzing || app.queue.length) await wait(100);
+          // (updates give new objects: keep the fresh ones)
+          const a = lib.update(dupTracks[0].id, { rating: 1, genre: '' });
+          const b = lib.update(lib.all().find((t) => t.path.endsWith('\\Dup Song (1).wav')).id, { rating: 4, genre: 'Tech House', title: 'Dup Song (Club)' });
+          const fp = lib.createNode('playlist', 'Field pick');
+          lib.addToPlaylist(fp.id, [a.id, b.id]);
+          try { localStorage.setItem('reboxed.dupFieldMode', '1'); } catch { /* private storage */ }
+          const win = openDuplicates(app, fp.id);
+          for (let k = 0; k < 200 && !document.querySelector('.dup-grid'); k++) await wait(50);
+          const grid = document.querySelector('.dup-grid');
+          const heads = grid ? grid.querySelectorAll('.dup-gh:not(.dup-gcorner)').length : 0;
+          // the versions side by side (same top, one to the right of the other)
+          const boxes = grid ? [...grid.querySelectorAll('.dup-gh:not(.dup-gcorner)')].map((x) => x.getBoundingClientRect()) : [];
+          const sideBySide = boxes.length === 2 && Math.abs(boxes[0].top - boxes[1].top) < 2 && boxes[1].left > boxes[0].right - 1;
+          const rowLabels = grid ? [...grid.querySelectorAll('.dup-gl')].map((x) => x.firstChild.textContent) : [];
+          // keep a's file; take b's title (ticked by hand), its genre and rating (a has none / less)
+          // columns follow the group's order: find a's and b's by their titles
+          const colOf = (t) => [...document.querySelectorAll('.dup-grid .dup-gh:not(.dup-gcorner) .dup-title')].findIndex((x) => x.textContent === t.title);
+          const [ca, cb] = [colOf(a), colOf(b)];
+          if (!document.querySelectorAll('.dup-grid .dup-gh:not(.dup-gcorner)')[ca]?.classList.contains('kept')) document.querySelectorAll('.dup-grid .dup-keepfile input')[ca].click();
+          await wait(50);
+          const cellOf = (label, col) => {
+            const labels = [...document.querySelectorAll('.dup-grid .dup-gl')];
+            const at = labels.findIndex((x) => x.firstChild.textContent === label);
+            return [...document.querySelectorAll('.dup-grid .dup-cell')][at * 2 + col];
+          };
+          cellOf('Title', cb).querySelector('input').click();
+          cellOf('Rating', cb).querySelector('input').click();
+          await wait(50);
+          const mode = document.querySelector('.dup-mode input')?.checked;
+          await window.rb.smokeShot('dup-fields');
+          [...document.querySelectorAll('.dup-picker button')].find((x) => /Merge with these choices/.test(x.textContent)).click();
+          await wait(150);
+          document.querySelector('.dup-dialog .dialog-buttons button').click();
+          await win;
+          const kept = lib.get(a.id);
+          step('duplicates, field by field: a grid of the versions, ticks chosen per information, the kept file gets them',
+            heads === 2 && sideBySide && rowLabels.includes('Title') && rowLabels.includes('Rating') && rowLabels.includes('Genre') && mode
+              && kept?.title === 'Dup Song (Club)' && kept.rating === 4 && kept.genre === 'Tech House' && kept.path.endsWith('\\Dup Song.wav') && !lib.get(b.id),
+            `columns ${heads} (side by side ${sideBySide}) · rows ${rowLabels.join(', ')} · mode ${mode} · kept "${kept?.title}" ★${kept?.rating} ${kept?.genre} · file ${kept?.path.split('\\').pop()} · other gone ${!lib.get(b.id)}`);
+          try { localStorage.removeItem('reboxed.dupFieldMode'); } catch { /* private storage */ }
+          lib.deleteNode(fp.id);
+          const back = lib.all().find((t) => t.path.endsWith('\\Dup Song (Radio Edit).wav'));
+          if (back) lib.removeTracks([back.id]);
+        }
         lib.removeTracks([dupTracks[0].id, dupTracks[3].id]); lib.deleteNode(pl.id);
       }
 
