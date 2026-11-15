@@ -309,7 +309,33 @@ export class DeckView {
     ]);
   }
 
+  /** The pad page and the loop / jump sizes this deck had last time (Preferences > General). */
+  restoreUi() {
+    const ui = this.app.ui;
+    if (!ui) return;
+    const d = this.deck;
+    const pads = ui.get(`deck${d.index}.pads`);
+    if (pads?.mode && PAD_MODES.includes(pads.mode) && !UNAVAILABLE.has(pads.mode)) {
+      this.setPadMode(pads.mode, { bank: pads.bank ?? 0, fromController: true });
+      this.setPadPage(pads.page ?? 0);
+    }
+    const sizes = ui.get(`deck${d.index}.sizes`);
+    if (BEAT_LOOP_SIZES.includes(sizes?.loop)) d.beatLoopSize = sizes.loop;
+    if (BEAT_JUMP_SIZES.includes(sizes?.jump)) d.beatJumpSize = sizes.jump;
+    this.uiRestored = true;
+    this.refresh();
+  }
+
+  /** Keep this deck's pad page and sizes (only what changed is written). */
+  rememberUi() {
+    if (!this.uiRestored || !this.app.ui) return;
+    const d = this.deck;
+    this.app.ui.set(`deck${d.index}.pads`, { mode: this.padMode, bank: this.bank, page: this.padPage });
+    this.app.ui.set(`deck${d.index}.sizes`, { loop: d.beatLoopSize, jump: d.beatJumpSize });
+  }
+
   refresh() {
+    this.rememberUi();
     const d = this.deck;
     const t = d.track;
     const notation = this.app.library.settings.keyNotation;

@@ -358,13 +358,27 @@ export class Browser {
     ]);
   }
 
+  /** Open the list that was open last time (when it still exists). */
+  restoreUi() {
+    const s = this.app.ui?.get('browser.source');
+    if (!s || s === this.source || s === 'related' || s === 'suggest') return;
+    const builtIn = ['collection', 'stems', 'tag-list'].includes(s);
+    const exists = builtIn || !!this.lib.findNode(s)?.node || this.lib.histories.some((x) => x.id === s);
+    if (exists) this.select(s);
+    else this.app.ui.delete('browser.source');
+  }
+
   select(source) {
     this.source = source;
     this.selected.clear();
     const node = this.lib.findNode(source)?.node;
-    this.sort = source === 'collection' || source === 'stems' || node?.type === 'smart' ? { col: 'dateAdded', dir: -1 }
+    const byDefault = source === 'collection' || source === 'stems' || node?.type === 'smart' ? { col: 'dateAdded', dir: -1 }
       : source === 'related' || source === 'suggest' ? { col: null, dir: 1 } // keep relevance order
         : { col: 'pos', dir: 1 };
+    // the sort this list had last time (each list keeps its own)
+    const kept = this.app.ui?.get(`sort:${source}`);
+    this.sort = kept && (kept.col === null || kept.col === 'pos' || COLUMNS[kept.col]) && (kept.dir === 1 || kept.dir === -1) ? { ...kept } : byDefault;
+    if (!this.seedDependent) this.app.ui?.set('browser.source', source);
     this.renderTree();
     this.renderRelated();
     this.refreshRows();
@@ -585,7 +599,7 @@ export class Browser {
       grip.addEventListener('click', (e) => e.stopPropagation());
       const cell = h(`div.th.c-${c}${def.num ? '.num' : ''}`, { style: { width: `var(--w-${c})` }, draggable: true, title: 'Click to sort · drag to move the column' },
         def.label, s.col === c ? h('span.sort', {}, s.dir > 0 ? ' ▲' : ' ▼') : '', grip);
-      cell.onclick = () => { this.sort = { col: c, dir: s.col === c ? -s.dir : 1 }; this.refreshRows(); };
+      cell.onclick = () => { this.sort = { col: c, dir: s.col === c ? -s.dir : 1 }; this.app.ui?.set(`sort:${this.source}`, this.sort); this.refreshRows(); };
       cell.oncontextmenu = (e) => this.columnMenu(e);
       // Drag a header onto another to move the column before / after it (order saved).
       cell.addEventListener('dragstart', (e) => {
