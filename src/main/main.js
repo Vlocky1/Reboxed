@@ -14,7 +14,7 @@ import { Downloader } from './downloader.js';
 import { GenreSources } from './genres.js';
 import { NvidiaEngine } from './nvidia-engine.js';
 import { ToolInstaller, TOOLS } from './tools.js';
-import { exportToDrive, listDrives } from './cdj-export.js';
+import { exportToDrive, listDrives, listBackups, undoExport, otherSoftwareRunning } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
 import { Spotify, REDIRECT_URI, isCoverUrl } from './spotify.js';
 import { Deezer } from './deezer.js';
@@ -274,6 +274,15 @@ function registerIpc(win) {
     resizeJpeg: (buf, size) => { const img = nativeImage.createFromBuffer(buf); return img.isEmpty() ? null : img.resize({ width: size, height: size, quality: 'good' }).toJPEG(85); },
     progress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('cdj:progress', p); },
   }));
+  // Undo an export: only a backup-… folder of that drive's PIONEER\rekordbox
+  ipcMain.handle('cdj:backups', (_e, root) => listBackups(String(root)));
+  ipcMain.handle('cdj:undo', async (_e, root, dir) => {
+    const rb = normalize(join(String(root), 'PIONEER', 'rekordbox'));
+    const d = normalize(String(dir));
+    if (normalize(join(d, '..')) !== rb || !/^backup-[\w-]+$/.test(basename(d))) throw new Error('Not a backup of this drive');
+    if (await otherSoftwareRunning()) throw new Error('Close your other DJ software first: it keeps the drive\'s library open.');
+    return undoExport(String(root), d);
+  });
   // Migration to a USB drive: tags of candidate files (no artwork), 8 at a time.
   ipcMain.handle('tags:readMany', async (_e, paths) => {
     const out = {};

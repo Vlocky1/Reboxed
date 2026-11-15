@@ -79,6 +79,8 @@ const api = {
   cdj: {
     drives: () => ipcRenderer.invoke('cdj:drives'),
     export: (job) => ipcRenderer.invoke('cdj:export', job),
+    backups: (root) => ipcRenderer.invoke('cdj:backups', root),
+    undo: (root, dir) => ipcRenderer.invoke('cdj:undo', root, dir),
     onProgress: (cb) => { const l = (_e, p) => cb(p); ipcRenderer.on('cdj:progress', l); return () => ipcRenderer.off('cdj:progress', l); },
   },
   version: () => ipcRenderer.invoke('app:version'),

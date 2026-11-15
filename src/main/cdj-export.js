@@ -67,16 +67,118 @@ function waveformOf(analysis) {
   return { low: dec(w.low), mid: dec(w.mid), high: dec(w.high) };
 }
 
-/** Move an existing export aside (export.pdb, exportExt.pdb, exportLibrary.db). */
-async function backupPrevious(rbDir) {
-  const names = ['export.pdb', 'exportExt.pdb', 'exportLibrary.db'];
-  const present = [];
-  for (const n of names) if (await exists(join(rbDir, n))) present.push(n);
-  if (!present.length) return null;
-  const dir = join(rbDir, `backup-${new Date().toISOString().replace(/[:.]/g, '-')}`);
-  await mkdir(dir, { recursive: true });
-  for (const n of present) await rename(join(rbDir, n), join(dir, n));
-  return dir;
+const DB_FILES = ['export.pdb', 'exportExt.pdb', 'exportLibrary.db'];
+export const MANIFEST = 'reboxed-export.json';
+
+/** The other DJ software running? It keeps the drive's library open and rewrites it. */
+export async function otherSoftwareRunning() {
+  if (process.platform !== 'win32') return false;
+  const { execFile } = await import('node:child_process');
+  const list = await new Promise((resolve) => execFile('tasklist', ['/FO', 'CSV', '/NH'], { windowsHide: true }, (err, out) => resolve(err ? '' : String(out))));
+  return /^"rekordbox\.exe"/im.test(list);
+}
+
+/**
+ * Everything an export changes on the drive, so it can be undone: the previous databases moved
+ * into the backup folder, every file overwritten copied there first (covers, analysis files,
+ * settings files), every file created listed. Written to <backup>/reboxed-export.json.
+ */
+class DriveJournal {
+  constructor(root, rbDir) {
+    this.root = root;
+    this.dir = join(rbDir, `backup-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+    this.moved = []; this.replaced = []; this.created = [];
+    this.made = false;
+  }
+
+  async ensure() { if (!this.made) { await mkdir(this.dir, { recursive: true }); this.made = true; } }
+  rel(abs) { return abs.slice(this.root.length).replace(/^[\\/]+/, ''); }
+
+  /** Move the previous export's databases aside. */
+  async moveDatabases(rbDir) {
+    for (const n of DB_FILES) {
+      if (!(await exists(join(rbDir, n)))) continue;
+      await this.ensure();
+      await rename(join(rbDir, n), join(this.dir, n));
+      this.moved.push(n);
+    }
+  }
+
+  /** Write a file; one already there is copied into the backup first. */
+  async write(abs, bytes) {
+    const rel = this.rel(abs);
+    if (await exists(abs)) {
+      if (!this.replaced.includes(rel)) {
+        await this.ensure();
+        const keep = join(this.dir, 'replaced', rel);
+        await mkdir(join(keep, '..'), { recursive: true });
+        await copyFile(abs, keep);
+        this.replaced.push(rel);
+      }
+    } else this.created.push(rel);
+    await writeFile(abs, bytes);
+  }
+
+  async save() {
+    if (!this.made && !this.created.length) return null;
+    await this.ensure();
+    await writeFile(join(this.dir, MANIFEST), JSON.stringify({ date: new Date().toISOString(), moved: this.moved, replaced: this.replaced, created: this.created }, null, 1));
+    return this.dir;
+  }
+}
+
+/**
+ * Put a drive back as it was before an export: Reboxed's databases and created files go to a
+ * folder "reboxed-undone-<date>" (nothing is deleted), the moved databases and the overwritten
+ * files come back. Works on backups made before the journal existed too (databases only).
+ * @returns {{restored: number, setAside: number, dir: string}}
+ */
+export async function undoExport(root, backupDir) {
+  root = root.length > 3 ? root.replace(/[\\/]+$/, '') : root;
+  const rbDir = join(root, 'PIONEER', 'rekordbox');
+  const manifest = JSON.parse(await readFile(join(backupDir, MANIFEST), 'utf8').catch(() => 'null'));
+  const moved = manifest?.moved ?? (await readdir(backupDir)).filter((n) => DB_FILES.includes(n));
+  const aside = join(rbDir, `reboxed-undone-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+  await mkdir(aside, { recursive: true });
+  let setAside = 0; let restored = 0;
+  const setAsideFile = async (rel) => {
+    const from = join(root, rel);
+    if (!(await exists(from))) return;
+    const to = join(aside, rel);
+    await mkdir(join(to, '..'), { recursive: true });
+    await rename(from, to);
+    setAside++;
+  };
+  // the databases now on the drive (Reboxed's, or ones the other software wrote on top)
+  for (const n of DB_FILES) await setAsideFile(join('PIONEER', 'rekordbox', n));
+  for (const rel of manifest?.created ?? []) await setAsideFile(rel);
+  for (const n of moved) { await rename(join(backupDir, n), join(rbDir, n)); restored++; }
+  for (const rel of manifest?.replaced ?? []) {
+    const keep = join(backupDir, 'replaced', rel);
+    if (!(await exists(keep))) continue;
+    await setAsideFile(rel);
+    await mkdir(join(root, rel, '..'), { recursive: true });
+    await copyFile(keep, join(root, rel));
+    restored++;
+  }
+  await writeFile(join(backupDir, 'UNDONE.txt'), `Undone ${new Date().toISOString()}: Reboxed's export set aside in ${aside}\r\n`);
+  return { restored, setAside, dir: aside };
+}
+
+/** Backups on a drive (newest first), and whether each can be undone. */
+export async function listBackups(root) {
+  const rbDir = join(root, 'PIONEER', 'rekordbox');
+  const names = (await readdir(rbDir).catch(() => [])).filter((n) => n.startsWith('backup-')).sort().reverse();
+  const out = [];
+  for (const n of names) {
+    const dir = join(rbDir, n);
+    const files = await readdir(dir).catch(() => []);
+    if (files.includes('UNDONE.txt')) continue;
+    const dbs = files.filter((f) => DB_FILES.includes(f));
+    if (!dbs.length && !files.includes(MANIFEST)) continue;
+    out.push({ dir, name: n, databases: dbs, journal: files.includes(MANIFEST) });
+  }
+  return out;
 }
 
 /**
@@ -93,9 +195,15 @@ export async function exportToDrive(job, { getAnalysis, resizeJpeg, progress = (
   const root = job.root.length > 3 ? job.root.replace(/[\\/]+$/, '') : job.root;
   const pioneer = join(root, 'PIONEER');
   const rbDir = join(pioneer, 'rekordbox');
+  // the other DJ software open on this computer keeps the drive's library open and rewrites it
+  // while Reboxed writes: both would end up mixed (a drive it then reports as damaged)
+  if (await (job.checkOtherSoftware ?? otherSoftwareRunning)()) {
+    throw new Error('Close your other DJ software first: while it is open it keeps the drive\'s library open and rewrites it. Nothing was changed on the drive.');
+  }
   await mkdir(rbDir, { recursive: true });
-  const backup = await backupPrevious(rbDir);
-  const report = { tracks: 0, copied: 0, inPlace: 0, missing: [], playlists: 0, backup };
+  const journal = new DriveJournal(root, rbDir);
+  await journal.moveDatabases(rbDir);
+  const report = { tracks: 0, copied: 0, inPlace: 0, missing: [], playlists: 0, backup: null };
 
   // Lookup tables.
   const tables = {};
@@ -133,9 +241,9 @@ export async function exportToDrive(job, { getAnalysis, resizeJpeg, progress = (
     const files = buildAnlz({ path: filePath, beats: beatsOf(t), cues: cuesOf(t), waveform: waveformOf(analysis) });
     const absAnlz = join(root, ...anlzDir.split('/').filter(Boolean));
     await mkdir(absAnlz, { recursive: true });
-    await writeFile(join(absAnlz, 'ANLZ0000.DAT'), files.dat);
-    await writeFile(join(absAnlz, 'ANLZ0000.EXT'), files.ext);
-    if (files.ex2) await writeFile(join(absAnlz, 'ANLZ0000.2EX'), files.ex2);
+    await journal.write(join(absAnlz, 'ANLZ0000.DAT'), files.dat);
+    await journal.write(join(absAnlz, 'ANLZ0000.EXT'), files.ext);
+    if (files.ex2) await journal.write(join(absAnlz, 'ANLZ0000.2EX'), files.ex2);
     // Artwork: 80 px and 240 px ("_m") JPEGs.
     let artworkId = 0;
     if (t.artwork && (await exists(t.artwork))) {
@@ -144,8 +252,8 @@ export async function exportToDrive(job, { getAnalysis, resizeJpeg, progress = (
       const folder = String(Math.floor(artworkId / 1000) + 1).padStart(5, '0');
       const dir = join(pioneer, 'Artwork', folder);
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, `a${artworkId}.jpg`), resizeJpeg(src, 80) ?? src);
-      await writeFile(join(dir, `a${artworkId}_m.jpg`), resizeJpeg(src, 240) ?? src);
+      await journal.write(join(dir, `a${artworkId}.jpg`), resizeJpeg(src, 80) ?? src);
+      await journal.write(join(dir, `a${artworkId}_m.jpg`), resizeJpeg(src, 240) ?? src);
       tables[TABLE.ARTWORK].push(artworkRow(artworkId, `/PIONEER/Artwork/${folder}/a${artworkId}.jpg`));
     }
     const keyName = t.key ? displayKey(t.key, 'musical') : '';
@@ -188,7 +296,9 @@ export async function exportToDrive(job, { getAnalysis, resizeJpeg, progress = (
   const pdb = buildPdb(tables);
   await writeFile(join(rbDir, 'export.pdb.part'), pdb);
   await rename(join(rbDir, 'export.pdb.part'), join(rbDir, 'export.pdb'));
-  for (const [name, bytes] of Object.entries(buildSettingFiles(job.settings ?? {}))) await writeFile(join(pioneer, name), bytes);
+  journal.created.push(journal.rel(join(rbDir, 'export.pdb')));
+  for (const [name, bytes] of Object.entries(buildSettingFiles(job.settings ?? {}))) await journal.write(join(pioneer, name), bytes);
+  report.backup = await journal.save();
   progress({ phase: 'done', done: total, total });
   return report;
 }
@@ -200,7 +310,14 @@ export async function listDrives() {
     const root = `${letter}:\\`;
     try {
       await readdir(root);
-      out.push({ root, hasExport: await exists(join(root, 'PIONEER', 'rekordbox', 'export.pdb')) });
+      const rb = join(root, 'PIONEER', 'rekordbox');
+      out.push({
+        root,
+        hasExport: await exists(join(rb, 'export.pdb')),
+        // made (or managed) by the other DJ software: its device library, or its library on the drive
+        otherSoftware: (await exists(join(rb, 'exportLibrary.db'))) || (await exists(join(root, 'PIONEER', 'Master', 'master.db'))),
+        backups: (await listBackups(root)).length,
+      });
     } catch { /* not mounted */ }
   }
   return out;

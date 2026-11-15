@@ -2806,6 +2806,18 @@ async function smoke(app) {
       const r = await window.rb.cdj.export({ root, tracks, playlists: [{ type: 'folder', name: 'Sets', children: [{ type: 'playlist', name: 'Smoke set', trackIds: tracks.map((t) => t.id) }] }], settings: (await import('../shared/cdj/mysettings.js')).defaultSettings() });
       const files = await Promise.all(['PIONEER\\rekordbox\\export.pdb', 'PIONEER\\MYSETTING.DAT', 'PIONEER\\DEVSETTING.DAT'].map((f) => window.rb.exists(`${root}\\${f}`)));
       step('cdj export', r.tracks > 0 && r.tracks + r.missing.length === tracks.length && r.playlists >= 1 && files.every(Boolean), `${JSON.stringify({ ...r, missing: r.missing.length })} files=${files}`);
+      // 1.30.1: a second export over the first is journaled; undo puts the first one back
+      const r2 = await window.rb.cdj.export({ root, tracks: tracks.slice(0, 1), playlists: [], settings: (await import('../shared/cdj/mysettings.js')).defaultSettings() });
+      const backups = await window.rb.cdj.backups(root);
+      const u = await window.rb.cdj.undo(root, backups[0].dir);
+      // the first export's database is back in place, the second one kept aside, the backup no longer offered
+      const same = (await window.rb.exists(`${root}\\PIONEER\\rekordbox\\export.pdb`)) && (await window.rb.exists(`${u.dir}\\PIONEER\\rekordbox\\export.pdb`))
+        && !(await window.rb.cdj.backups(root)).some((b) => b.dir === backups[0].dir);
+      let refused = '';
+      try { await window.rb.cdj.undo(root, `${dir}\\elsewhere\\backup-x`); } catch (err) { refused = err.message; }
+      step('cdj export: journaled, undone through the app, undo limited to the drive\'s backups',
+        r2.tracks === 1 && !!r2.backup && backups.length >= 1 && u.restored >= 1 && same && /Not a backup of this drive/.test(refused),
+        `second export backup ${!!r2.backup} · ${backups.length} backup(s) · restored ${u.restored}, set aside ${u.setAside} · first database back ${same} · foreign folder refused ${!!refused}`);
     }
 
     // ---- Download centre: Search with a platform choice, Link with platform detection ----
