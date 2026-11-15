@@ -604,8 +604,15 @@ class App {
     // Intelligent playlists are exported as their current contents (rekordbox.xml has no smart nodes).
     const resolve = (nodes) => nodes.map((n) => (n.type === 'folder' ? { ...n, children: resolve(n.children) }
       : n.type === 'smart' ? { type: 'playlist', name: n.name, trackIds: this.library.rowsFor(n.id).map((r) => r.track.id) } : n));
-    await window.rb.writeFile(path, exportRekordboxXml({ tracks: this.library.all(), playlists: resolve(this.library.playlists) }));
-    toast('Collection exported');
+    try {
+      await window.rb.writeFile(path, exportRekordboxXml({ tracks: this.library.all(), playlists: resolve(this.library.playlists) }));
+    } catch (err) {
+      // never silent: say why the file is not there
+      toast(`Export failed: ${String(err.message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`, 9000);
+      return;
+    }
+    const t = toast(`Collection exported (${this.library.tracks.size} tracks): ${path}`, 9000);
+    t.append(' ', h('button.dbtn.small', { onclick: () => window.rb.showItem(path) }, 'Show'));
   }
 
   async exportM3u(node) {
@@ -613,8 +620,11 @@ class App {
     if (!path) return;
     const lines = ['#EXTM3U', ...node.trackIds.map((id) => this.library.get(id)).filter(Boolean)
       .flatMap((t) => [`#EXTINF:${Math.round(t.duration ?? 0)},${t.artist ? `${t.artist} - ` : ''}${t.title}`, t.path])];
-    await window.rb.writeFile(path, `${lines.join('\n')}\n`);
-    toast('Playlist exported');
+    try { await window.rb.writeFile(path, `${lines.join('\n')}\n`); } catch (err) {
+      toast(`Export failed: ${String(err.message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`, 9000);
+      return;
+    }
+    toast(`Playlist exported: ${path}`, 6000);
   }
 
   async findMissing() {

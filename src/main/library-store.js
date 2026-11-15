@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { rebasePaths } from '../shared/portable-paths.js';
 
@@ -48,7 +48,9 @@ export class LibraryStore {
 
   /** Write a user-chosen file (exports, recordings). Accepts string or ArrayBuffer/typed array. */
   async writeExternal(path, data) {
-    await mkdir(dirname(path), { recursive: true });
+    // the folder only when it is missing: mkdir on a drive root ("J:\") throws EPERM on Windows
+    // even though it exists (saving at the root of a USB drive used to fail)
+    await access(dirname(path)).catch(() => mkdir(dirname(path), { recursive: true }));
     if (typeof data === 'string') await writeFile(path, data);
     else if (data instanceof ArrayBuffer) await writeFile(path, Buffer.from(data));
     else await writeFile(path, Buffer.from(data.buffer, data.byteOffset, data.byteLength));
