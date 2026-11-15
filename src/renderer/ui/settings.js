@@ -415,6 +415,16 @@ export async function openSettings(library, engine, apply, midi, app) {
           window.rb.fullscreen().then((f) => { sel.value = f.startMode; sel.disabled = false; });
           return h('div', {}, sel, h('small.hint', {}, 'F11 switches full screen at any time.'));
         })(),
+        h('label', {}, 'Remember my last choices'), (() => {
+          const count = () => app.ui?.count ?? 0;
+          const info = h('small.hint', {}, '');
+          const forget = h('button.dbtn.small', {}, 'Back to the defaults');
+          const show = () => { info.textContent = s.rememberUi === false ? 'Off: every launch starts from the defaults.' : `${count()} choice(s) kept: pad pages, sort of each list, zoom, Beat FX…`; forget.disabled = !count(); };
+          forget.onclick = () => { app.ui?.clear(); toast('Your choices are forgotten: the next launch starts from the defaults'); show(); };
+          const box = h('input', { type: 'checkbox', checked: s.rememberUi !== false, onchange: (e) => { apply('rememberUi', e.target.checked); s.rememberUi = e.target.checked; show(); } });
+          show();
+          return h('div', {}, h('div.frow', {}, box, forget), info);
+        })(),
         h('label', {}, 'Setup assistant'), h('div', {}, h('button.dbtn.small', { onclick: () => import('./setup.js').then((m) => m.openSetup(app)) }, 'Open the setup assistant'),
           h('small.hint', {}, 'The first-run choices, step by step.'))))],
     ['appearance', 'Appearance', () => appearanceSection(library, apply)],

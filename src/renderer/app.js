@@ -1,4 +1,5 @@
 import { Library } from './library.js';
+import { UiMemory } from './ui-memory.js';
 import { AudioEngine } from './audio/engine.js';
 import { Analyzer, mediaUrl, waveformArrays } from './analysis/analyzer.js';
 import { wavePreview } from '../shared/dsp/waveform.js';
@@ -25,7 +26,7 @@ import { PadSamplerView } from './ui/pad-sampler-view.js';
 import { openManual } from './ui/manual.js';
 import { Automix } from './automix.js';
 import { DrumSwap } from './audio/groove.js';
-import { BeatFxUnit, PAD_FX } from './audio/fx.js';
+import { BeatFxUnit, PAD_FX, BEAT_FX } from './audio/fx.js';
 import { encodeWav } from '../shared/wav.js';
 import { toBeatgrid, shiftGrid, doubleGrid, halveGrid, setDownbeatAt, constantGridAt, constantFromBeats, tapBpm } from '../shared/beatgrid.js';
 import { createCues } from '../shared/autocues.js';
@@ -118,6 +119,8 @@ class App {
     });
     this.automix.settings = { ...this.automix.settings, ...(this.library.settings.automix ?? {}) };
 
+    // interface choices kept between sessions (pad pages, sorts, zoom…; Preferences > General)
+    this.ui = new UiMemory(this.library);
     this.deckViews = this.engine.decks.map((d) => new DeckView(d, this));
     this.sampler.addEventListener('change', () => {
       this.deckViews.forEach((v) => { if (v.padMode === 'SAMPLER') v.renderPads(); });
@@ -147,6 +150,17 @@ class App {
       onPartIso: (i) => this.ensureStems(this.engine.decks[i]),
     });
     this.fxView = new FxView(this.engine.fx, this.engine.decks.length);
+    // Beat FX as it was last time (effect, beats, where it applies); kept as it changes
+    {
+      const fx = this.engine.fx;
+      const kept = this.ui.get('beatFx');
+      if (kept && BEAT_FX.some((f) => f.id === kept.effect)) {
+        fx.setEffect(kept.effect);
+        if (kept.beats > 0 && kept.beats <= 64) fx.setBeats(kept.beats);
+        if (/^(master|sampler|ch[1-4])$/.test(String(kept.target ?? ''))) fx.setTarget(kept.target);
+      }
+      fx.addEventListener('change', () => this.ui.set('beatFx', { effect: fx.effectId, beats: fx.beats, target: fx.target }));
+    }
     this.browser = new Browser(this);
     this.waveCanvases = this.engine.decks.map((d, i) => {
       const c = h('canvas.detail', { title: 'Drag to scrub, wheel to zoom' });
@@ -157,7 +171,7 @@ class App {
     // The canvas sits absolutely inside a box so its size always equals the visible area
     // (a flex canvas can be sized from its own pixel width and get clipped, off-centring the play head).
     this.waveRows = this.waveCanvases.map((c, i) => h(`div.wave-row.deck${i + 1}`, {}, h('div.wave-badge', {}, String(i + 1)), h('div.canvas-box', {}, c)));
-    this.zoom = 8;
+    this.zoom = this.ui.get('waveZoom', 8);
 
     // ---- global section (top bar) ----
     const s = this.library.settings;
@@ -237,6 +251,9 @@ class App {
     this.applyPanels();
     this.applyLayout();
     this.restoreSampler();
+    // the choices kept from last time: each deck's pads and sizes, the list open in the browser
+    this.deckViews.forEach((v) => v.restoreUi());
+    this.browser.restoreUi();
 
     installKeyboard(this);
     this.installFileDrop();
@@ -1430,6 +1447,7 @@ class App {
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.zoom = Math.max(1, Math.min(32, this.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
+      this.ui.set('waveZoom', Math.round(this.zoom * 100) / 100);
     }, { passive: false });
     // Right-click: edit the phrase under the mouse (its type, cut it, join it with the next).
     canvas.addEventListener('contextmenu', (e) => {
@@ -3233,6 +3251,42 @@ async function smoke(app) {
       step('Stems list and waveform Preview column', stemRows === withStems && kicks.length > 0 && kicks.every((t) => t.wavePreview?.length > 100) && previews > 0,
         `stems ${stemRows}/${withStems} · previews ${kicks.filter((t) => t.wavePreview).length}/${kicks.length} tracks, ${previews} on screen`);
 
+      // 1.31: interface choices kept between sessions (beat jump page 2, a list sorted by BPM…)
+      {
+        const dv = app.deckViews[0];
+        dv.setPadMode('BEAT JUMP'); dv.setPadPage(1);
+        const pl = lib.playlists.find((n) => n.type === 'playlist');
+        b.select(pl.id);
+        await wait(50);
+        const bpmHead = b.el.querySelector('.th.c-bpm');
+        bpmHead?.click();                      // ascending BPM
+        await wait(50);
+        const sortKept = app.ui.get(`sort:${pl.id}`);
+        b.select('collection');
+        const collSort = b.sort.col;
+        b.select(pl.id);
+        const sortBack = `${b.sort.col}:${b.sort.dir}`;
+        // a new launch: the deck starts from the default (nothing written), then takes its choices back
+        dv.uiRestored = false;
+        dv.setPadMode('HOT CUE');
+        const meanwhile = app.ui.get('deck0.pads')?.mode;
+        dv.restoreUi();
+        const restored = `${dv.padMode} p${dv.padPage + 1}`;
+        b.source = 'collection';
+        b.restoreUi();
+        const listBack = b.source === pl.id;
+        // Preferences: off = defaults; back to the defaults forgets everything
+        const count = app.ui.count;
+        lib.settings.rememberUi = false;
+        const offRead = app.ui.get('deck0.pads', 'default');
+        lib.settings.rememberUi = true;
+        app.ui.clear();
+        dv.setPadMode('HOT CUE');
+        step('interface choices kept between sessions: pad page, the sort of each list, the open list; off and reset',
+          sortKept?.col === 'bpm' && sortKept.dir === 1 && collSort === 'dateAdded' && sortBack === 'bpm:1' && meanwhile === 'BEAT JUMP' && restored === 'BEAT JUMP p2'
+            && listBack && count >= 3 && offRead === 'default' && app.ui.count <= 2,
+          `sort kept ${JSON.stringify(sortKept)} · collection ${collSort} · playlist again ${sortBack} · deck after restart ${restored} (memory kept ${meanwhile}) · list reopened ${listBack} · ${count} choices · off ${offRead} · after reset ${app.ui.count}`);
+      }
       // 1.28: CLASSIC writes nothing in the history, PERFORMANCE writes the tracks played
       {
         const count = () => lib.histories.reduce((n, x) => n + x.trackIds.length, 0);

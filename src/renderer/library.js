@@ -46,6 +46,10 @@ export const DEFAULT_SETTINGS = {
   // CLASSIC: play freely, nothing is written in the history (nor in play counts); PERFORMANCE: every
   // track played (as in a set) goes into the day's history.
   playMode: 'classic',
+  // Interface choices kept between sessions (pad pages, sort of each list, waveform zoom, Beat
+  // FX…): defaults first, then whatever the user changes stays (ui-memory.js).
+  rememberUi: true,
+  ui: {},
   // Track downloader (yt-dlp, as used by Stacher): folder '' = <Music>/Reboxed Downloads.
   // lists: Spotify / Deezer playlists followed (★): their new tracks show in New releases.
   downloads: { folder: '', format: 'mp3', platform: 'youtube', cleanNames: true, cleanKeywords: '', toolsDir: '', playlist: true, subs: [], lists: [], seen: [], done: {}, maxMinutes: 12, checkOnStart: true },
