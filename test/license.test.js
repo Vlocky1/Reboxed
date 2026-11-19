@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { licenseStatus, maskKey, TRIAL_DAYS, OFFLINE_DAYS } from '../src/shared/license.js';
 import { LicenseManager } from '../src/main/license.js';
-import { isBetaKey } from '../src/shared/product.js';
+import { isBetaKey, betaEnd } from '../src/shared/product.js';
 
 const DAY = 86400000;
 const T0 = Date.UTC(2026, 9, 21);
@@ -75,11 +75,16 @@ test('developer build (run from the source) needs no licence', async () => {
   assert.equal((await lm.load()).mode, 'dev');
 });
 
-test('licensed: works offline for OFFLINE_DAYS, asks for a check after a week, revoked keys stop', () => {
-  const st = { firstRun: T0 - 100 * DAY, key: 'k', instanceId: 'i', validatedAt: T0 };
+test('licensed: a lifetime licence checked once never stops offline (the shop may close); beta keys do; revoked keys stop', () => {
+  const st = { firstRun: T0 - 100 * DAY, key: 'k', instanceId: 'i', keyKind: 'lifetime', validatedAt: T0 };
   assert.deepEqual(licenseStatus(st, T0 + DAY), { mode: 'licensed', needsCheck: false });
   assert.equal(licenseStatus(st, T0 + 8 * DAY).needsCheck, true);
-  assert.equal(licenseStatus(st, T0 + (OFFLINE_DAYS + 1) * DAY).reason, 'offline');
+  assert.equal(licenseStatus(st, T0 + (OFFLINE_DAYS + 1) * DAY).mode, 'licensed', 'a month without the server: still licensed');
+  assert.equal(licenseStatus(st, T0 + 3 * 365 * DAY).mode, 'licensed', 'years without the server: still licensed');
+  assert.equal(licenseStatus({ ...st, keyKind: undefined }, T0 + 400 * DAY).mode, 'licensed', 'keys activated before keyKind existed are lifetime');
+  const beta = { ...st, keyKind: 'beta' };
+  assert.equal(licenseStatus(beta, T0 + (OFFLINE_DAYS + 1) * DAY, { betaEndsAt: T0 + 400 * DAY }).reason, 'offline');
+  assert.equal(licenseStatus({ ...st, validatedAt: undefined }, T0 + (OFFLINE_DAYS + 1) * DAY).reason, 'offline', 'never checked: no free pass');
   assert.equal(licenseStatus({ ...st, revoked: true }, T0).reason, 'revoked');
   assert.equal(maskKey('38b1460a-5104-4067-a91d-77b872934d51'), '••••-4d51');
 });
@@ -126,6 +131,51 @@ test('activate / validate / deactivate against the License API, product checked,
   const off = await lm.deactivate();
   assert.equal(off.mode, 'expired');
   assert.equal(api.calls.at(-1).action, 'deactivate');
+});
+
+test('the licence server gone (404, 500, not JSON, unreachable): the licence keeps working; a refund still revokes it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
+  let now = T0;
+  const api = fakeApi();
+  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', now: () => now, product: { name: 'Reboxed', price: '5 €', buyUrl: null, storeId: 1, productId: 2 } });
+  await lm.load();
+  await lm.activate('GOOD');
+  const answers = [
+    ['404 JSON (key unknown once the shop is closed)', { status: 404, json: async () => ({ valid: false, error: 'license_key not found.' }) }],
+    ['500', { status: 500, json: async () => ({ error: 'Server Error' }) }],
+    ['a page that is not JSON', { status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }],
+    ['410 gone', { status: 410, json: async () => ({}) }],
+  ];
+  for (const [label, res] of answers) {
+    now += 10 * DAY;
+    lm.fetch = async () => res;
+    const st = await lm.validate();
+    assert.equal(st.mode, 'licensed', label);
+  }
+  lm.fetch = async () => { throw new Error('getaddrinfo ENOTFOUND api.lemonsqueezy.com'); };
+  now += 2 * 365 * DAY;
+  assert.equal((await lm.validate()).mode, 'licensed', 'two years without the server');
+  // a refund: Lemon Squeezy disables the key and says so
+  lm.fetch = async () => ({ status: 400, json: async () => ({ valid: false, error: 'This license key is disabled.', license_key: { status: 'disabled' } }) });
+  assert.equal((await lm.validate()).reason, 'revoked');
+});
+
+test('the beta date is its last day: beta keys work all of 31 January 2027 and stop on 1 February at midnight; the website can move it', async () => {
+  const p = { betaEndsAt: '2027-01-31' };
+  const end = betaEnd(p);
+  assert.equal(new Date(end).getDate(), 1);
+  assert.equal(new Date(end).getMonth(), 1, 'February');
+  const beta = { firstRun: end - 60 * DAY, key: 'B', instanceId: 'i', keyKind: 'beta', validatedAt: end - 2 * DAY };
+  const lastMinute = new Date(2027, 0, 31, 23, 59).getTime();
+  const firstMinute = new Date(2027, 1, 1, 0, 0).getTime();
+  assert.equal(licenseStatus(beta, lastMinute, { betaEndsAt: end }).mode, 'beta', '31 January 23:59: still the beta');
+  assert.equal(licenseStatus(beta, firstMinute, { betaEndsAt: end }).reason, 'betaOver', '1 February 00:00: over');
+  const lm = new LicenseManager({ file: join(mkdtempSync(join(tmpdir(), 'rbx-lic-')), 'license.json'), fetch: async () => ({ ok: true, json: async () => ({ betaEndsAt: '2027-02-28' }) }), instanceName: 'PC', product: { name: 'Reboxed', price: '5 €', betaEndsAt: '2027-01-31' } });
+  await lm.loadRemoteConfig('https://example.test/app-config.json');
+  assert.equal(lm.product.betaEndsAt, '2027-02-28', 'moved from the website');
+  lm.fetch = async () => ({ ok: true, json: async () => ({ betaEndsAt: '2099-01-01' }) });
+  await lm.loadRemoteConfig('https://example.test/app-config.json');
+  assert.equal(lm.product.betaEndsAt, '2027-02-28', 'a date out of range is ignored');
 });
 
 test('beta key during the beta, refused after it; the licence then replaces it (old activation freed)', async () => {

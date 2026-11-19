@@ -2615,10 +2615,10 @@ async function smoke(app) {
       over?.remove();
       step('licence: end of the beta shows the tester discount', overOk, over?.querySelector('.license-discount')?.textContent ?? 'none');
       // Joining the beta: the free beta key dialog, with the beta checkout link.
-      openLicenseGate(app, { mode: 'expired', reason: 'betaKey', product: { price: '5 €', betaEndsAt: '2026-12-30', betaUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/beta' } });
+      openLicenseGate(app, { mode: 'expired', reason: 'betaKey', product: { price: '5 €', betaEndsAt: '2027-01-31', betaUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/beta' } });
       await wait(100);
       const join = document.querySelector('.license-gate');
-      const joinOk = !!join && /Join the open beta/.test(join.textContent) && /Get my free beta key/.test(join.textContent) && /30 December 2026/.test(join.textContent);
+      const joinOk = !!join && /Join the open beta/.test(join.textContent) && /Get my free beta key/.test(join.textContent) && /31 January 2027/.test(join.textContent);
       join?.remove();
       step('licence: join the open beta with a free beta key', joinOk, join?.querySelector('h2')?.textContent ?? 'none');
       // During the open beta a fresh install is in beta; afterwards, in its 14-day trial.

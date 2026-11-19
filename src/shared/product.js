@@ -8,8 +8,9 @@ export const PRODUCT = {
   buyUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/7917cede-69b0-411f-990d-169fae665325',
   storeId: null,
   productId: null,
-  // Open beta: until this date (local midnight). Beta keys stop working then; beta testers get a discount.
-  betaEndsAt: '2026-12-30',
+  // Open beta: its last day (included). Beta keys stop working the next day at local midnight
+  // (1 February 2027); beta testers get a discount. The website's app-config.json can move it.
+  betaEndsAt: '2027-01-31',
   // Free "Reboxed Beta" product (0 €) whose keys register the testers.
   betaUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/091a7519-f694-4e80-b2c7-77ef3d3426fa',
   // Does the beta ask for that key? Off until the store can hand out keys; the website's app-config.json
@@ -21,8 +22,16 @@ export const PRODUCT = {
   donateUrl: 'https://ko-fi.com/reboxed',
 };
 
-/** The beta end date as a timestamp (local midnight), or null. */
-export const betaEnd = (p = PRODUCT) => (p.betaEndsAt ? new Date(`${p.betaEndsAt}T00:00:00`).getTime() : null);
+/**
+ * When the beta stops, as a timestamp: local midnight at the end of its last day (betaEndsAt is
+ * the last day included: '2027-01-31' stops at the start of 1 February), or null.
+ */
+export const betaEnd = (p = PRODUCT) => {
+  if (!p.betaEndsAt) return null;
+  const d = new Date(`${p.betaEndsAt}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.getTime();
+};
 
 /** Is a licence key (Lemon Squeezy activation / validation meta) a beta key? */
 export const isBetaKey = (meta = {}, p = PRODUCT) => (p.betaProductId != null ? meta.product_id === p.betaProductId : /\bbeta\b/i.test(`${meta.product_name ?? ''} ${meta.variant_name ?? ''}`));

@@ -7,6 +7,27 @@ import { PRODUCT, betaEnd, isBetaKey } from '../shared/product.js';
 
 const API = 'https://api.lemonsqueezy.com/v1/licenses';
 
+/**
+ * Does a validate answer say this key was taken back? Only a well-formed answer about the key:
+ * HTTP 200/400 with `valid: false` and the key's own status (disabled after a refund, expired).
+ * Anything else (404, 5xx, a page that is not JSON, no key object) is the server, not the key.
+ */
+export function revokedAnswer(status, body) {
+  if (!(status === 200 || status === 400) || body?.valid !== false) return false;
+  return ['disabled', 'expired'].includes(body.license_key?.status);
+}
+
+// ---- Polar (the shop after Lemon Squeezy) ----------------------------------------------------------
+// Customer-portal endpoints: no token, made for apps; the organisation id says whose key it is.
+const POLAR_API = 'https://api.polar.sh/v1/customer-portal/license-keys';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Polar's own "this key is not valid" (refunded, revoked, disabled, expired, unknown): a JSON 404 from its API. */
+export const polarRevoked = (status, body) => status === 404 && body?.error === 'ResourceNotFound';
+
+/** Lemon Squeezy keys are bare UUIDs; Polar keys carry a prefix. Which shop to ask first. */
+export const keyShop = (key) => (UUID.test(String(key ?? '').trim()) ? 'lemonsqueezy' : 'polar');
+
 export class LicenseManager {
   /**
    * @param {{file: string, fetch: typeof fetch, instanceName: string, now?: () => number, product?: object, dev?: boolean}} o
@@ -46,6 +67,11 @@ export class LicenseManager {
       if (typeof cfg.betaKeyRequired === 'boolean') patch.betaKeyRequired = cfg.betaKeyRequired;
       if (typeof cfg.betaDiscount === 'string' && cfg.betaDiscount.trim()) patch.betaDiscount = cfg.betaDiscount.trim().slice(0, 200);
       if (typeof cfg.price === 'string' && /^[\d.,]+\s?[€$£]$/.test(cfg.price.trim())) patch.price = cfg.price.trim();
+      // the last day of the open beta (YYYY-MM-DD, a real date, not before 2026 nor after 2028)
+      if (typeof cfg.betaEndsAt === 'string' && /^20(2[6-8])-\d\d-\d\d$/.test(cfg.betaEndsAt) && !Number.isNaN(new Date(`${cfg.betaEndsAt}T00:00:00`).getTime())) patch.betaEndsAt = cfg.betaEndsAt;
+      // the shop: Polar once its organisation id is published (Lemon Squeezy keys keep working)
+      if (typeof cfg.polarOrganizationId === 'string' && UUID.test(cfg.polarOrganizationId.trim())) patch.polarOrganizationId = cfg.polarOrganizationId.trim();
+      if (typeof cfg.polarBenefitId === 'string' && UUID.test(cfg.polarBenefitId.trim())) patch.polarBenefitId = cfg.polarBenefitId.trim();
       this.product = { ...this.product, ...patch };
     } catch { /* offline: the built-in settings */ }
   }
@@ -86,9 +112,60 @@ export class LicenseManager {
       && (this.product.productId == null || meta.product_id === this.product.productId || isBetaKey(meta, this.product));
   }
 
+  /** POST to Polar's customer-portal licence API (JSON). */
+  async polarCall(action, params) {
+    let res;
+    try {
+      res = await this.fetch(`${POLAR_API}/${action}`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_id: this.product.polarOrganizationId, ...params }),
+      });
+    } catch (err) {
+      throw Object.assign(new Error(`Could not reach the licence server (${err.message})`), { offline: true });
+    }
+    const body = res.status === 204 ? {} : await res.json().catch(() => ({}));
+    return { status: res.status, body };
+  }
+
+  /** A Polar key of this shop (and of the licence's benefit when it is set). */
+  polarSameProduct(lk = {}) {
+    return lk.organization_id === this.product.polarOrganizationId && (!this.product.polarBenefitId || lk.benefit_id === this.product.polarBenefitId);
+  }
+
+  /** Activate a Polar key on this computer (or only validate it when the product has no activation limit). */
+  async activatePolar(key) {
+    let { status, body } = await this.polarCall('activate', { key, label: this.instanceName });
+    let instanceId; let lk;
+    if (status === 200 && body.id) { instanceId = body.id; lk = body.license_key; }
+    else if (status === 403 && /does not support activations/i.test(body.detail ?? '')) {
+      ({ status, body } = await this.polarCall('validate', { key }));
+      if (status !== 200) throw new Error('This licence key could not be activated');
+      instanceId = 'polar-no-activation'; lk = body;
+    } else if (status === 403) throw new Error(/limit/i.test(body.detail ?? '') ? 'This licence is already active on its maximum number of computers: free one (Preferences > About) or contact support' : (body.detail || 'This licence key cannot be activated'));
+    else if (status === 404) { const e = new Error('This licence key was not found'); e.notFound = true; throw e; }
+    else throw new Error(`The licence server answered ${status}: try again later`);
+    if (!this.polarSameProduct(lk)) {
+      if (instanceId !== 'polar-no-activation') await this.polarCall('deactivate', { key, activation_id: instanceId }).catch(() => {});
+      throw new Error('This key is not a Reboxed licence');
+    }
+    return { instanceId, customer: lk?.customer?.name || lk?.customer?.email || null };
+  }
+
   async activate(key) {
     key = String(key ?? '').trim();
     if (!key) throw new Error('Enter your licence key');
+    // the shop the key comes from: Polar keys carry a prefix, Lemon Squeezy keys are bare UUIDs
+    if (this.product.polarOrganizationId && keyShop(key) === 'polar') {
+      let got;
+      try { got = await this.activatePolar(key); } catch (err) { if (!err.notFound) throw err; }
+      if (got) {
+        if (this.state.key && this.state.instanceId && this.state.key !== key) await this.releaseCurrent();
+        Object.assign(this.state, { key, provider: 'polar', instanceId: got.instanceId, keyKind: 'lifetime', validatedAt: this.now(), revoked: false, customer: got.customer });
+        await this.save();
+        return this.status();
+      }
+    }
     const { body } = await this.call('activate', { license_key: key, instance_name: this.instanceName });
     if (!body.activated) throw new Error(body.error || 'This licence key could not be activated');
     const release = () => this.call('deactivate', { license_key: key, instance_id: body.instance.id }).catch(() => {});
@@ -97,22 +174,44 @@ export class LicenseManager {
     const end = betaEnd(this.product);
     if (beta && end && this.now() >= end) { await release(); throw new Error('The open beta is over: this beta key no longer works. Get the lifetime licence.'); }
     // A new key replaces the one in use (e.g. the licence after the beta key): free the old activation.
-    if (this.state.key && this.state.instanceId && this.state.key !== key) {
-      await this.call('deactivate', { license_key: this.state.key, instance_id: this.state.instanceId }).catch(() => {});
-    }
-    Object.assign(this.state, { key, instanceId: body.instance.id, keyKind: beta ? 'beta' : 'lifetime', validatedAt: this.now(), revoked: false, customer: body.meta?.customer_name ?? null });
+    if (this.state.key && this.state.instanceId && this.state.key !== key) await this.releaseCurrent();
+    Object.assign(this.state, { key, provider: 'lemonsqueezy', instanceId: body.instance.id, keyKind: beta ? 'beta' : 'lifetime', validatedAt: this.now(), revoked: false, customer: body.meta?.customer_name ?? null });
     if (beta) this.state.betaTester = true;
     await this.save();
     return this.status();
   }
 
-  /** Re-validate online. Offline: nothing changes (the key keeps working for OFFLINE_DAYS). */
+  /** Free the activation of the key in use, at the shop it comes from (errors ignored). */
+  async releaseCurrent() {
+    const { key, instanceId, provider } = this.state;
+    if (!key || !instanceId) return;
+    if (provider === 'polar') {
+      if (instanceId !== 'polar-no-activation' && this.product.polarOrganizationId) await this.polarCall('deactivate', { key, activation_id: instanceId }).catch(() => {});
+    } else await this.call('deactivate', { license_key: key, instance_id: instanceId }).catch(() => {});
+  }
+
+  /**
+   * Re-validate online, at the shop the key comes from. Offline or a server that is gone: nothing
+   * changes (a lifetime licence checked once keeps working; see licenseStatus).
+   */
   async validate() {
     if (!this.state.key || !this.state.instanceId) return this.status();
     try {
-      const { status, body } = await this.call('validate', { license_key: this.state.key, instance_id: this.state.instanceId });
-      if (body.valid && this.sameProduct(body.meta)) Object.assign(this.state, { validatedAt: this.now(), revoked: false });
-      else if (status === 404 || ['expired', 'disabled'].includes(body.license_key?.status) || body.valid === false) this.state.revoked = true;
+      if (this.state.provider === 'polar') {
+        if (!this.product.polarOrganizationId) return this.status();
+        const params = { key: this.state.key, ...(this.state.instanceId !== 'polar-no-activation' ? { activation_id: this.state.instanceId } : {}) };
+        const { status, body } = await this.polarCall('validate', params);
+        if (status === 200 && this.polarSameProduct(body)) Object.assign(this.state, { validatedAt: this.now(), revoked: false });
+        // Polar's own JSON 404 is its answer about the key (refunded, revoked, disabled, expired)
+        else if (polarRevoked(status, body)) this.state.revoked = true;
+      } else {
+        const { status, body } = await this.call('validate', { license_key: this.state.key, instance_id: this.state.instanceId });
+        if (body.valid && this.sameProduct(body.meta)) Object.assign(this.state, { validatedAt: this.now(), revoked: false });
+        // Revoked only on an explicit answer about this key (refunded / disabled / expired). A 404, a
+        // server error or an answer that is not about the key (the server gone, moved, down) changes
+        // nothing: a paid licence must not stop because the shop closes.
+        else if (revokedAnswer(status, body)) this.state.revoked = true;
+      }
       await this.save();
     } catch (err) {
       if (!err.offline) throw err;
@@ -122,9 +221,8 @@ export class LicenseManager {
 
   /** Frees this computer's activation (to move the licence to another computer). */
   async deactivate() {
-    const { key, instanceId } = this.state;
-    if (key && instanceId) await this.call('deactivate', { license_key: key, instance_id: instanceId }).catch(() => {});
-    for (const k of ['key', 'instanceId', 'keyKind', 'validatedAt', 'revoked', 'customer']) delete this.state[k];
+    await this.releaseCurrent();
+    for (const k of ['key', 'provider', 'instanceId', 'keyKind', 'validatedAt', 'revoked', 'customer']) delete this.state[k];
     await this.save();
     return this.status();
   }
