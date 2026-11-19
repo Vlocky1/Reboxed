@@ -20,7 +20,10 @@ export function licenseStatus(state, now = Date.now(), { betaEndsAt = null, beta
   if (state.key && state.instanceId) {
     if (state.revoked) return { mode: 'expired', reason: 'revoked', betaTester };
     const age = now - (state.validatedAt ?? 0);
-    if (age > OFFLINE_DAYS * DAY || age < -DAY) return { mode: 'expired', reason: 'offline', needsCheck: true, betaTester };
+    // A lifetime licence checked once stays valid without the server: a paid licence must never stop
+    // because the licence server goes away (the shop closes on 31 March 2027). Beta keys still need it.
+    const lifetimeChecked = state.keyKind !== 'beta' && !!state.validatedAt;
+    if (!lifetimeChecked && (age > OFFLINE_DAYS * DAY || age < -DAY)) return { mode: 'expired', reason: 'offline', needsCheck: true, betaTester };
     if (state.keyKind === 'beta') {
       if (clockBack) return { mode: 'expired', reason: 'clock', betaTester };
       return inBeta ? { mode: 'beta', daysLeft: Math.ceil((betaEndsAt - now) / DAY), registered: true, needsCheck: age > RECHECK_DAYS * DAY }
