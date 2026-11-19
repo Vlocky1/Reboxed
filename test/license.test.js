@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { licenseStatus, maskKey, TRIAL_DAYS, OFFLINE_DAYS } from '../src/shared/license.js';
 import { LicenseManager } from '../src/main/license.js';
-import { isBetaKey } from '../src/shared/product.js';
+import { isBetaKey, betaEnd } from '../src/shared/product.js';
 
 const DAY = 86400000;
 const T0 = Date.UTC(2026, 9, 21);
@@ -158,6 +158,24 @@ test('the licence server gone (404, 500, not JSON, unreachable): the licence kee
   // a refund: Lemon Squeezy disables the key and says so
   lm.fetch = async () => ({ status: 400, json: async () => ({ valid: false, error: 'This license key is disabled.', license_key: { status: 'disabled' } }) });
   assert.equal((await lm.validate()).reason, 'revoked');
+});
+
+test('the beta date is its last day: beta keys work all of 31 January 2027 and stop on 1 February at midnight; the website can move it', async () => {
+  const p = { betaEndsAt: '2027-01-31' };
+  const end = betaEnd(p);
+  assert.equal(new Date(end).getDate(), 1);
+  assert.equal(new Date(end).getMonth(), 1, 'February');
+  const beta = { firstRun: end - 60 * DAY, key: 'B', instanceId: 'i', keyKind: 'beta', validatedAt: end - 2 * DAY };
+  const lastMinute = new Date(2027, 0, 31, 23, 59).getTime();
+  const firstMinute = new Date(2027, 1, 1, 0, 0).getTime();
+  assert.equal(licenseStatus(beta, lastMinute, { betaEndsAt: end }).mode, 'beta', '31 January 23:59: still the beta');
+  assert.equal(licenseStatus(beta, firstMinute, { betaEndsAt: end }).reason, 'betaOver', '1 February 00:00: over');
+  const lm = new LicenseManager({ file: join(mkdtempSync(join(tmpdir(), 'rbx-lic-')), 'license.json'), fetch: async () => ({ ok: true, json: async () => ({ betaEndsAt: '2027-02-28' }) }), instanceName: 'PC', product: { name: 'Reboxed', price: '5 €', betaEndsAt: '2027-01-31' } });
+  await lm.loadRemoteConfig('https://example.test/app-config.json');
+  assert.equal(lm.product.betaEndsAt, '2027-02-28', 'moved from the website');
+  lm.fetch = async () => ({ ok: true, json: async () => ({ betaEndsAt: '2099-01-01' }) });
+  await lm.loadRemoteConfig('https://example.test/app-config.json');
+  assert.equal(lm.product.betaEndsAt, '2027-02-28', 'a date out of range is ignored');
 });
 
 test('beta key during the beta, refused after it; the licence then replaces it (old activation freed)', async () => {

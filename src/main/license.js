@@ -67,6 +67,8 @@ export class LicenseManager {
       if (typeof cfg.betaKeyRequired === 'boolean') patch.betaKeyRequired = cfg.betaKeyRequired;
       if (typeof cfg.betaDiscount === 'string' && cfg.betaDiscount.trim()) patch.betaDiscount = cfg.betaDiscount.trim().slice(0, 200);
       if (typeof cfg.price === 'string' && /^[\d.,]+\s?[€$£]$/.test(cfg.price.trim())) patch.price = cfg.price.trim();
+      // the last day of the open beta (YYYY-MM-DD, a real date, not before 2026 nor after 2028)
+      if (typeof cfg.betaEndsAt === 'string' && /^20(2[6-8])-\d\d-\d\d$/.test(cfg.betaEndsAt) && !Number.isNaN(new Date(`${cfg.betaEndsAt}T00:00:00`).getTime())) patch.betaEndsAt = cfg.betaEndsAt;
       // the shop: Polar once its organisation id is published (Lemon Squeezy keys keep working)
       if (typeof cfg.polarOrganizationId === 'string' && UUID.test(cfg.polarOrganizationId.trim())) patch.polarOrganizationId = cfg.polarOrganizationId.trim();
       if (typeof cfg.polarBenefitId === 'string' && UUID.test(cfg.polarBenefitId.trim())) patch.polarBenefitId = cfg.polarBenefitId.trim();
