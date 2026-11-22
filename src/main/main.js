@@ -323,6 +323,8 @@ function registerIpc(win) {
       || /^https:\/\/reboxed\.lemonsqueezy\.com\//.test(url)
       // Polar (the shop after Lemon Squeezy): checkout links and the customer portal (keys, receipts)
       || /^https:\/\/(buy\.|sandbox\.)?polar\.sh\//.test(url)
+      // Dodo Payments (the shop after Lemon Squeezy): checkout links and the customer portal
+      || /^https:\/\/([a-z0-9-]+\.)*dodopayments\.com\//.test(url)
       || /^https:\/\/(www\.)?(ko-fi\.com|buymeacoffee\.com)\/[\w.-]+\/?$/.test(url)
       || /^https:\/\/(www\.)?instagram\.com\/rebox\.ed\/?$/.test(url)
       // Preferences > Accounts: where each key is made (these exact pages only).
