@@ -91,12 +91,35 @@ test('a refund at Dodo (valid: false) revokes; Dodo gone (5xx, 404, not JSON, un
   assert.equal((await lm.validate()).reason, 'revoked');
 });
 
+test('a Dodo beta key (dodoBetaProductId) is a beta key: it works until the beta ends, then stops', async () => {
+  const BETA = 'pdt_reboxedBeta0001';
+  const dodo = fakeDodo({ keys: { 'RBX-BETA-0005': { product: BETA, limit: 3 }, 'RBX-GOOD-0001': { product: PRODUCT, limit: 3 } } });
+  // the beta runs until 31 January 2027 included; T0 - 20 days = 21 January
+  const { lm, tick } = manager(dodo, { dodoBetaProductId: BETA, betaEndsAt: '2027-01-31' });
+  tick(-20);
+  await lm.load();
+  const st = await lm.activate('RBX-BETA-0005');
+  assert.equal(lm.state.keyKind, 'beta');
+  assert.notEqual(st.mode, 'expired');
+  tick(11); // 1 February 2027
+  assert.equal(lm.status().reason, 'betaOver', 'the beta key stops on 1 February');
+  // the lifetime licence then replaces it, and the beta activation is freed at Dodo
+  assert.equal((await lm.activate('RBX-GOOD-0001')).mode, 'licensed');
+  assert.equal([...dodo.instances.values()].filter((i) => i.key === 'RBX-BETA-0005').length, 0);
+  // a beta key activated after the end is refused and freed
+  const late = manager(dodo, { dodoBetaProductId: BETA, betaEndsAt: '2027-01-31' });
+  await late.lm.load();
+  await assert.rejects(late.lm.activate('RBX-BETA-0005'), /beta is over/);
+  assert.equal([...dodo.instances.values()].filter((i) => i.key === 'RBX-BETA-0005').length, 0);
+});
+
 test('the switch comes from the website (dodoProductId + buyUrl); Lemon Squeezy keys never go to Dodo', async () => {
   const dodo = fakeDodo();
   const { lm } = manager(dodo, { dodoProductId: undefined });
-  lm.fetch = async () => ({ ok: true, json: async () => ({ dodoProductId: PRODUCT, buyUrl: 'https://checkout.dodopayments.com/buy/pdt_reboxedLifetime01' }) });
+  lm.fetch = async () => ({ ok: true, json: async () => ({ dodoProductId: PRODUCT, dodoBetaProductId: 'pdt_reboxedBeta0001', buyUrl: 'https://checkout.dodopayments.com/buy/pdt_reboxedLifetime01' }) });
   await lm.loadRemoteConfig('https://example.test/app-config.json');
   assert.equal(lm.product.dodoProductId, PRODUCT);
+  assert.equal(lm.product.dodoBetaProductId, 'pdt_reboxedBeta0001');
   assert.equal(lm.status().product.buyUrl, 'https://checkout.dodopayments.com/buy/pdt_reboxedLifetime01');
   const { lm: bad } = manager(dodo, { dodoProductId: undefined });
   bad.fetch = async () => ({ ok: true, json: async () => ({ dodoProductId: 'pdt_<script>' }) });
