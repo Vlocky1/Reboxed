@@ -16,14 +16,16 @@ export function statusText(st) {
   if (st.mode === 'licensed') return `Lifetime licence${st.customer ? ` of ${st.customer}` : ''} (key ${st.key}). Thank you!`;
   if (st.mode === 'beta') return `Open beta${st.registered ? ` (beta key ${st.key})` : ''}: free until ${betaDate(st)} (${plural(st.daysLeft, 'day')} left).`;
   if (st.mode === 'trial') return `Free trial: ${plural(st.daysLeft, 'day')} left.`;
-  return {
+  // A key from the earlier shop was dropped (Reboxed 1.34.2): say why a key is asked for again.
+  const old = st.oldKeyDropped ? 'Reboxed has a new shop: keys from before 22 November 2026 no longer work, get a new one. ' : '';
+  return old + ({
     betaKey: `Reboxed is free during the open beta, until ${betaDate(st)}. Get your free beta key, then paste it here.`,
     betaOver: 'The open beta is over. Thank you for testing Reboxed!',
     trial: 'The free trial is over.',
     revoked: 'This licence key is no longer valid.',
     offline: 'The licence could not be checked for 30 days: connect to the internet once.',
     clock: 'The computer clock was set back.',
-  }[st.reason] ?? 'No valid licence.';
+  }[st.reason] ?? 'No valid licence.');
 }
 
 /** "Buy me a coffee" button, or null while no donation link is set. */

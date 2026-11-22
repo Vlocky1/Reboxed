@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { licenseStatus, maskKey, TRIAL_DAYS, OFFLINE_DAYS } from '../src/shared/license.js';
 import { LicenseManager } from '../src/main/license.js';
-import { isBetaKey, betaEnd } from '../src/shared/product.js';
+import { betaEnd } from '../src/shared/product.js';
 
 const DAY = 86400000;
 const T0 = Date.UTC(2026, 9, 21);
@@ -31,13 +31,6 @@ test('open beta: free until its end (or with a beta key when required); testers 
   // A lifetime key works during and after the beta; a clock set back ends the beta.
   assert.equal(licenseStatus({ firstRun: T0, key: 'k', keyKind: 'lifetime', instanceId: 'i', validatedAt: betaEndsAt }, betaEndsAt + DAY, { betaEndsAt }).mode, 'licensed');
   assert.equal(licenseStatus({ firstRun: T0, lastSeen: T0 + 10 * DAY }, T0 + 5 * DAY, { betaEndsAt }).reason, 'clock');
-});
-
-test('beta keys: by product id when set, else by "beta" in the product / variant name', () => {
-  assert.equal(isBetaKey({ product_name: 'Reboxed Beta' }, { betaProductId: null }), true);
-  assert.equal(isBetaKey({ product_name: 'Reboxed', variant_name: 'Lifetime' }, { betaProductId: null }), false);
-  assert.equal(isBetaKey({ product_id: 7, product_name: 'Reboxed Beta' }, { betaProductId: 8 }), false);
-  assert.equal(isBetaKey({ product_id: 8 }, { betaProductId: 8 }), true);
 });
 
 test('website config: links (https only) and the beta discount text; offline keeps the built-in ones', async () => {
@@ -71,7 +64,7 @@ test('website config switches the beta key on and off (betaKeyRequired, betaKeyU
 
 test('developer build (run from the source) needs no licence', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
-  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: fakeApi().fetch, instanceName: 'PC', dev: true, now: () => T0 + 400 * DAY });
+  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: async () => { throw new Error('offline'); }, instanceName: 'PC', dev: true, now: () => T0 + 400 * DAY });
   assert.equal((await lm.load()).mode, 'dev');
 });
 
@@ -89,75 +82,42 @@ test('licensed: a lifetime licence checked once never stops offline (the shop ma
   assert.equal(maskKey('38b1460a-5104-4067-a91d-77b872934d51'), '••••-4d51');
 });
 
-/** Lemon Squeezy License API stand-in. */
-function fakeApi({ keys = { GOOD: { store_id: 1, product_id: 2, product_name: 'Reboxed' }, BETA: { store_id: 1, product_id: 3, product_name: 'Reboxed Beta' } }, offline = false } = {}) {
-  const calls = [];
-  const fetch = async (url, opts) => {
-    if (offline) throw new Error('getaddrinfo ENOTFOUND');
-    const action = url.split('/').pop();
-    const p = Object.fromEntries(new URLSearchParams(opts.body));
-    calls.push({ action, ...p });
-    const meta = keys[p.license_key];
-    const json = (status, body) => ({ status, json: async () => body });
-    if (!meta) return json(404, { activated: false, valid: false, error: 'license_key not found.' });
-    if (action === 'activate') return json(200, { activated: true, error: null, instance: { id: `inst-${p.license_key}` }, meta: { ...meta, customer_name: 'DJ Test' } });
-    if (action === 'validate') return json(200, { valid: true, error: null, license_key: { status: 'active' }, meta });
-    return json(200, { deactivated: true, error: null });
-  };
-  return { fetch, calls };
-}
 
-test('activate / validate / deactivate against the License API, product checked, offline tolerated', async () => {
+test('Reboxed 1.34.2: keys from the earlier shops (Lemon Squeezy, Polar) are dropped; Reboxed asks for a Dodo key', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
-  let now = T0;
-  const api = fakeApi();
-  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', now: () => now, product: { name: 'Reboxed', price: '5 €', buyUrl: null, storeId: 1, productId: 2 } });
-  assert.equal((await lm.load()).mode, 'trial');
-  await assert.rejects(() => lm.activate('BAD'), /license_key not found/);
-  const st = await lm.activate(' GOOD ');
-  assert.equal(st.mode, 'licensed');
-  assert.equal(st.customer, 'DJ Test');
-  assert.deepEqual(api.calls[1], { action: 'activate', license_key: 'GOOD', instance_name: 'PC' });
-  assert.equal(JSON.parse(readFileSync(join(dir, 'license.json'), 'utf8')).instanceId, 'inst-GOOD');
-  // A week later the key is re-checked; offline it keeps working.
-  now += 8 * DAY;
-  assert.equal(lm.status().needsCheck, true);
-  assert.equal((await lm.validate()).needsCheck, false);
-  lm.fetch = fakeApi({ offline: true }).fetch;
-  now += 10 * DAY;
-  assert.equal((await lm.validate()).mode, 'licensed');
-  // Deactivate frees the computer; the trial does not start again.
-  lm.fetch = api.fetch;
-  const off = await lm.deactivate();
-  assert.equal(off.mode, 'expired');
-  assert.equal(api.calls.at(-1).action, 'deactivate');
+  const file = join(dir, 'license.json');
+  const product = { name: 'Reboxed', price: '5 €', betaEndsAt: '2027-01-31', betaUrl: 'https://checkout.dodopayments.com/buy/pdt_beta', betaKeyRequired: true, dodoProductId: 'pdt_lifetime01', dodoBetaProductId: 'pdt_beta000001' };
+  const calls = [];
+  const fetch = async (url) => { calls.push(url); throw new Error('no network in this test'); };
+  for (const old of [
+    { key: '38b1460a-5104-4067-a91d-77b872934d51', instanceId: 'inst', keyKind: 'lifetime', validatedAt: T0, customer: 'DJ' }, // Lemon Squeezy (no provider field)
+    { key: '38b1460a-5104-4067-a91d-77b872934d51', provider: 'lemonsqueezy', instanceId: 'inst', keyKind: 'beta', validatedAt: T0 },
+    { key: 'POLAR-KEY-1', provider: 'polar', instanceId: 'act', keyKind: 'lifetime', validatedAt: T0 },
+  ]) {
+    writeFileSync(file, JSON.stringify({ firstRun: T0 - 30 * DAY, lastSeen: T0, betaTester: true, ...old }));
+    const lm = new LicenseManager({ file, fetch, instanceName: 'PC', now: () => T0, product });
+    const st = await lm.load();
+    assert.deepEqual([st.mode, st.reason, st.key, st.oldKeyDropped], ['expired', 'betaKey', '', true], old.provider ?? 'lemonsqueezy');
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(saved.key, undefined, 'the old key is gone from license.json');
+    assert.equal(saved.betaTester, true, 'still known as a beta tester');
+  }
+  assert.equal(calls.length, 0, 'no shop is called to drop an old key');
+  // A Dodo key is kept as it is.
+  writeFileSync(file, JSON.stringify({ firstRun: T0 - 30 * DAY, key: 'RBX-1', provider: 'dodo', instanceId: 'lki_1', keyKind: 'lifetime', validatedAt: T0 }));
+  const lm = new LicenseManager({ file, fetch, instanceName: 'PC', now: () => T0, product });
+  assert.equal((await lm.load()).mode, 'licensed');
 });
 
-test('the licence server gone (404, 500, not JSON, unreachable): the licence keeps working; a refund still revokes it', async () => {
+test('an old Lemon Squeezy key typed in now goes to Dodo and is refused with a clear message', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
-  let now = T0;
-  const api = fakeApi();
-  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', now: () => now, product: { name: 'Reboxed', price: '5 €', buyUrl: null, storeId: 1, productId: 2 } });
+  const seen = [];
+  const fetch = async (url) => { seen.push(url); return { status: 404, json: async () => ({ code: 'NOT_FOUND' }) }; };
+  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch, instanceName: 'PC', now: () => T0, product: { name: 'Reboxed', price: '5 €', dodoProductId: 'pdt_lifetime01' } });
   await lm.load();
-  await lm.activate('GOOD');
-  const answers = [
-    ['404 JSON (key unknown once the shop is closed)', { status: 404, json: async () => ({ valid: false, error: 'license_key not found.' }) }],
-    ['500', { status: 500, json: async () => ({ error: 'Server Error' }) }],
-    ['a page that is not JSON', { status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }],
-    ['410 gone', { status: 410, json: async () => ({}) }],
-  ];
-  for (const [label, res] of answers) {
-    now += 10 * DAY;
-    lm.fetch = async () => res;
-    const st = await lm.validate();
-    assert.equal(st.mode, 'licensed', label);
-  }
-  lm.fetch = async () => { throw new Error('getaddrinfo ENOTFOUND api.lemonsqueezy.com'); };
-  now += 2 * 365 * DAY;
-  assert.equal((await lm.validate()).mode, 'licensed', 'two years without the server');
-  // a refund: Lemon Squeezy disables the key and says so
-  lm.fetch = async () => ({ status: 400, json: async () => ({ valid: false, error: 'This license key is disabled.', license_key: { status: 'disabled' } }) });
-  assert.equal((await lm.validate()).reason, 'revoked');
+  await assert.rejects(() => lm.activate('38b1460a-5104-4067-a91d-77b872934d51'), /no longer work/);
+  assert.ok(seen.length === 1 && seen[0].startsWith('https://live.dodopayments.com/licenses/activate'));
+  assert.equal(lm.status().mode, 'trial');
 });
 
 test('the beta date is its last day: beta keys work all of 31 January 2027 and stop on 1 February at midnight; the website can move it', async () => {
@@ -176,34 +136,4 @@ test('the beta date is its last day: beta keys work all of 31 January 2027 and s
   lm.fetch = async () => ({ ok: true, json: async () => ({ betaEndsAt: '2099-01-01' }) });
   await lm.loadRemoteConfig('https://example.test/app-config.json');
   assert.equal(lm.product.betaEndsAt, '2027-02-28', 'a date out of range is ignored');
-});
-
-test('beta key during the beta, refused after it; the licence then replaces it (old activation freed)', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
-  const end = '2026-12-30';
-  const endMs = new Date(`${end}T00:00:00`).getTime();
-  let now = endMs - 20 * DAY;
-  const api = fakeApi();
-  const product = { name: 'Reboxed', price: '5 €', storeId: 1, productId: 2, betaEndsAt: end, betaUrl: 'https://reboxed.lemonsqueezy.com/buy/beta', betaKeyRequired: true, betaDiscount: '-50 %' };
-  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', now: () => now, product });
-  assert.equal((await lm.load()).reason, 'betaKey');
-  const st = await lm.activate('BETA');
-  assert.deepEqual([st.mode, st.registered, st.keyKind], ['beta', true, 'beta']);
-  now = endMs + DAY;
-  const over = lm.status();
-  assert.deepEqual([over.mode, over.reason, over.betaTester, over.product.betaDiscount], ['expired', 'betaOver', true, '-50 %']);
-  await assert.rejects(() => lm.activate('BETA'), /beta is over/);
-  const lic = await lm.activate('GOOD');
-  assert.equal(lic.mode, 'licensed');
-  assert.ok(api.calls.some((c) => c.action === 'deactivate' && c.license_key === 'BETA'), 'beta activation freed');
-});
-
-test('a key of another product is refused and its activation released', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'rbx-lic-'));
-  const api = fakeApi({ keys: { OTHER: { store_id: 9, product_id: 9 } } });
-  const lm = new LicenseManager({ file: join(dir, 'license.json'), fetch: api.fetch, instanceName: 'PC', product: { storeId: 1, productId: 2 } });
-  await lm.load();
-  await assert.rejects(() => lm.activate('OTHER'), /not a Reboxed licence/);
-  assert.deepEqual(api.calls.map((c) => c.action), ['activate', 'deactivate']);
-  assert.equal(lm.status().mode, 'trial');
 });

@@ -320,10 +320,7 @@ function registerIpc(win) {
       || /^https:\/\/github\.com\/Vlocky1\/Reboxed(\/|$)/.test(url)
       || /^https:\/\/(vlocky1|reboxed)\.github\.io\//.test(url)
       // Shop (licence, beta key) and donations.
-      || /^https:\/\/reboxed\.lemonsqueezy\.com\//.test(url)
-      // Polar (the shop after Lemon Squeezy): checkout links and the customer portal (keys, receipts)
-      || /^https:\/\/(buy\.|sandbox\.)?polar\.sh\//.test(url)
-      // Dodo Payments (the shop after Lemon Squeezy): checkout links and the customer portal
+      // Dodo Payments: checkout links and the customer portal (keys, receipts)
       || /^https:\/\/([a-z0-9-]+\.)*dodopayments\.com\//.test(url)
       || /^https:\/\/(www\.)?(ko-fi\.com|buymeacoffee\.com)\/[\w.-]+\/?$/.test(url)
       || /^https:\/\/(www\.)?instagram\.com\/rebox\.ed\/?$/.test(url)

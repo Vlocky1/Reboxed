@@ -1,6 +1,6 @@
 // Dodo Payments as the shop: keys activated / validated / freed through Dodo's public licence API
 // (no API key), the product checked at activation; a refund (valid: false) revokes, a server that is
-// gone does not; Lemon Squeezy keys keep going to Lemon Squeezy.
+// gone does not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -113,7 +113,7 @@ test('a Dodo beta key (dodoBetaProductId) is a beta key: it works until the beta
   assert.equal([...dodo.instances.values()].filter((i) => i.key === 'RBX-BETA-0005').length, 0);
 });
 
-test('the switch comes from the website (dodoProductId + buyUrl); Lemon Squeezy keys never go to Dodo', async () => {
+test('the product ids and links can come from the website (dodoProductId, dodoBetaProductId, buyUrl)', async () => {
   const dodo = fakeDodo();
   const { lm } = manager(dodo, { dodoProductId: undefined });
   lm.fetch = async () => ({ ok: true, json: async () => ({ dodoProductId: PRODUCT, dodoBetaProductId: 'pdt_reboxedBeta0001', buyUrl: 'https://checkout.dodopayments.com/buy/pdt_reboxedLifetime01' }) });
@@ -125,8 +125,4 @@ test('the switch comes from the website (dodoProductId + buyUrl); Lemon Squeezy 
   bad.fetch = async () => ({ ok: true, json: async () => ({ dodoProductId: 'pdt_<script>' }) });
   await bad.loadRemoteConfig('https://example.test/app-config.json');
   assert.equal(bad.product.dodoProductId, undefined);
-  const seen = [];
-  lm.fetch = async (url) => { seen.push(url); return { status: 200, json: async () => ({ activated: true, instance: { id: 'ls' }, meta: { store_id: 1, product_id: 2, product_name: 'Reboxed' } }) }; };
-  assert.equal((await lm.activate('38b1460a-5104-4067-a91d-77b872934d51')).mode, 'licensed');
-  assert.ok(seen.every((u) => u.includes('lemonsqueezy')));
 });
