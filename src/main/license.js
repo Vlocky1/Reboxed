@@ -81,6 +81,8 @@ export class LicenseManager {
       if (typeof cfg.polarOrganizationId === 'string' && UUID.test(cfg.polarOrganizationId.trim())) patch.polarOrganizationId = cfg.polarOrganizationId.trim();
       if (typeof cfg.polarBenefitId === 'string' && UUID.test(cfg.polarBenefitId.trim())) patch.polarBenefitId = cfg.polarBenefitId.trim();
       if (typeof cfg.dodoProductId === 'string' && DODO_PRODUCT.test(cfg.dodoProductId.trim())) patch.dodoProductId = cfg.dodoProductId.trim();
+      // the free beta key handed out at Dodo (0 €): a key of this product is a beta key, it stops when the beta ends
+      if (typeof cfg.dodoBetaProductId === 'string' && DODO_PRODUCT.test(cfg.dodoBetaProductId.trim())) patch.dodoBetaProductId = cfg.dodoBetaProductId.trim();
       this.product = { ...this.product, ...patch };
     } catch { /* offline: the built-in settings */ }
   }
@@ -177,15 +179,20 @@ export class LicenseManager {
     return { status: res.status, body };
   }
 
-  /** Activate a Dodo key on this computer; a key of another product is refused and freed. */
+  /**
+   * Activate a Dodo key on this computer: the lifetime licence (dodoProductId) or the beta key
+   * (dodoBetaProductId). A key of another product, or a beta key once the beta is over, is refused and freed.
+   */
   async activateDodo(key) {
     const { status, body } = await this.dodoCall('activate', { license_key: key, name: this.instanceName });
     if (status === 201 || (status === 200 && body.id)) {
-      if (body.product?.product_id !== this.product.dodoProductId) {
-        await this.dodoCall('deactivate', { license_key: key, license_key_instance_id: body.id }).catch(() => {});
-        throw new Error('This key is not a Reboxed licence');
-      }
-      return { instanceId: body.id, customer: body.customer?.name || body.customer?.email || null };
+      const product = body.product?.product_id;
+      const free = () => this.dodoCall('deactivate', { license_key: key, license_key_instance_id: body.id }).catch(() => {});
+      const beta = product != null && product === this.product.dodoBetaProductId;
+      if (!beta && (product == null || product !== this.product.dodoProductId)) { await free(); throw new Error('This key is not a Reboxed licence'); }
+      const end = betaEnd(this.product);
+      if (beta && end && this.now() >= end) { await free(); throw new Error('The open beta is over: this beta key no longer works. Get the lifetime licence.'); }
+      return { instanceId: body.id, customer: body.customer?.name || body.customer?.email || null, beta };
     }
     if (status === 422) throw new Error('This licence is already active on its maximum number of computers (3): free one (Preferences > About on that computer) or contact reboxed@proton.me');
     if (status === 403) throw new Error('This licence key is not active (refunded or disabled)');
@@ -197,12 +204,13 @@ export class LicenseManager {
     key = String(key ?? '').trim();
     if (!key) throw new Error('Enter your licence key');
     // Dodo, the shop in use once its product id is published: keys that are not Lemon Squeezy's
-    if (this.product.dodoProductId && keyShop(key) !== 'lemonsqueezy') {
+    if ((this.product.dodoProductId || this.product.dodoBetaProductId) && keyShop(key) !== 'lemonsqueezy') {
       let got;
       try { got = await this.activateDodo(key); } catch (err) { if (!err.notFound) throw err; }
       if (got) {
         if (this.state.key && this.state.instanceId && this.state.key !== key) await this.releaseCurrent();
-        Object.assign(this.state, { key, provider: 'dodo', instanceId: got.instanceId, keyKind: 'lifetime', validatedAt: this.now(), revoked: false, customer: got.customer });
+        Object.assign(this.state, { key, provider: 'dodo', instanceId: got.instanceId, keyKind: got.beta ? 'beta' : 'lifetime', validatedAt: this.now(), revoked: false, customer: got.customer });
+        if (got.beta) this.state.betaTester = true;
         await this.save();
         return this.status();
       }
