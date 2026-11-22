@@ -1,4 +1,4 @@
-// Licence state, without I/O: an open beta (until a date), then a licence key (Lemon Squeezy) that is
+// Licence state, without I/O: an open beta (until a date), then a licence key (Dodo Payments) that is
 // re-validated online now and then and keeps working offline for a while. Newcomers after the beta get a
 // trial first; beta testers get a discount instead.
 export const TRIAL_DAYS = 14;

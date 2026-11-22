@@ -2615,7 +2615,7 @@ async function smoke(app) {
       over?.remove();
       step('licence: end of the beta shows the tester discount', overOk, over?.querySelector('.license-discount')?.textContent ?? 'none');
       // Joining the beta: the free beta key dialog, with the beta checkout link.
-      openLicenseGate(app, { mode: 'expired', reason: 'betaKey', product: { price: '5 €', betaEndsAt: '2027-01-31', betaUrl: 'https://reboxed.lemonsqueezy.com/checkout/buy/beta' } });
+      openLicenseGate(app, { mode: 'expired', reason: 'betaKey', product: { price: '5 €', betaEndsAt: '2027-01-31', betaUrl: 'https://checkout.dodopayments.com/buy/pdt_beta' } });
       await wait(100);
       const join = document.querySelector('.license-gate');
       const joinOk = !!join && /Join the open beta/.test(join.textContent) && /Get my free beta key/.test(join.textContent) && /31 January 2027/.test(join.textContent);
