@@ -7,6 +7,16 @@ import { PRODUCT, betaEnd, isBetaKey } from '../shared/product.js';
 
 const API = 'https://api.lemonsqueezy.com/v1/licenses';
 
+/**
+ * Does a validate answer say this key was taken back? Only a well-formed answer about the key:
+ * HTTP 200/400 with `valid: false` and the key's own status (disabled after a refund, expired).
+ * Anything else (404, 5xx, a page that is not JSON, no key object) is the server, not the key.
+ */
+export function revokedAnswer(status, body) {
+  if (!(status === 200 || status === 400) || body?.valid !== false) return false;
+  return ['disabled', 'expired'].includes(body.license_key?.status);
+}
+
 export class LicenseManager {
   /**
    * @param {{file: string, fetch: typeof fetch, instanceName: string, now?: () => number, product?: object, dev?: boolean}} o
@@ -112,7 +122,10 @@ export class LicenseManager {
     try {
       const { status, body } = await this.call('validate', { license_key: this.state.key, instance_id: this.state.instanceId });
       if (body.valid && this.sameProduct(body.meta)) Object.assign(this.state, { validatedAt: this.now(), revoked: false });
-      else if (status === 404 || ['expired', 'disabled'].includes(body.license_key?.status) || body.valid === false) this.state.revoked = true;
+      // Revoked only on an explicit answer about this key (refunded / disabled / expired). A 404, a
+      // server error or an answer that is not about the key (the server gone, moved, down) changes
+      // nothing: a paid licence must not stop because the shop closes.
+      else if (revokedAnswer(status, body)) this.state.revoked = true;
       await this.save();
     } catch (err) {
       if (!err.offline) throw err;
