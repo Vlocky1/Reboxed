@@ -28,6 +28,14 @@ export const polarRevoked = (status, body) => status === 404 && body?.error === 
 /** Lemon Squeezy keys are bare UUIDs; Polar keys carry a prefix. Which shop to ask first. */
 export const keyShop = (key) => (UUID.test(String(key ?? '').trim()) ? 'lemonsqueezy' : 'polar');
 
+// ---- Dodo Payments (the shop after Lemon Squeezy) --------------------------------------------------
+// Public licence endpoints (no API key, made for client apps); the activation tells the product.
+const DODO_API = 'https://live.dodopayments.com/licenses';
+const DODO_PRODUCT = /^pdt_[A-Za-z0-9]{6,64}$/;
+
+/** Dodo's own answer that a key is not valid any more: HTTP 200 with valid: false. */
+export const dodoRevoked = (status, body) => status === 200 && body?.valid === false;
+
 export class LicenseManager {
   /**
    * @param {{file: string, fetch: typeof fetch, instanceName: string, now?: () => number, product?: object, dev?: boolean}} o
@@ -72,6 +80,7 @@ export class LicenseManager {
       // the shop: Polar once its organisation id is published (Lemon Squeezy keys keep working)
       if (typeof cfg.polarOrganizationId === 'string' && UUID.test(cfg.polarOrganizationId.trim())) patch.polarOrganizationId = cfg.polarOrganizationId.trim();
       if (typeof cfg.polarBenefitId === 'string' && UUID.test(cfg.polarBenefitId.trim())) patch.polarBenefitId = cfg.polarBenefitId.trim();
+      if (typeof cfg.dodoProductId === 'string' && DODO_PRODUCT.test(cfg.dodoProductId.trim())) patch.dodoProductId = cfg.dodoProductId.trim();
       this.product = { ...this.product, ...patch };
     } catch { /* offline: the built-in settings */ }
   }
@@ -152,9 +161,52 @@ export class LicenseManager {
     return { instanceId, customer: lk?.customer?.name || lk?.customer?.email || null };
   }
 
+  /** POST to Dodo's public licence API (JSON). */
+  async dodoCall(action, params) {
+    let res;
+    try {
+      res = await this.fetch(`${DODO_API}/${action}`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+    } catch (err) {
+      throw Object.assign(new Error(`Could not reach the licence server (${err.message})`), { offline: true });
+    }
+    const body = await res.json().catch(() => ({}));
+    return { status: res.status, body };
+  }
+
+  /** Activate a Dodo key on this computer; a key of another product is refused and freed. */
+  async activateDodo(key) {
+    const { status, body } = await this.dodoCall('activate', { license_key: key, name: this.instanceName });
+    if (status === 201 || (status === 200 && body.id)) {
+      if (body.product?.product_id !== this.product.dodoProductId) {
+        await this.dodoCall('deactivate', { license_key: key, license_key_instance_id: body.id }).catch(() => {});
+        throw new Error('This key is not a Reboxed licence');
+      }
+      return { instanceId: body.id, customer: body.customer?.name || body.customer?.email || null };
+    }
+    if (status === 422) throw new Error('This licence is already active on its maximum number of computers (3): free one (Preferences > About on that computer) or contact reboxed@proton.me');
+    if (status === 403) throw new Error('This licence key is not active (refunded or disabled)');
+    if (status === 404) { const e = new Error('This licence key was not found'); e.notFound = true; throw e; }
+    throw new Error(`The licence server answered ${status}: try again later`);
+  }
+
   async activate(key) {
     key = String(key ?? '').trim();
     if (!key) throw new Error('Enter your licence key');
+    // Dodo, the shop in use once its product id is published: keys that are not Lemon Squeezy's
+    if (this.product.dodoProductId && keyShop(key) !== 'lemonsqueezy') {
+      let got;
+      try { got = await this.activateDodo(key); } catch (err) { if (!err.notFound) throw err; }
+      if (got) {
+        if (this.state.key && this.state.instanceId && this.state.key !== key) await this.releaseCurrent();
+        Object.assign(this.state, { key, provider: 'dodo', instanceId: got.instanceId, keyKind: 'lifetime', validatedAt: this.now(), revoked: false, customer: got.customer });
+        await this.save();
+        return this.status();
+      }
+    }
     // the shop the key comes from: Polar keys carry a prefix, Lemon Squeezy keys are bare UUIDs
     if (this.product.polarOrganizationId && keyShop(key) === 'polar') {
       let got;
@@ -187,6 +239,8 @@ export class LicenseManager {
     if (!key || !instanceId) return;
     if (provider === 'polar') {
       if (instanceId !== 'polar-no-activation' && this.product.polarOrganizationId) await this.polarCall('deactivate', { key, activation_id: instanceId }).catch(() => {});
+    } else if (provider === 'dodo') {
+      await this.dodoCall('deactivate', { license_key: key, license_key_instance_id: instanceId }).catch(() => {});
     } else await this.call('deactivate', { license_key: key, instance_id: instanceId }).catch(() => {});
   }
 
@@ -197,7 +251,12 @@ export class LicenseManager {
   async validate() {
     if (!this.state.key || !this.state.instanceId) return this.status();
     try {
-      if (this.state.provider === 'polar') {
+      if (this.state.provider === 'dodo') {
+        const { status, body } = await this.dodoCall('validate', { license_key: this.state.key, license_key_instance_id: this.state.instanceId });
+        if (status === 200 && body.valid === true) Object.assign(this.state, { validatedAt: this.now(), revoked: false });
+        // Dodo's own "valid: false" (refunded / disabled / expired); anything else is the server
+        else if (dodoRevoked(status, body)) this.state.revoked = true;
+      } else if (this.state.provider === 'polar') {
         if (!this.product.polarOrganizationId) return this.status();
         const params = { key: this.state.key, ...(this.state.instanceId !== 'polar-no-activation' ? { activation_id: this.state.instanceId } : {}) };
         const { status, body } = await this.polarCall('validate', params);
