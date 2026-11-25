@@ -277,7 +277,7 @@ export class PioneerController {
       case 'Load': if (press && d) this.load(i); break;
       case 'SamplerPanel': case 'PanelForward': if (press) app.toggleSampler(); break;
       case 'ForwardAndLoad': if (press) browser.browsePress(); break;
-      case 'MixPointLink': if (press) app.library.setSetting('mixPointLink', !app.library.settings.mixPointLink); break;
+      case 'MixPointLink': if (press && app.library.settings.showMixPoint) app.library.setSetting('mixPointLink', !app.library.settings.mixPointLink); break;
       // Mixer sections of the all-in-one controllers.
       case 'HeadphonesMix': this.ctl('phones.mix')?.apply(ev.value01); break;
       case 'HeadphonesVolume': this.ctl('phones.level')?.apply(ev.value01); break;

@@ -1,6 +1,7 @@
 // Batch auto-tagging: a recipe of steps (each one: a service and the fields to take from it) runs
 // on every selected track. Each step searches with the track as the previous steps left it, keeps
 // the result only when artist, title and duration agree, and proposes field changes.
+import { tx } from './i18n.js';
 import { cleanTitle, cleanArtist } from './clean-name.js';
 
 export { cleanTitle };
@@ -73,8 +74,8 @@ export function pickMatch(candidates, t, { tolerance = 4 } = {}) {
 
 /** Fields a step can take; artwork is a URL turned into a cover when applied. */
 export const TAG_FIELDS = [
-  ['title', 'Title'], ['artist', 'Artist'], ['mixName', 'Mix name'], ['album', 'Album'], ['albumArtist', 'Album artist'],
-  ['genre', 'Genre'], ['year', 'Year'], ['trackNumber', 'Track number'], ['discNumber', 'Disc number'], ['label', 'Label'], ['artwork', 'Artwork'],
+  ['title', tx('Title')], ['artist', tx('Artist')], ['mixName', tx('Mix name')], ['album', 'Album'], ['albumArtist', tx('Album artist')],
+  ['genre', 'Genre'], ['year', tx('Year')], ['trackNumber', tx('Track number')], ['discNumber', tx('Disc number')], ['label', 'Label'], ['artwork', tx('Artwork')],
 ];
 
 /** Value of a field from a candidate. titleWithMix: "Song (Extended Mix)" in the title, like rekordbox. */

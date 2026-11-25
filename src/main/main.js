@@ -17,6 +17,7 @@ import { ToolInstaller, TOOLS } from './tools.js';
 import { exportToDrive, listDrives, listBackups, undoExport, otherSoftwareRunning } from './cdj-export.js';
 import { PluginStore } from './plugins.js';
 import { Spotify, REDIRECT_URI, isCoverUrl } from './spotify.js';
+import { nextSpotifyKeys, readSpotifyKeys } from './spotify-keys.js';
 import { Deezer } from './deezer.js';
 import { Lyrics, localLyrics } from './lyrics.js';
 import { Whisper } from './whisper.js';
@@ -156,20 +157,17 @@ function registerIpc(win) {
       throw new Error(err.name === 'TimeoutError' || err.name === 'AbortError' ? `no answer from ${new URL(url).hostname} (15 s)` : `${new URL(url).hostname}: ${err.message}`);
     }
   };
+  const decrypt = (b64) => safeStorage.decryptString(Buffer.from(b64, 'base64'));
+  const spotifyKeysHere = () => readSpotifyKeys(storage.cfg.spotify, decrypt);
   const spotify = new Spotify({
     fetch: timedFetch,
     credentials: () => {
-      const c = storage.cfg.spotify;
-      if (!c?.clientId || !c?.secret) return null;
-      try { return { clientId: c.clientId, secret: safeStorage.decryptString(Buffer.from(c.secret, 'base64')) }; } catch { return null; }
+      const c = spotifyKeysHere();
+      return c.clientId ? { clientId: c.clientId, secret: c.secret } : null;
     },
     // the Spotify account (whole playlists): its refresh token, encrypted
     account: {
-      get: () => {
-        const enc = storage.cfg.spotify?.refresh;
-        if (!enc) return null;
-        try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
-      },
+      get: () => spotifyKeysHere().refresh,
       set: async (refresh) => {
         if (!storage.cfg.spotify) return;
         storage.cfg.spotify = { ...storage.cfg.spotify, refresh: refresh ? safeStorage.encryptString(refresh).toString('base64') : null, user: refresh ? storage.cfg.spotify.user : null };
@@ -177,6 +175,7 @@ function registerIpc(win) {
       },
     },
   });
+  const spotifyKeys = () => { const c = spotifyKeysHere(); return !!(c.clientId && c.secret); };
   ipcMain.handle('spotify:signIn', async () => {
     const me = await spotify.signIn((url) => shell.openExternal(url));
     storage.cfg.spotify = { ...storage.cfg.spotify, user: me.name };
@@ -184,23 +183,20 @@ function registerIpc(win) {
     return me;
   });
   ipcMain.handle('spotify:signOut', () => spotify.signOut());
-  ipcMain.handle('spotify:account', () => ({ signedIn: spotify.signedIn, user: storage.cfg.spotify?.user ?? null, redirectUri: REDIRECT_URI }));
+  ipcMain.handle('spotify:account', () => ({ signedIn: spotify.signedIn, user: spotifyKeysHere().user, redirectUri: REDIRECT_URI }));
   ipcMain.handle('spotify:myPlaylists', () => spotify.myPlaylists());
-  ipcMain.handle('spotify:status', () => ({ clientId: storage.cfg.spotify?.clientId ?? '', hasSecret: !!storage.cfg.spotify?.secret }));
+  const spotifyStatus = () => { const c = spotifyKeysHere(); return { clientId: c.clientId, hasSecret: !!c.secret, foreign: c.foreign }; };
+  ipcMain.handle('spotify:status', spotifyStatus);
   ipcMain.handle('spotify:setCredentials', async (_e, clientId, secret) => {
-    const prev = storage.cfg.spotify ?? {};
-    const enc = secret ? safeStorage.encryptString(secret).toString('base64') : (clientId ? prev.secret : null);
-    // the account stays connected while the app (Client ID) is the same
-    const keep = clientId && prev.clientId === clientId ? { refresh: prev.refresh ?? null, user: prev.user ?? null } : {};
-    storage.cfg.spotify = clientId ? { clientId, secret: enc, ...keep } : null;
+    storage.cfg.spotify = nextSpotifyKeys(storage.cfg.spotify, { clientId, secret }, { decrypt, encrypt: (t) => safeStorage.encryptString(t).toString('base64') });
     await storage.save();
     spotify.forget();
-    if (clientId && enc) await spotify.auth(); // check the credentials now
-    return { clientId: storage.cfg.spotify?.clientId ?? '', hasSecret: !!storage.cfg.spotify?.secret };
+    if (storage.cfg.spotify?.secret) await spotify.auth(); // check the credentials now
+    return spotifyStatus();
   });
   ipcMain.handle('spotify:lookup', (_e, q) => spotify.lookup(q));
   // Tracks of a Spotify playlist / album (to find each one on YouTube): the Web API when set up, else the public embed page.
-  ipcMain.handle('spotify:playlist', (_e, url) => spotify.playlist(url, !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret)));
+  ipcMain.handle('spotify:playlist', (_e, url) => spotify.playlist(url, spotifyKeys()));
   // Deezer (no account) + Spotify (when set up), merged: Deezer brings the genres Spotify lacks.
   // Genre: Discogs styles (personal token, stored encrypted) + MusicBrainz + Deezer, voted.
   const discogsToken = () => {
@@ -210,10 +206,9 @@ function registerIpc(win) {
   };
   const genres = new GenreSources({ fetch: timedFetch, discogsToken });
   const deezer = new Deezer({ fetch: timedFetch });
-  const metadata = new MetadataLookup({ spotify, deezer, spotifyReady: () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret), genres });
+  const metadata = new MetadataLookup({ spotify, deezer, spotifyReady: () => spotifyKeys(), genres });
   // Spotify / Deezer in the download window: they give the track lists (search, track, album,
   // playlist); the audio of each track is then found on YouTube. Deezer's public API needs no account.
-  const spotifyKeys = () => !!(storage.cfg.spotify?.clientId && storage.cfg.spotify?.secret);
   ipcMain.handle('catalog:read', (_e, url) => {
     const u = String(url ?? '');
     if (/spotify/i.test(u)) return spotify.playlist(u, spotifyKeys());
@@ -253,7 +248,7 @@ function registerIpc(win) {
     return whisper.transcribe(samples, { model: o.model === 'small' ? 'small' : 'base', language: String(o.language ?? 'auto'), prompt: String(o.prompt ?? '') });
   });
   ipcMain.handle('whisper:cancel', () => whisper.cancel());
-  ipcMain.handle('discogs:status', () => ({ hasToken: !!storage.cfg.discogs?.token }));
+  ipcMain.handle('discogs:status', () => ({ hasToken: !!discogsToken() }));
   ipcMain.handle('discogs:setToken', async (_e, token) => {
     if (token) await genres.checkDiscogs(token); // refused tokens are not saved
     storage.cfg.discogs = token ? { token: safeStorage.encryptString(token).toString('base64') } : null;
@@ -589,17 +584,18 @@ async function createWindow() {
     setTimeout(() => { console.log('SMOKE timeout', errors); app.exit(2); }, shotsDir ? 1200000 : 600000);
   }
 
-  await win.loadURL(`app://rb/renderer/index.html${shotsDir ? '?shots=1' : smoke ? '?smoke=1' : ''}`);
+  await win.loadURL(`app://rb/renderer/index.html${shotsDir ? '?shots=1' : smoke ? '?smoke=1' : ''}${smoke && process.env.REBOXED_LANG === 'fr' ? '&lang=fr' : ''}`);
 }
 
 /** The database folder is on a drive that is not plugged in: retry, pick another or use the local one. */
 async function resolveDatabase() {
   while (!(await storage.databaseReachable())) {
+    const fr = /^fr\b/i.test(app.getLocale()); // before any window: Windows' language
     const r = await dialog.showMessageBox({
       type: 'warning', title: 'Reboxed', noLink: true,
-      message: `The Reboxed library folder is not available:\n${storage.databaseDir}`,
-      detail: 'Plug in the drive that holds it and choose Retry, or choose another folder.',
-      buttons: ['Retry', 'Choose another folder…', 'Use the library on this computer'], defaultId: 0, cancelId: 2,
+      message: `${fr ? "Le dossier de la bibliothèque Reboxed n'est pas disponible :" : 'The Reboxed library folder is not available:'}\n${storage.databaseDir}`,
+      detail: fr ? 'Branche la clé ou le disque qui le contient et choisis Réessayer, ou choisis un autre dossier.' : 'Plug in the drive that holds it and choose Retry, or choose another folder.',
+      buttons: fr ? ['Réessayer', 'Choisir un autre dossier…', 'Utiliser la bibliothèque de cet ordinateur'] : ['Retry', 'Choose another folder…', 'Use the library on this computer'], defaultId: 0, cancelId: 2,
     });
     if (r.response === 1) {
       const pick = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });

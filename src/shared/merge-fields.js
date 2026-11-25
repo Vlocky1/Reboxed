@@ -2,22 +2,23 @@
 // rating…), the user ticks the track whose value the kept track gets. The kept track is the audio
 // file that stays; the others leave the collection (their files are not touched).
 
+import { tx } from './i18n.js';
 /** The information that can be picked, in the order shown. `fields`: what a pick copies. */
 export const MERGE_FIELDS = [
-  { key: 'title', label: 'Title' },
-  { key: 'artist', label: 'Artist' },
+  { key: 'title', label: tx('Title') },
+  { key: 'artist', label: tx('Artist') },
   { key: 'album', label: 'Album' },
   { key: 'genre', label: 'Genre' },
   { key: 'label', label: 'Label' },
-  { key: 'year', label: 'Year' },
-  { key: 'key', label: 'Key' },
-  { key: 'grid', label: 'BPM & beatgrid', fields: ['bpm', 'beatgrid', 'dynamicGrid', 'gridLocked'] },
+  { key: 'year', label: tx('Year') },
+  { key: 'key', label: tx('Key') },
+  { key: 'grid', label: tx('BPM & beatgrid'), fields: ['bpm', 'beatgrid', 'dynamicGrid', 'gridLocked'] },
   { key: 'cues', label: 'Cues' },
-  { key: 'rating', label: 'Rating' },
-  { key: 'color', label: 'Colour' },
-  { key: 'comments', label: 'Comments' },
-  { key: 'myTags', label: 'My tags' },
-  { key: 'artwork', label: 'Cover' },
+  { key: 'rating', label: tx('Rating') },
+  { key: 'color', label: tx('Colour') },
+  { key: 'comments', label: tx('Comments') },
+  { key: 'myTags', label: tx('My tags') },
+  { key: 'artwork', label: tx('Cover') },
 ];
 
 const fieldsOf = (f) => f.fields ?? [f.key];
@@ -30,7 +31,7 @@ export const hasValue = (t, f) => fieldsOf(f).some((k) => !empty(t?.[k]));
 export function fieldText(t, f) {
   if (!hasValue(t, f)) return '—';
   switch (f.key) {
-    case 'grid': return `${Number(t.bpm ?? t.beatgrid?.bpm ?? 0).toFixed(2)} BPM${t.beatgrid?.beats ? ' · variable' : ''}${t.gridLocked ? ' · locked' : ''}`;
+    case 'grid': return `${Number(t.bpm ?? t.beatgrid?.bpm ?? 0).toFixed(2)} BPM${t.beatgrid?.beats ? ' · variable' : ''}${t.gridLocked ? tx(' · locked') : ''}`;
     case 'cues': {
       const hot = (t.cues ?? []).filter((c) => c.num >= 0 && c.type !== 'memory').length;
       return `${t.cues.length} cue${t.cues.length > 1 ? 's' : ''}${hot ? ` (${hot} hot)` : ''}`;

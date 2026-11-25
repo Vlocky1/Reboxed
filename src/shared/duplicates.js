@@ -3,6 +3,7 @@
 // audio: the energy curves of the two tracks (low / mid / high bands, from the analysis) slid
 // against each other. The same recording lines up almost perfectly, whatever its level or format;
 // another edit lines up over a long stretch; a remix with the same name does not.
+import { tx } from './i18n.js';
 import { similarity, artistSimilarity, splitMix, norm } from './autotag.js';
 import { featureSimilarity } from './dsp/features.js';
 import { CollectionIndex } from './in-collection.js';
@@ -118,12 +119,12 @@ export function verdict(a, b, meta, audio) {
   if (!audio) {
     // Not analysed: only the names and the length can tell.
     const sure = meta >= 0.9 && dd < 2;
-    return { kind: 'name', label: sure ? 'Same name and length (not analysed)' : 'Similar name (not analysed)', score: Math.round(meta * (sure ? 0.9 : 0.6) * 100), duplicate: sure };
+    return { kind: 'name', label: sure ? tx('Same name and length (not analysed)') : tx('Similar name (not analysed)'), score: Math.round(meta * (sure ? 0.9 : 0.6) * 100), duplicate: sure };
   }
   const s = audio.score;
-  if (s >= 0.9 && dd < 3) return { kind: meta >= 0.6 ? 'same' : 'renamed', label: meta >= 0.6 ? 'Same recording' : 'Same recording, another name', score: Math.round((0.75 * s + 0.25 * Math.max(meta, 0.8)) * 100), duplicate: true };
-  if (s >= 0.82) return { kind: 'edit', label: `Same track, another edit (${dd >= 1 ? `${Math.round(dd)} s ${b.duration > a.duration ? 'longer' : 'shorter'}` : 'shifted'})`, score: Math.round((0.75 * s + 0.25 * meta) * 100), duplicate: true };
-  return { kind: 'version', label: 'Same name, different audio (remix / other version)', score: Math.round(s * 60), duplicate: false };
+  if (s >= 0.9 && dd < 3) return { kind: meta >= 0.6 ? 'same' : 'renamed', label: meta >= 0.6 ? tx('Same recording') : tx('Same recording, another name'), score: Math.round((0.75 * s + 0.25 * Math.max(meta, 0.8)) * 100), duplicate: true };
+  if (s >= 0.82) return { kind: 'edit', label: tx`Same track, another edit (${dd >= 1 ? `${Math.round(dd)} s ${b.duration > a.duration ? tx('longer') : tx('shorter')}` : tx('shifted')})`, score: Math.round((0.75 * s + 0.25 * meta) * 100), duplicate: true };
+  return { kind: 'version', label: tx('Same name, different audio (remix / other version)'), score: Math.round(s * 60), duplicate: false };
 }
 
 /** Groups of tracks linked by duplicate pairs (a = b and b = c: one group). */

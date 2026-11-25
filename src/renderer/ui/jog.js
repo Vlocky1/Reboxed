@@ -2,6 +2,7 @@
 // shows the position in the track (blinking red in the last 30 s), and the centre shows the
 // current BPM, the tempo change and the tempo ranges (±6 / ±10 / ±16 / WIDE, click to choose).
 // Dragging the platter scratches like vinyl; the mouse wheel nudges (pitch bend).
+import { tx } from '../../shared/i18n.js';
 import { h } from './dom.js';
 import { TEMPO_RANGES } from '../audio/deck.js';
 
@@ -15,8 +16,8 @@ export class JogWheel {
     this.canvas = h('canvas.jog-canvas');
     this.bpm = h('div.jog-bpm');
     this.pct = h('div.jog-pct');
-    this.ranges = TEMPO_RANGES.map((r) => h('button.jog-range', { type: 'button', title: `Tempo range ${RANGE_LABEL(r)}`, onclick: (e) => { e.stopPropagation(); deck.setTempoRange(r); } }, r === 100 ? 'W' : String(r)));
-    this.el = h('div.jog', { title: 'Jog: drag to scratch, wheel to nudge' },
+    this.ranges = TEMPO_RANGES.map((r) => h('button.jog-range', { type: 'button', title: tx`Tempo range ${RANGE_LABEL(r)}`, onclick: (e) => { e.stopPropagation(); deck.setTempoRange(r); } }, r === 100 ? 'W' : String(r)));
+    this.el = h('div.jog', { title: tx('Jog: drag to scratch, wheel to nudge') },
       this.canvas,
       h('div.jog-center', {}, this.bpm, this.pct, h('div.jog-ranges', {}, this.ranges)));
     this.touched = false;

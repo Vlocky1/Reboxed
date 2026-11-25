@@ -2,12 +2,13 @@
 // up in Preferences), as the user chooses; show what was found next to each field, and copy only the
 // ticked values into the form (Genre is ticked by default). Nothing is saved until the Track
 // information dialog is saved.
+import { errText, tx } from '../../shared/i18n.js';
 import { h, fmtTime } from './dom.js';
 
 const FIELDS = [
-  ['title', 'Title'], ['mixName', 'Mix name'], ['artist', 'Artist'], ['album', 'Album'], ['albumArtist', 'Album artist'],
-  ['genre', 'Genre'], ['year', 'Year'], ['trackNumber', 'Track number'], ['discNumber', 'Disc number'], ['label', 'Label'],
-  ['artwork', 'Artwork'],
+  ['title', tx('Title')], ['mixName', tx('Mix name')], ['artist', tx('Artist')], ['album', 'Album'], ['albumArtist', tx('Album artist')],
+  ['genre', 'Genre'], ['year', tx('Year')], ['trackNumber', tx('Track number')], ['discNumber', tx('Disc number')], ['label', 'Label'],
+  ['artwork', tx('Artwork')],
 ];
 const DEFAULT_ON = new Set(['genre']);
 const SOURCE = { spotify: 'Spotify', deezer: 'Deezer' };
@@ -36,17 +37,17 @@ export function lookupPanel(t, inputs, pending) {
   const status = h('span.dim');
   const pick = h('select', { hidden: true });
   const table = h('div.ti-sp-table');
-  const applyBtn = h('button.dbtn.dlc-primary', { hidden: true }, 'Use the ticked values');
+  const applyBtn = h('button.dbtn.dlc-primary', { hidden: true }, tx('Use the ticked values'));
   let results = [];
   let checks = new Map();
   let source = savedSource();
   const srcBtns = Object.entries(SOURCE).map(([id, label]) => h(`button.seg-btn${id === source ? '.on' : ''}`, {
     type: 'button', dataset: { source: id },
-    title: id === 'deezer' ? 'Deezer: no account needed; has genres and labels' : 'Spotify: needs your Client ID / Secret (Preferences > Accounts); genres come from the same track on Deezer',
+    title: id === 'deezer' ? tx('Deezer: no account needed; has genres and labels') : tx('Spotify: needs your Client ID / Secret (Preferences > Accounts); genres come from the same track on Deezer'),
     onclick: () => { source = id; saveSource(id); srcBtns.forEach((b) => b.classList.toggle('on', b.dataset.source === id)); search(); },
   }, label));
 
-  const current = (k) => (k === 'artwork' ? (pending.artwork ? 'new cover' : t.artwork ? 'current cover' : '') : String(inputs[k]?.value ?? ''));
+  const current = (k) => (k === 'artwork' ? (pending.artwork ? tx('new cover') : t.artwork ? tx('current cover') : '') : String(inputs[k]?.value ?? ''));
 
   const showCandidate = () => {
     const c = results[Number(pick.value) || 0];
@@ -66,18 +67,18 @@ export function lookupPanel(t, inputs, pending) {
           c.genres.map((g) => h('option', { value: g, selected: g === c.genre }, g)));
         value = () => sel.value;
         cell = sel;
-      } else cell = found ? h('span', { title: String(found) }, String(found)) : h('span.dim', {}, k === 'genre' ? 'no genre found' : '—');
+      } else cell = found ? h('span', { title: String(found) }, String(found)) : h('span.dim', {}, k === 'genre' ? tx('no genre found') : '—');
       if (k === 'genre' && c.completedFrom === 'deezer' && found) cell = h('span', {}, cell, h('small.dim', {}, ' (Deezer)'));
       checks.set(k, { box, value });
       return h('label.ti-sp-row', { class: same ? 'same' : undefined },
         box, h('span.ti-sp-k', {}, label),
-        h('span.ti-sp-cur', { title: current(k) }, current(k) || h('span.dim', {}, '(empty)')),
+        h('span.ti-sp-cur', { title: current(k) }, current(k) || h('span.dim', {}, tx('(empty)'))),
         h('span.ti-sp-arrow', {}, same ? '=' : '→'), h('span.ti-sp-new', {}, cell));
     });
-    table.replaceChildren(...[h('div.ti-sp-head', {}, h('span'), h('span', {}, 'Field'), h('span', {}, 'Now'), h('span'), h('span', {}, `Found on ${src}`)), ...rows,
+    table.replaceChildren(...[h('div.ti-sp-head', {}, h('span'), h('span', {}, tx('Field')), h('span', {}, tx('Now')), h('span'), h('span', {}, tx`Found on ${src}`)), ...rows,
       h('div.ti-sp-foot', {},
-        c.url ? h('a', { href: '#', onclick: (e) => { e.preventDefault(); window.rb.openExternal(c.url); } }, `Open on ${src}`) : null,
-        c.duration ? h('span.dim', {}, `${c.url ? ' · ' : ''}Length ${fmtTime(c.duration)}${t.duration ? ` (this file: ${fmtTime(t.duration)})` : ''}`) : null)].filter(Boolean));
+        c.url ? h('a', { href: '#', onclick: (e) => { e.preventDefault(); window.rb.openExternal(c.url); } }, tx`Open on ${src}`) : null,
+        c.duration ? h('span.dim', {}, tx`${c.url ? ' · ' : ''}Length ${fmtTime(c.duration)}${t.duration ? tx` (this file: ${fmtTime(t.duration)})` : ''}`) : null)].filter(Boolean));
     applyBtn.hidden = false;
   };
 
@@ -85,7 +86,7 @@ export function lookupPanel(t, inputs, pending) {
   const search = async () => {
     const seq = ++searchSeq; // a slower, older search must not replace the newer one
     panel.hidden = false;
-    status.textContent = `Searching ${SOURCE[source]}…`;
+    status.textContent = tx`Searching ${SOURCE[source]}…`;
     table.replaceChildren(); pick.hidden = true; applyBtn.hidden = true;
     let r;
     try {
@@ -94,15 +95,15 @@ export function lookupPanel(t, inputs, pending) {
       r = await lookupApi.lookup(same ? { title: inputs.title.value || t.title, artist: inputs.artist.value || t.artist } : { query: q }, source);
     } catch (err) {
       if (seq !== searchSeq) return;
-      status.textContent = `✗ ${SOURCE[source]}: ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`;
+      status.textContent = `✗ ${SOURCE[source]}: ${errText(err)}`;
       return;
     }
     if (seq !== searchSeq) return;
     results = orderByDuration(r.candidates, t.duration);
     const where = r.sources.join(' + ');
     const problems = r.errors.length ? ` (${r.errors.join('; ')})` : '';
-    if (!results.length) { status.textContent = `Nothing found on ${where}${problems}. Change the search words and try again.`; return; }
-    status.textContent = `${results.length} result(s) on ${where}${problems}${results.length > 1 ? ' — choose the right one:' : ':'}`;
+    if (!results.length) { status.textContent = tx`Nothing found on ${where}${problems}. Change the search words and try again.`; return; }
+    status.textContent = tx`${results.length} result(s) on ${where}${problems}${results.length > 1 ? tx(' — choose the right one:') : ':'}`;
     pick.replaceChildren(...results.map((c, i) => h('option', { value: i },
       `[${SOURCE[c.source] ?? c.source}] ${c.artist} — ${c.title}${c.mixName ? ` (${c.mixName})` : ''} · ${c.album}${c.year ? `, ${c.year}` : ''}${c.genre ? ` · ${c.genre}` : ''}${c.duration ? ` · ${fmtTime(c.duration)}` : ''}`)));
     pick.hidden = results.length < 2;
@@ -122,13 +123,13 @@ export function lookupPanel(t, inputs, pending) {
       input.classList.add('ti-changed');
       n++;
     }
-    status.textContent = n ? `✓ ${n} field(s) filled in — press Save to keep them.` : 'Nothing ticked.';
+    status.textContent = n ? tx`✓ ${n} field(s) filled in — press Save to keep them.` : tx('Nothing ticked.');
     if (n) showCandidate();
   };
 
-  const open = h('button.dbtn.small.ti-sp-open', { type: 'button', onclick: search, title: 'Find genre, album, year, label, cover… on Deezer or Spotify' }, 'Search info (Deezer / Spotify)');
+  const open = h('button.dbtn.small.ti-sp-open', { type: 'button', onclick: search, title: tx('Find genre, album, year, label, cover… on Deezer or Spotify') }, tx('Search info (Deezer / Spotify)'));
   panel.append(
-    h('div.dlc-bar', {}, h('div.seg.ti-sp-source', {}, srcBtns), query, h('button.dbtn', { type: 'button', onclick: search }, 'Search'), h('button.dbtn.small', { type: 'button', onclick: () => { panel.hidden = true; } }, 'Close')),
+    h('div.dlc-bar', {}, h('div.seg.ti-sp-source', {}, srcBtns), query, h('button.dbtn', { type: 'button', onclick: search }, tx('Search')), h('button.dbtn.small', { type: 'button', onclick: () => { panel.hidden = true; } }, tx('Close'))),
     h('div.ti-sp-status', {}, status, ' ', pick), table, applyBtn);
   return { button: open, panel };
 }

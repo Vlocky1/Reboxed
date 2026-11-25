@@ -1,5 +1,6 @@
 // DRUM SWAP slots of one deck: what each of the 8 slots (banks A and B) plays: a built-in loop,
 // an audio file, the track's drums (capture), or nothing; its gain; play / eject / reset.
+import { errText, tx } from '../../shared/i18n.js';
 import { h, modal, toast } from './dom.js';
 import { DRUM_PATTERNS } from '../../shared/drumkit.js';
 import { CAPTURE_LENGTHS } from '../audio/groove.js';
@@ -19,7 +20,7 @@ export function openDrumSwapEditor(app, i) {
 
   /** Play / stop a slot of any bank (the deck plays the loop in time). */
   const play = (bank, slot) => {
-    if (!app.engine.decks[i].playing) { toast('Play the deck to hear the DRUM SWAP loops in time'); return; }
+    if (!app.engine.decks[i].playing) { toast(tx('Play the deck to hear the DRUM SWAP loops in time')); return; }
     g.setBank(bank);
     g.toggle(slot);
   };
@@ -36,7 +37,7 @@ export function openDrumSwapEditor(app, i) {
       const name = path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
       g.store(bank, slot, { buffer, bpm, bars: loopBars(buffer.duration, bpm), name, file: path });
       saved(bank, slot);
-    } catch (err) { toast(`Cannot load this file: ${err.message}`, 5000); }
+    } catch (err) { toast(tx`Cannot load this file: ${errText(err)}`, 5000); }
   };
 
   const capture = async (bank, slot) => {
@@ -47,7 +48,7 @@ export function openDrumSwapEditor(app, i) {
   const card = (bank, slot) => {
     const s = g.slots[bank][slot];
     const source = h('select.dse-source', {
-      title: 'What this slot plays',
+      title: tx('What this slot plays'),
       onchange: (e) => {
         const v = e.target.value;
         if (v === 'file') loadFile(bank, slot);
@@ -57,11 +58,11 @@ export function openDrumSwapEditor(app, i) {
         render();
       },
     },
-    h('optgroup', { label: 'Built-in loops' }, DRUM_PATTERNS.map((p, k) => h('option', { value: `builtin:${k}`, selected: s?.builtin === k }, `${p.name} (${p.bars} bar${p.bars > 1 ? 's' : ''})`))),
+    h('optgroup', { label: tx('Built-in loops') }, DRUM_PATTERNS.map((p, k) => h('option', { value: `builtin:${k}`, selected: s?.builtin === k }, tx`${p.name} (${p.bars} bar${p.bars > 1 ? 's' : ''})`))),
     s && s.builtin === undefined ? h('option', { value: 'current', selected: true }, `${s.file ? 'File' : 'Captured'}: ${s.name}`) : null,
-    h('option', { value: 'file' }, 'Audio file…'),
-    h('option', { value: 'capture' }, 'Capture the track\'s drums here'),
-    h('option', { value: 'empty', selected: !s }, '(empty)'));
+    h('option', { value: 'file' }, tx('Audio file…')),
+    h('option', { value: 'capture' }, tx('Capture the track\'s drums here')),
+    h('option', { value: 'empty', selected: !s }, tx('(empty)')));
     const gainVal = h('span.dse-gain-val', {}, `${Math.round((s?.gain ?? 1) * 100)}%`);
     const gain = h('input.fader.dse-gain', {
       type: 'range', min: 0, max: 2, step: 0.05, value: s?.gain ?? 1, disabled: !s,
@@ -70,16 +71,16 @@ export function openDrumSwapEditor(app, i) {
     });
     const playing = g.playing.has(g.key(slot, bank));
     return h(`div.dse-card${playing ? '.playing' : ''}${!s ? '.empty' : ''}`, {},
-      h('div.dse-head', {}, h('b', {}, `${'AB'[bank]}${slot + 1}`), h('span.dse-name', {}, s?.name ?? '(empty)')),
+      h('div.dse-head', {}, h('b', {}, `${'AB'[bank]}${slot + 1}`), h('span.dse-name', {}, s?.name ?? tx('(empty)'))),
       source,
       h('div.dse-row', {}, h('span.dim', {}, 'GAIN'), gain, gainVal),
       h('div.dse-row', {},
-        h('button.dbtn.small', { type: 'button', disabled: !s, onclick: () => { play(bank, slot); render(); } }, playing ? '■ Stop' : '▶ Play'),
-        h('button.dbtn.small', { type: 'button', disabled: !s, title: 'Empty this slot', onclick: () => { g.eject(bank, slot); saved(bank, slot); render(); } }, '⏏ Eject'),
-        h('button.dbtn.small', { type: 'button', title: 'Back to this slot\'s built-in loop', onclick: () => { g.reset(bank, slot); saved(bank, slot); render(); } }, 'Reset')));
+        h('button.dbtn.small', { type: 'button', disabled: !s, onclick: () => { play(bank, slot); render(); } }, playing ? tx('■ Stop') : tx('▶ Play')),
+        h('button.dbtn.small', { type: 'button', disabled: !s, title: tx('Empty this slot'), onclick: () => { g.eject(bank, slot); saved(bank, slot); render(); } }, tx('⏏ Eject')),
+        h('button.dbtn.small', { type: 'button', title: tx('Back to this slot\'s built-in loop'), onclick: () => { g.reset(bank, slot); saved(bank, slot); render(); } }, tx('Reset'))));
   };
 
-  const length = h('select', { title: 'DRUM CAPTURE length', onchange: (e) => { g.captureBars = Number(e.target.value); g.emit(); } },
+  const length = h('select', { title: tx('DRUM CAPTURE length'), onchange: (e) => { g.captureBars = Number(e.target.value); g.emit(); } },
     CAPTURE_LENGTHS.map((b) => h('option', { value: b, selected: g.captureBars === b }, `${b * 4} beats`)));
   const render = () => grid.replaceChildren(...[0, 1].map((bank) => h('div.dse-bank', {},
     h('h4', {}, `BANK ${'AB'[bank]}`), h('div.dse-cards', {}, [0, 1, 2, 3].map((slot) => card(bank, slot))))));
@@ -87,9 +88,9 @@ export function openDrumSwapEditor(app, i) {
   g.addEventListener('change', onChange);
   render();
   body.append(
-    h('p.dim', {}, 'Each slot replaces the drums of the track, in time. Pick a built-in loop, a drum loop file, or capture the drums now playing.'),
+    h('p.dim', {}, tx('Each slot replaces the drums of the track, in time. Pick a built-in loop, a drum loop file, or capture the drums now playing.')),
     grid,
-    h('div.dse-row', {}, h('span.dim', {}, 'DRUM CAPTURE length'), length));
-  return modal(`DRUM SWAP — Deck ${i + 1}`, body, [{ label: 'Close', value: true, primary: true }])
+    h('div.dse-row', {}, h('span.dim', {}, tx('DRUM CAPTURE length')), length));
+  return modal(`DRUM SWAP — Deck ${i + 1}`, body, [{ label: tx('Close'), value: true, primary: true }])
     .finally(() => g.removeEventListener('change', onChange));
 }

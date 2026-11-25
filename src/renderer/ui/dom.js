@@ -1,4 +1,5 @@
 // Tiny DOM helpers and shared widgets (knob, context menu, dialogs, toasts).
+import { tx } from '../../shared/i18n.js';
 import { icon } from './icons.js';
 
 /**
@@ -129,7 +130,7 @@ export function contextMenu(x, y, items) {
 }
 
 /** Modal with custom body; resolves with the value passed to close(). */
-export function modal(title, body, buttons = [{ label: 'OK', value: true, primary: true }, { label: 'Cancel', value: null }]) {
+export function modal(title, body, buttons = [{ label: tx('OK'), value: true, primary: true }, { label: tx('Cancel'), value: null }]) {
   return new Promise((resolve) => {
     const close = (v) => { overlay.remove(); resolve(v); };
     const content = typeof body === 'function' ? body(close) : body;
@@ -156,12 +157,12 @@ export function modal(title, body, buttons = [{ label: 'OK', value: true, primar
 export async function promptText(title, value = '') {
   const input = h('input.text', { value, spellcheck: false });
   setTimeout(() => { input.focus(); input.select(); });
-  const r = await modal(title, input, [{ label: 'OK', primary: true, value: () => input.value.trim() }, { label: 'Cancel', value: null }]);
+  const r = await modal(title, input, [{ label: tx('OK'), primary: true, value: () => input.value.trim() }, { label: tx('Cancel'), value: null }]);
   return r || null;
 }
 
 export function confirmDialog(title, text) {
-  return modal(title, h('p', {}, text), [{ label: 'OK', primary: true, value: true }, { label: 'Cancel', value: false }]);
+  return modal(title, h('p', {}, text), [{ label: tx('OK'), primary: true, value: true }, { label: tx('Cancel'), value: false }]);
 }
 
 /**
@@ -179,7 +180,7 @@ export function help(short, more = null, { tag = 'p' } = {}) {
     : Array.isArray(more) ? more.map((m) => (typeof m === 'string' ? h('p', {}, m) : m))
       : [h('ol', {}, more.steps.map((s) => h('li', {}, s))), ...(more.notes ?? []).map((n) => h('p', {}, n))];
   const body = h('div.help-more', { hidden: true }, ...parts);
-  const btn = h('button.help-btn', { type: 'button', title: 'More details', 'aria-expanded': 'false' }, '?');
+  const btn = h('button.help-btn', { type: 'button', title: tx('More details'), 'aria-expanded': 'false' }, '?');
   btn.onclick = () => {
     body.hidden = !body.hidden;
     btn.classList.toggle('on', !body.hidden);

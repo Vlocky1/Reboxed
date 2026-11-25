@@ -11,7 +11,7 @@ export const ICONS = {
   plug: svg('<path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11v3"/>'),
   wave: svg('<path d="M1.5 8h1.5M4.5 5v6M7 3v10M9.5 5.5v5M12 7v2M14.5 8h0"/>'),
   palette: svg('<path d="M8 2a6 6 0 1 0 0 12c1 0 1.4-.7 1.1-1.5-.3-.9.2-1.8 1.2-1.8H12a2.2 2.2 0 0 0 2-2.2A6 6 0 0 0 8 2z"/><circle cx="5" cy="7" r=".9" fill="currentColor" stroke="none"/><circle cx="7.5" cy="4.6" r=".9" fill="currentColor" stroke="none"/><circle cx="10.6" cy="5.6" r=".9" fill="currentColor" stroke="none"/>'),
-  gear: svg('<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/>'),
+  gear: svg('<path d="M6.69 3.28L6.87 1.40L9.13 1.40L9.31 3.28L10.42 3.74L11.87 2.53L13.47 4.13L12.26 5.58L12.72 6.69L14.60 6.87L14.60 9.13L12.72 9.31L12.26 10.42L13.47 11.87L11.87 13.47L10.42 12.26L9.31 12.72L9.13 14.60L6.87 14.60L6.69 12.72L5.58 12.26L4.13 13.47L2.53 11.87L3.74 10.42L3.28 9.31L1.40 9.13L1.40 6.87L3.28 6.69L3.74 5.58L2.53 4.13L4.13 2.53L5.58 3.74Z" stroke-width="1.3"/><circle cx="8" cy="8" r="2" stroke-width="1.3"/>'),
   fx: svg('<path d="M2 12c2-8 4-8 6 0s4 8 6 0" />'),
   sampler: svg('<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor"/>'),
   mixer: svg('<path d="M4 2v12M8 2v12M12 2v12"/><rect x="2.5" y="8" width="3" height="2" rx=".5" fill="currentColor"/><rect x="6.5" y="4" width="3" height="2" rx=".5" fill="currentColor"/><rect x="10.5" y="10" width="3" height="2" rx=".5" fill="currentColor"/>'),

@@ -2,35 +2,36 @@
 // Keyboard). A binding is a physical key (KeyboardEvent.code) with modifiers, e.g. "Shift+KeyD";
 // labels show the letters of the user's own layout. AZERTY keyboards are detected and get the
 // AZERTY preset (same letters as the QWERTY preset) until the user changes the bindings.
+import { tx } from '../../shared/i18n.js';
 import { h, toast } from './dom.js';
 
 const LOOP_SIZES = [0.5, 1, 2, 4, 8];
 
 /** Deck actions (bound once per deck 1 and 2). hold: also acts on key release. */
 export const DECK_ACTIONS = [
-  { id: 'play', label: 'Play / Pause', run: (d) => d.playPause() },
-  { id: 'cue', label: 'Cue (hold to preview)', hold: true, run: (d) => d.cueDown(), release: (d) => d.cueUp() },
-  { id: 'sync', label: 'Beat sync', run: (d) => d.toggleSync() },
+  { id: 'play', label: tx('Play / Pause'), run: (d) => d.playPause() },
+  { id: 'cue', label: tx('Cue (hold to preview)'), hold: true, run: (d) => d.cueDown(), release: (d) => d.cueUp() },
+  { id: 'sync', label: tx('Beat sync'), run: (d) => d.toggleSync() },
   { id: 'bendDown', label: 'Pitch bend −', hold: true, repeat: true, run: (d) => d.nudge(-1), release: (d) => d.nudge(0) },
   { id: 'bendUp', label: 'Pitch bend +', hold: true, repeat: true, run: (d) => d.nudge(1), release: (d) => d.nudge(0) },
-  { id: 'loopIn', label: 'Loop in', run: (d) => d.loopIn() },
-  { id: 'loopOut', label: 'Loop out', run: (d) => d.loopOut() },
-  { id: 'reloop', label: 'Reloop / exit', run: (d) => d.reloopExit() },
-  { id: 'loopHalf', label: 'Loop ½', run: (d) => d.resizeLoop(0.5) },
-  { id: 'loopDouble', label: 'Loop ×2', run: (d) => d.resizeLoop(2) },
-  ...LOOP_SIZES.map((b, k) => ({ id: `beatLoop${k}`, label: `Beat loop ${b === 0.5 ? '½' : b}`, run: (d) => d.beatLoop(b) })),
+  { id: 'loopIn', label: tx('Loop in'), run: (d) => d.loopIn() },
+  { id: 'loopOut', label: tx('Loop out'), run: (d) => d.loopOut() },
+  { id: 'reloop', label: tx('Reloop / exit'), run: (d) => d.reloopExit() },
+  { id: 'loopHalf', label: tx('Loop ½'), run: (d) => d.resizeLoop(0.5) },
+  { id: 'loopDouble', label: tx('Loop ×2'), run: (d) => d.resizeLoop(2) },
+  ...LOOP_SIZES.map((b, k) => ({ id: `beatLoop${k}`, label: tx`Beat loop ${b === 0.5 ? '½' : b}`, run: (d) => d.beatLoop(b) })),
   ...[0, 1, 2, 3].map((k) => ({ id: `hot${k}`, label: `Hot cue ${'ABCD'[k]}`, run: (d) => d.hotCuePress(k) })),
-  ...[0, 1, 2, 3].map((k) => ({ id: `hotDel${k}`, label: `Delete hot cue ${'ABCD'[k]}`, run: (d) => d.deleteHotCue(k) })),
-  { id: 'slipRev', label: 'Slip reverse (hold)', hold: true,
+  ...[0, 1, 2, 3].map((k) => ({ id: `hotDel${k}`, label: tx`Delete hot cue ${'ABCD'[k]}`, run: (d) => d.deleteHotCue(k) })),
+  { id: 'slipRev', label: tx('Slip reverse (hold)'), hold: true,
     run: (d) => { if (!d.slip) { d.toggleSlip(); d.autoSlip = true; } d.setReverse(true); },
     release: (d) => { d.setReverse(false); if (d.autoSlip) { d.autoSlip = false; d.toggleSlip(); } } },
-  { id: 'memSet', label: 'Set memory cue', run: (d) => d.addMemoryCue() },
-  { id: 'memDel', label: 'Delete memory cue', run: (d) => d.deleteMemoryCueNear() },
-  { id: 'load', label: 'Load selected track', run: (d, app) => { const id = app.browser.currentTrackId(); if (id) app.loadTrack(d.index, id); } },
+  { id: 'memSet', label: tx('Set memory cue'), run: (d) => d.addMemoryCue() },
+  { id: 'memDel', label: tx('Delete memory cue'), run: (d) => d.deleteMemoryCueNear() },
+  { id: 'load', label: tx('Load selected track'), run: (d, app) => { const id = app.browser.currentTrackId(); if (id) app.loadTrack(d.index, id); } },
 ];
 export const GLOBAL_ACTIONS = [
-  { id: 'search', label: 'Search', run: (app) => app.browser.focusSearch() },
-  { id: 'layout', label: 'Browser full / split', run: (app) => app.toggleLayout() },
+  { id: 'search', label: tx('Search'), run: (app) => app.browser.focusSearch() },
+  { id: 'layout', label: tx('Browser full / split'), run: (app) => app.toggleLayout() },
 ];
 
 /** Rekordbox "Performance 1" (QWERTY positions). */
@@ -53,7 +54,7 @@ export const QWERTY_KEYMAP = (() => {
 /** The same letters on an AZERTY keyboard (A/Q, Z/W swapped; ";" is where QWERTY has ","). */
 export const AZERTY_KEYMAP = Object.fromEntries(Object.entries(QWERTY_KEYMAP).map(([k, v]) => [k, v.replace(/Key[AQZW]$|Semicolon$/, (c) => ({ KeyA: 'KeyQ', KeyQ: 'KeyA', KeyZ: 'KeyW', KeyW: 'KeyZ', Semicolon: 'Comma' })[c])]));
 
-export const PRESETS = { qwerty: ['QWERTY (Performance 1)', QWERTY_KEYMAP], azerty: ['AZERTY (same letters)', AZERTY_KEYMAP] };
+export const PRESETS = { qwerty: ['QWERTY (Performance 1)', QWERTY_KEYMAP], azerty: [tx('AZERTY (same letters)'), AZERTY_KEYMAP] };
 
 /** Layout map of the user's keyboard (code -> character), when the browser can tell. */
 let layoutMap = null;
@@ -154,8 +155,8 @@ export async function keyboardSection(library) {
     b.onclick = () => {
       if (recording) recording.button.classList.remove('rec');
       recording = { key, button: b };
-      b.classList.add('rec'); b.textContent = 'Press a key…';
-      status.textContent = 'Press the new key (with Shift / Ctrl / Alt if you want). Esc cancels, Backspace removes the key.';
+      b.classList.add('rec'); b.textContent = tx('Press a key…');
+      status.textContent = tx('Press the new key (with Shift / Ctrl / Alt if you want). Esc cancels, Backspace removes the key.');
     };
     return b;
   };
@@ -163,11 +164,11 @@ export async function keyboardSection(library) {
     const deckRows = DECK_ACTIONS.map((a) => h('tr', {}, h('td', {}, a.label), h('td', {}, bindButton(`deck1.${a.id}`)), h('td', {}, bindButton(`deck2.${a.id}`))));
     const globalRows = GLOBAL_ACTIONS.map((a) => h('tr', {}, h('td', {}, a.label), h('td', { colSpan: 2 }, bindButton(a.id))));
     table.replaceChildren(
-      h('tr', {}, h('th', {}, 'Function'), h('th', {}, 'Deck 1'), h('th', {}, 'Deck 2')),
+      h('tr', {}, h('th', {}, tx('Function')), h('th', {}, 'Deck 1'), h('th', {}, 'Deck 2')),
       ...deckRows,
-      h('tr', {}, h('th', { colSpan: 3 }, 'Everywhere')),
+      h('tr', {}, h('th', { colSpan: 3 }, tx('Everywhere'))),
       ...globalRows,
-      h('tr', {}, h('td', {}, 'Full screen on / off'), h('td', { colSpan: 2 }, h('span.key-fixed', {}, 'F11'))));
+      h('tr', {}, h('td', {}, tx('Full screen on / off')), h('td', { colSpan: 2 }, h('span.key-fixed', {}, 'F11'))));
   };
   // Key capture (before the dialog's own Escape / Enter handling).
   const onKey = (e) => {
@@ -176,7 +177,7 @@ export async function keyboardSection(library) {
     e.preventDefault(); e.stopPropagation();
     const { key } = recording;
     if (e.code === 'Escape') { recording = null; status.textContent = ''; render(); return; }
-    if (e.code === 'Backspace' || e.code === 'Delete') { const m = { ...map }; delete m[key]; recording = null; status.textContent = `${labelOf(key)}: no key`; save(m); return; }
+    if (e.code === 'Backspace' || e.code === 'Delete') { const m = { ...map }; delete m[key]; recording = null; status.textContent = tx`${labelOf(key)}: no key`; save(m); return; }
     const combo = comboOf(e);
     if (!combo) return;
     const m = { ...map };
@@ -184,18 +185,18 @@ export async function keyboardSection(library) {
     if (taken) delete m[taken[0]];
     m[key] = combo;
     recording = null;
-    status.textContent = taken ? `${comboLabel(combo)} was used by "${labelOf(taken[0])}${taken[0].startsWith('deck') ? ` (deck ${taken[0][4]})` : ''}": that one has no key now.` : `${labelOf(key)} → ${comboLabel(combo)}`;
+    status.textContent = taken ? tx`${comboLabel(combo)} was used by "${labelOf(taken[0])}${taken[0].startsWith('deck') ? ` (deck ${taken[0][4]})` : ''}": that one has no key now.` : `${labelOf(key)} → ${comboLabel(combo)}`;
     save(m);
   };
   window.addEventListener('keydown', onKey, true);
   render();
-  const detected = layoutMap ? (isAzerty() ? 'AZERTY keyboard detected.' : 'Keyboard layout detected.') : '';
+  const detected = layoutMap ? (isAzerty() ? tx('AZERTY keyboard detected.') : tx('Keyboard layout detected.')) : '';
   return h('div', {},
     h('div.form-grid', {},
-      h('label', {}, 'Preset'), h('div', {}, h('div.frow', {},
-        ...Object.entries(PRESETS).map(([id, [label, preset]]) => h('button.dbtn.small', { type: 'button', onclick: () => { save({ ...preset }); status.textContent = `${label} loaded`; toast(`Keyboard: ${label}`); } }, label))),
-      h('small', {}, `${detected} Keys are physical keys; their letters are shown as on your keyboard.`)),
-      h('label', {}, 'Change a key'), h('div', {}, h('small', {}, 'Click a key below, then press the new one.'), status)),
-    h('h4', {}, 'Shortcuts'),
+      h('label', {}, tx('Preset')), h('div', {}, h('div.frow', {},
+        ...Object.entries(PRESETS).map(([id, [label, preset]]) => h('button.dbtn.small', { type: 'button', onclick: () => { save({ ...preset }); status.textContent = tx`${label} loaded`; toast(tx`Keyboard: ${label}`); } }, label))),
+      h('small', {}, tx`${detected} Keys are physical keys; their letters are shown as on your keyboard.`)),
+      h('label', {}, tx('Change a key')), h('div', {}, h('small', {}, tx('Click a key below, then press the new one.')), status)),
+    h('h4', {}, tx('Shortcuts')),
     table);
 }

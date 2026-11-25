@@ -2,6 +2,7 @@
 // It follows the deck on air (or a chosen deck) through the decks' window (ui/lyrics-link.js), shows the
 // line sung now, and has a manual sync mode: play the track, tap SPACE at the start of each line, fine
 // tune, save with the track. Lyrics synced by hand are never replaced by an automatic search.
+import { tx } from '../shared/i18n.js';
 import { h } from './ui/dom.js';
 import { LYRICS_CHANNEL, formatStamp, lineAt, lineProgress, parseLrc, plainLines, titleVariants, mainArtist, toLrc } from '../shared/lrc.js';
 
@@ -32,16 +33,16 @@ el.deckSeg = h('div.seg');
 el.track = h('div.ly-track');
 el.badge = h('span.badge');
 el.offVal = h('span');
-el.offset = h('div.offset', { title: 'Shift the lyrics: − sooner, + later ( [ and ] keys, Shift = 1 s)' },
+el.offset = h('div.offset', { title: tx('Shift the lyrics: − sooner, + later ( [ and ] keys, Shift = 1 s)') },
   h('button', { onclick: (e) => shiftOffset(e.shiftKey ? -1 : -0.1) }, '−'), el.offVal, h('button', { onclick: (e) => shiftOffset(e.shiftKey ? 1 : 0.1) }, '+'));
-el.syncBtn = h('button', { title: 'Sync the lyrics by hand: tap SPACE at the start of each line', onclick: () => enterEdit() }, 'SYNC');
-el.searchBtn = h('button', { title: 'Find other lyrics, or paste your own', onclick: () => openSearch() }, 'SEARCH');
-el.topBtn = h('button', { title: 'Keep this window in front of the others', onclick: () => setWin({ onTop: !S.onTop }) }, 'ON TOP');
-el.fullBtn = h('button', { title: 'Full screen (F11)', onclick: () => setWin({ fullscreen: !S.full }) }, 'FULL SCREEN');
+el.syncBtn = h('button', { title: tx('Sync the lyrics by hand: tap SPACE at the start of each line'), onclick: () => enterEdit() }, 'SYNC');
+el.searchBtn = h('button', { title: tx('Find other lyrics, or paste your own'), onclick: () => openSearch() }, 'SEARCH');
+el.topBtn = h('button', { title: tx('Keep this window in front of the others'), onclick: () => setWin({ onTop: !S.onTop }) }, 'ON TOP');
+el.fullBtn = h('button', { title: tx('Full screen (F11)'), onclick: () => setWin({ fullscreen: !S.full }) }, 'FULL SCREEN');
 el.head = h('div.ly-head', {},
   el.deckSeg, el.track, el.badge, el.offset, el.syncBtn, el.searchBtn,
-  h('button', { title: 'Smaller text', onclick: () => setSize(S.size - 4) }, 'A−'),
-  h('button', { title: 'Bigger text', onclick: () => setSize(S.size + 4) }, 'A+'),
+  h('button', { title: tx('Smaller text'), onclick: () => setSize(S.size - 4) }, 'A−'),
+  h('button', { title: tx('Bigger text'), onclick: () => setSize(S.size + 4) }, 'A+'),
   el.topBtn, el.fullBtn);
 el.note = h('div.ly-note', { hidden: true });
 el.lines = h('div.ly-lines');
@@ -125,9 +126,9 @@ function renderHead() {
   if (sig === headSig) return;
   headSig = sig;
   const btn = (key, label, title) => h(`button${String(S.follow) === String(key) ? '.on' : ''}`, { title, onclick: () => { S.follow = key; store.set('follow', key); S.candidate = null; pickDeck(); } }, label);
-  el.deckSeg.replaceChildren(btn('auto', 'AUTO', 'Follow the deck on air'), ...decks.map((d) => btn(d.index, String(d.index + 1), `Deck ${d.index + 1}`)));
+  el.deckSeg.replaceChildren(btn('auto', 'AUTO', tx('Follow the deck on air')), ...decks.map((d) => btn(d.index, String(d.index + 1), `Deck ${d.index + 1}`)));
   const d = deckInfo();
-  el.track.replaceChildren(...(d?.trackId ? [h('b', {}, d.title || 'Untitled'), d.artist ? `  ·  ${d.artist}` : ''] : [h('span.dim', {}, 'No track on this deck')]));
+  el.track.replaceChildren(...(d?.trackId ? [h('b', {}, d.title || tx('Untitled')), d.artist ? `  ·  ${d.artist}` : ''] : [h('span.dim', {}, tx('No track on this deck'))]));
   const synced = S.lines.length > 0;
   const L = S.lyrics;
   el.badge.className = 'badge';
@@ -152,10 +153,10 @@ function renderHead() {
   // text only: the AI can time it
   const textOnly = S.mode === 'view' && !synced && !!S.plain;
   el.note.hidden = !off && !yt && !textOnly;
-  if (textOnly) el.note.replaceChildren('These lyrics are not synced.', h('button', { onclick: () => aiStart('sync') }, 'SYNC WITH AI'), h('button', { onclick: () => enterEdit() }, 'SYNC BY HAND'));
-  else if (yt) el.note.replaceChildren('These lyrics come from the subtitles of a YouTube video: their timing follows the video. Check it, shift them with − / + or sync them by hand.',
+  if (textOnly) el.note.replaceChildren(tx('These lyrics are not synced.'), h('button', { onclick: () => aiStart('sync') }, 'SYNC WITH AI'), h('button', { onclick: () => enterEdit() }, 'SYNC BY HAND'));
+  else if (yt) el.note.replaceChildren(tx('These lyrics come from the subtitles of a YouTube video: their timing follows the video. Check it, shift them with − / + or sync them by hand.'),
     h('button', { onclick: () => enterEdit() }, 'SYNC'));
-  else if (off) el.note.replaceChildren(`These lyrics come from a ${mmss(md)} version; this track lasts ${mmss(td)}. Shift them with − / + or sync them by hand.`,
+  else if (off) el.note.replaceChildren(tx`These lyrics come from a ${mmss(md)} version; this track lasts ${mmss(td)}. Shift them with − / + or sync them by hand.`,
     h('button', { onclick: () => enterEdit() }, 'SYNC'));
 }
 
@@ -174,15 +175,15 @@ function renderBody() {
     el.plain.textContent = S.plain;
   } else {
     const d = deckInfo();
-    const msg = !S.trackId ? 'Load a track: its lyrics show here.'
-      : S.status === 'loading' ? 'Looking for the lyrics… (LRCLIB, then YouTube subtitles: up to a minute)'
-      : S.lyrics?.instrumental ? 'Instrumental'
-      : S.status === 'error' ? `The lyrics could not be fetched (${S.error}).`
-      : `No lyrics found for ${d?.title ?? 'this track'}.`;
+    const msg = !S.trackId ? tx('Load a track: its lyrics show here.')
+      : S.status === 'loading' ? tx('Looking for the lyrics… (LRCLIB, then YouTube subtitles: up to a minute)')
+      : S.lyrics?.instrumental ? tx('Instrumental')
+      : S.status === 'error' ? tx`The lyrics could not be fetched (${S.error}).`
+      : tx`No lyrics found for ${d?.title ?? tx('this track')}.`;
     el.empty.replaceChildren(h('div', {}, msg), S.trackId && S.status !== 'loading' ? h('div.actions', {},
       h('button', { onclick: () => openSearch() }, 'SEARCH…'),
       h('button', { onclick: () => openPaste() }, 'PASTE LYRICS…'),
-      h('button', { title: 'The AI listens to the singing and writes the lyrics with their times (check them before a gig)', onclick: () => aiStart('transcribe') }, 'TRANSCRIBE WITH AI'),
+      h('button', { title: tx('The AI listens to the singing and writes the lyrics with their times (check them before a gig)'), onclick: () => aiStart('transcribe') }, 'TRANSCRIBE WITH AI'),
       h('button', { onclick: () => { S.status = 'loading'; renderBody(); post({ type: 'get', trackId: S.trackId, force: true }); } }, 'TRY AGAIN')) : '');
   }
 }
@@ -279,9 +280,9 @@ function aiStart(mode, install = false) {
 function aiAsk(m) {
   S.ai.busy = false;
   el.ai.hidden = true;                                   // the question is in the box below
-  const box = modal(h('h3', {}, 'AI lyrics sync'),
-    h('div', {}, 'A speech recogniser listens to the singing (its vocals stem when the track has stems, else the whole track) and finds when each line starts. It runs on this computer: nothing is sent online.'),
-    h('div.dim', {}, `It needs a one-time download of about ${m.mb} MB (whisper.cpp and the Whisper "base" model, both MIT licence).`),
+  const box = modal(h('h3', {}, tx('AI lyrics sync')),
+    h('div', {}, tx('A speech recogniser listens to the singing (its vocals stem when the track has stems, else the whole track) and finds when each line starts. It runs on this computer: nothing is sent online.')),
+    h('div.dim', {}, tx`It needs a one-time download of about ${m.mb} MB (whisper.cpp and the Whisper "base" model, both MIT licence).`),
     h('div.foot', {}, h('button', { onclick: () => { box.remove(); S.ai = null; renderAi(); } }, 'CANCEL'),
       h('button.primary', { onclick: () => { box.remove(); const mode = S.ai?.mode ?? m.mode; S.ai = null; aiStart(mode, true); } }, 'DOWNLOAD AND START')));
 }
@@ -294,30 +295,30 @@ function renderAi() {
   const pct = (x) => `${Math.round(x)} %`;
   let text = a.done ?? '';
   if (a.busy) {
-    text = p.stage === 'download' ? `Downloading the speech recogniser${p.total ? ` (${p.label ?? ''}) ${pct((100 * p.received) / p.total)}` : '…'}`
-      : p.stage === 'extract' || p.stage === 'installed' ? 'Installing the speech recogniser…'
-      : p.stage === 'prepare' ? 'Getting the singing out of the track…'
-      : p.stage === 'listen' ? `The AI listens to the singing… ${p.pct ? pct(p.pct) : ''}`
-      : 'Starting…';
+    text = p.stage === 'download' ? tx`Downloading the speech recogniser${p.total ? ` (${p.label ?? ''}) ${pct((100 * p.received) / p.total)}` : '…'}`
+      : p.stage === 'extract' || p.stage === 'installed' ? tx('Installing the speech recogniser…')
+      : p.stage === 'prepare' ? tx('Getting the singing out of the track…')
+      : p.stage === 'listen' ? tx`The AI listens to the singing… ${p.pct ? pct(p.pct) : ''}`
+      : tx('Starting…');
   }
   el.ai.replaceChildren(h('span', {}, text),
-    a.busy ? h('button', { onclick: () => { post({ type: 'aiCancel' }); S.ai = null; renderAi(); } }, 'CANCEL') : h('button', { onclick: () => { S.ai = null; renderAi(); } }, 'OK'));
+    a.busy ? h('button', { onclick: () => { post({ type: 'aiCancel' }); S.ai = null; renderAi(); } }, 'CANCEL') : h('button', { onclick: () => { S.ai = null; renderAi(); } }, tx('OK')));
 }
 
 function aiResult(m) {
   const a = S.ai;
   a.busy = false;
-  if (!m.ok) { a.done = `AI sync failed: ${m.error}`; renderAi(); return; }
-  const tip = m.vocals ? '' : ' Separate the stems first (vocals) for a better result.';
+  if (!m.ok) { a.done = tx`AI sync failed: ${m.error}`; renderAi(); return; }
+  const tip = m.vocals ? '' : tx(' Separate the stems first (vocals) for a better result.');
   if (m.mode === 'sync') {
-    a.done = `AI sync done: ${Math.round((m.matched ?? 0) * 100)} % of the words heard. Check the lines (click a time to hear it again), then SAVE.${tip}`;
+    a.done = tx`AI sync done: ${Math.round((m.matched ?? 0) * 100)} % of the words heard. Check the lines (click a time to hear it again), then SAVE.${tip}`;
     if (S.mode === 'edit' && S.edit.trackId === m.trackId) {
       S.edit.lines = m.lines.map((l) => ({ t: l.t, text: l.text }));
       S.edit.source = 'AI'; S.edit.dirty = true; S.edit.sel = 0;
       renderRows();
     } else if (S.trackId === m.trackId) enterEdit(null, m.lines);
   } else {
-    a.done = `AI transcription: ${m.lines.length} lines heard (${m.language || '?'}). Check the words and times, then SAVE.${tip}`;
+    a.done = tx`AI transcription: ${m.lines.length} lines heard (${m.language || '?'}). Check the words and times, then SAVE.${tip}`;
     if (S.trackId === m.trackId) enterEdit(null, m.lines);
   }
   renderAi();
@@ -343,20 +344,20 @@ function buildEditor() {
   const d = deckInfo(E.deck);
   el.pos = h('span.ed-pos');
   el.playBtn = h('button', { onclick: () => post({ type: 'play', deck: E.deck }) }, 'PLAY / PAUSE');
-  el.tapBtn = h('button.tap', { title: 'Space', onclick: () => tap() }, 'TAP');
+  el.tapBtn = h('button.tap', { title: tx('Space'), onclick: () => tap() }, 'TAP');
   el.list = h('div.ed-list');
   el.edit.replaceChildren(
-    h('div.ed-help', {}, 'Play the track and tap ', h('kbd', {}, 'Space'), ' at the start of each line (the highlighted one). ',
-      h('kbd', {}, '↑'), h('kbd', {}, '↓'), ' pick a line · ', h('kbd', {}, '←'), h('kbd', {}, '→'), ' 2 s back / on · ',
-      h('kbd', {}, 'P'), ' play / pause · click a time to hear it again · ', h('kbd', {}, 'Ctrl'), '+', h('kbd', {}, 'S'), ' save.',
+    h('div.ed-help', {}, tx('Play the track and tap '), h('kbd', {}, tx('Space')), tx(' at the start of each line (the highlighted one). '),
+      h('kbd', {}, '↑'), h('kbd', {}, '↓'), tx(' pick a line · '), h('kbd', {}, '←'), h('kbd', {}, '→'), tx(' 2 s back / on · '),
+      h('kbd', {}, 'P'), tx(' play / pause · click a time to hear it again · '), h('kbd', {}, 'Ctrl'), '+', h('kbd', {}, 'S'), tx(' save.'),
       d ? h('span.dim', {}, `  Deck ${E.deck + 1}: ${d.title}`) : ''),
     h('div.ed-bar', {},
       h('button', { onclick: () => post({ type: 'nudge', deck: E.deck, by: -5 }) }, '−5 s'), el.playBtn,
       h('button', { onclick: () => post({ type: 'nudge', deck: E.deck, by: 5 }) }, '+5 s'), el.pos, el.tapBtn,
-      h('button', { title: 'The AI listens to the singing and times every line (then check and SAVE)', onclick: () => aiStart('sync') }, 'AI SYNC')),
+      h('button', { title: tx('The AI listens to the singing and times every line (then check and SAVE)'), onclick: () => aiStart('sync') }, 'AI SYNC')),
     el.list,
     h('div.ed-foot', {},
-      h('span.dim', {}, 'Every line'),
+      h('span.dim', {}, tx('Every line')),
       ...[-1, -0.1, 0.1, 1].map((by) => h('button', { onclick: () => shiftAll(by) }, `${by > 0 ? '+' : '−'}${Math.abs(by)} s`)),
       h('button', { onclick: () => openPaste(E.lines.map((l) => l.text).join('\n')) }, 'EDIT TEXT…'),
       h('button', { onclick: () => { E.lines.forEach((l) => { l.t = null; }); E.sel = 0; E.dirty = true; renderRows(); } }, 'CLEAR TIMES'),
@@ -369,16 +370,16 @@ function buildEditor() {
 function renderRows() {
   const E = S.edit;
   E.rows = E.lines.map((l, i) => {
-    const tm = h(`button.tm${l.t === null ? '.none' : ''}`, { title: 'Pick this line; with a time: play from just before it', onclick: () => { E.sel = i; if (l.t !== null) post({ type: 'seek', deck: E.deck, t: l.t - 2 }); markSel(); } },
+    const tm = h(`button.tm${l.t === null ? '.none' : ''}`, { title: tx('Pick this line; with a time: play from just before it'), onclick: () => { E.sel = i; if (l.t !== null) post({ type: 'seek', deck: E.deck, t: l.t - 2 }); markSel(); } },
       l.t === null ? '--:--.--' : formatStamp(l.t));
-    const input = h('input', { value: l.text, placeholder: '(instrumental)', oninput: (e) => { l.text = e.target.value; E.dirty = true; }, onfocus: () => { E.sel = i; markSel(); } });
+    const input = h('input', { value: l.text, placeholder: tx('(instrumental)'), oninput: (e) => { l.text = e.target.value; E.dirty = true; }, onfocus: () => { E.sel = i; markSel(); } });
     return h('div.ed-row', {},
       tm,
-      h('button.sm', { title: '0.1 s sooner', onclick: () => adjust(i, -0.1) }, '−'),
-      h('button.sm', { title: '0.1 s later', onclick: () => adjust(i, 0.1) }, '+'),
+      h('button.sm', { title: tx('0.1 s sooner'), onclick: () => adjust(i, -0.1) }, '−'),
+      h('button.sm', { title: tx('0.1 s later'), onclick: () => adjust(i, 0.1) }, '+'),
       input,
-      h('button.sm', { title: 'Add a line after this one', onclick: () => { E.lines.splice(i + 1, 0, { t: null, text: '' }); E.dirty = true; renderRows(); } }, '＋'),
-      h('button.sm', { title: 'Remove this line', onclick: () => { E.lines.splice(i, 1); if (!E.lines.length) E.lines.push({ t: null, text: '' }); E.sel = Math.min(E.sel, E.lines.length - 1); E.dirty = true; renderRows(); } }, '✕'));
+      h('button.sm', { title: tx('Add a line after this one'), onclick: () => { E.lines.splice(i + 1, 0, { t: null, text: '' }); E.dirty = true; renderRows(); } }, '＋'),
+      h('button.sm', { title: tx('Remove this line'), onclick: () => { E.lines.splice(i, 1); if (!E.lines.length) E.lines.push({ t: null, text: '' }); E.sel = Math.min(E.sel, E.lines.length - 1); E.dirty = true; renderRows(); } }, '✕'));
   });
   el.list.replaceChildren(...E.rows);
   markSel();
@@ -443,7 +444,7 @@ function saveEdit() {
 }
 
 function leaveEdit(saved = false) {
-  if (!saved && S.edit?.dirty && !confirm('Leave without saving the sync?')) return;
+  if (!saved && S.edit?.dirty && !confirm(tx('Leave without saving the sync?'))) return;
   S.mode = 'view'; S.edit = null; S.shownLine = -2;
   renderBody(); renderHead();
   pickDeck();
@@ -482,25 +483,25 @@ function modal(...children) {
 function openSearch() {
   const d = deckInfo();
   if (!S.trackId) return;
-  const input = h('input', { value: `${mainArtist(d?.artist ?? '')} ${titleVariants(d?.title ?? '').at(-1) ?? ''}`.trim(), placeholder: 'Artist and title' });
-  const results = h('div.results', {}, h('div.dim', {}, 'Search LRCLIB, then pick the right version (the closest length syncs best).'));
+  const input = h('input', { value: `${mainArtist(d?.artist ?? '')} ${titleVariants(d?.title ?? '').at(-1) ?? ''}`.trim(), placeholder: tx('Artist and title') });
+  const results = h('div.results', {}, h('div.dim', {}, tx('Search LRCLIB, then pick the right version (the closest length syncs best).')));
   const go = async () => {
     const id = Math.random().toString(36).slice(2);
-    results.replaceChildren(h('div.dim', {}, 'Searching…'));
+    results.replaceChildren(h('div.dim', {}, tx('Searching…')));
     const m = await new Promise((res) => { S.searches.set(id, res); post({ type: 'search', id, q: input.value }); setTimeout(() => res({ results: [], error: 'no answer' }), 20000); });
-    if (m.error && !m.results?.length) { results.replaceChildren(h('div.dim', {}, `Search failed: ${m.error}`)); return; }
-    if (!m.results.length) { results.replaceChildren(h('div.dim', {}, 'Nothing found. Paste the lyrics instead.')); return; }
+    if (m.error && !m.results?.length) { results.replaceChildren(h('div.dim', {}, tx`Search failed: ${m.error}`)); return; }
+    if (!m.results.length) { results.replaceChildren(h('div.dim', {}, tx('Nothing found. Paste the lyrics instead.'))); return; }
     results.replaceChildren(...m.results.map((r) => h('button.result', {
       onclick: () => {
         post({ type: 'save', trackId: S.trackId, lyrics: { source: 'LRCLIB', lrc: r.synced, plain: r.plain, offset: 0, edited: true,
           match: { artist: r.artist, title: r.title, album: r.album, duration: r.duration, id: r.id } } });
         box.remove();
       },
-    }, h('div', {}, h('div', {}, `${r.artist} — ${r.title}`), h('div.sub', {}, `${r.album || ''}${d?.duration ? `  ·  this track ${mmss(d.duration)}` : ''}`)),
+    }, h('div', {}, h('div', {}, `${r.artist} — ${r.title}`), h('div.sub', {}, `${r.album || ''}${d?.duration ? tx`  ·  this track ${mmss(d.duration)}` : ''}`)),
     h('span.dim', {}, r.duration ? mmss(r.duration) : ''), h(`span.badge${r.synced ? '.ok' : '.warn'}`, {}, r.synced ? 'SYNCED' : 'TEXT'))));
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  const box = modal(h('h3', {}, 'Find lyrics'), h('div.modal-row', {}, input, h('button.primary', { onclick: go }, 'SEARCH')), results,
+  const box = modal(h('h3', {}, tx('Find lyrics')), h('div.modal-row', {}, input, h('button.primary', { onclick: go }, 'SEARCH')), results,
     h('div.foot', {}, h('button', { onclick: () => { box.remove(); openPaste(); } }, 'PASTE LYRICS…'),
       h('button', { onclick: () => { box.remove(); S.status = 'loading'; renderBody(); renderHead(); post({ type: 'get', trackId: S.trackId, force: true }); } }, 'AUTOMATIC SEARCH AGAIN'),
       h('button', { onclick: () => box.remove() }, 'CLOSE')));
@@ -510,9 +511,9 @@ function openSearch() {
 
 /** Paste or edit the text; the lines keep their times by position, then sync the rest by hand. */
 function openPaste(text = '') {
-  const area = h('textarea', { placeholder: 'One line of lyrics per line', value: text });
+  const area = h('textarea', { placeholder: tx('One line of lyrics per line'), value: text });
   area.value = text;
-  const box = modal(h('h3', {}, text ? 'Edit the text' : 'Paste the lyrics'), area,
+  const box = modal(h('h3', {}, text ? tx('Edit the text') : tx('Paste the lyrics')), area,
     h('div.foot', {}, h('button', { onclick: () => box.remove() }, 'CANCEL'),
       h('button.primary', { onclick: () => {
         box.remove();
@@ -524,6 +525,6 @@ function openPaste(text = '') {
           S.edit.dirty = true;
           renderRows();
         } else enterEdit(area.value);
-      } }, 'OK')));
+      } }, tx('OK'))));
   area.focus();
 }

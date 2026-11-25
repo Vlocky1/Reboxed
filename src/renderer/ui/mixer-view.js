@@ -1,3 +1,4 @@
+import { tx } from '../../shared/i18n.js';
 import { h, knob, fader } from './dom.js';
 import { BEAT_FX, stepFxBeats } from '../audio/fx.js';
 
@@ -56,11 +57,11 @@ export class MixerView {
 
     this.strips = engine.channels.map((ch, i) => {
       const n = i + 1;
-      const cueBtn = h('button.dbtn.cuech', { title: 'Headphone cue' }, icon('headphones'));
+      const cueBtn = h('button.dbtn.cuech', { title: tx('Headphone cue') }, icon('headphones'));
       cueBtn.onclick = () => { ch.setCue(!ch.state.cue); cueBtn.classList.toggle('on', ch.state.cue); };
       this.controls.set(`ch${n}.cue`, { label: `CH${n} Cue`, button: true, apply: () => cueBtn.click() });
       const assign = h('div.assign', {}, ['A', 'thru', 'B'].map((a) => {
-        const b = h('button.dbtn.small', { title: `Crossfader assign ${a}` }, a === 'thru' ? 'THRU' : a);
+        const b = h('button.dbtn.small', { title: tx`Crossfader assign ${a}` }, a === 'thru' ? 'THRU' : a);
         b.onclick = () => { engine.setAssign(i, a); assign.querySelectorAll('button').forEach((x) => x.classList.remove('on')); b.classList.add('on'); };
         if (ch.state.assign === a) b.classList.add('on');
         return b;
@@ -79,7 +80,7 @@ export class MixerView {
         onInput: (p) => { if (deck?.partIso) deck.setIsoKnob(band, p); else { eqPos[band] = p; ch.setEq(['high', 'mid', 'low'][band], eqDb(p)); } },
       });
       const eqKnobs = [bandKnob(0, 'hi', 'Hi'), bandKnob(1, 'mid', 'Mid'), bandKnob(2, 'low', 'Low')];
-      const isoBtn = h('button.dbtn.small.iso', { title: 'PART ISOLATOR: the EQ knobs control the parts (HI vocal, MID inst + bass, LOW drums)' }, 'ISO');
+      const isoBtn = h('button.dbtn.small.iso', { title: tx('PART ISOLATOR: the EQ knobs control the parts (HI vocal, MID inst + bass, LOW drums)') }, 'ISO');
       isoBtn.onclick = () => { deck.setPartIso(!deck.partIso); if (deck.partIso) opts.onPartIso?.(i); };
       this.controls.set(`ch${n}.iso`, { label: `CH${n} Part Isolator`, button: true, apply: () => isoBtn.click() });
       const syncIso = () => {
@@ -102,14 +103,14 @@ export class MixerView {
     });
 
     this.masterMeter = meter();
-    const cfxSel = h('select.cfx-select', { title: 'Color FX (applies to every COLOR knob)', onchange: (e) => { engine.setColorFx(e.target.value); opts.onColorFx?.(e.target.value); } },
+    const cfxSel = h('select.cfx-select', { title: tx('Color FX (applies to every COLOR knob)'), onchange: (e) => { engine.setColorFx(e.target.value); opts.onColorFx?.(e.target.value); } },
       COLOR_FX.map((t) => h('option', { value: t, selected: t === (opts.colorFx ?? 'FILTER') }, t)));
     engine.setColorFx(opts.colorFx ?? 'FILTER');
     this.master = h('div.strip.master', {},
       h('div.strip-num', {}, 'M'),
-      mk('master.level', 'Master Level', { label: 'MASTER', min: 0, max: 1.2, value: 0.8, reset: 0.8, format: (v) => `${Math.round(v * 100)}`, onInput: (v) => engine.setMasterLevel(v) }),
-      mk('phones.level', 'Headphones Level', { label: 'PHONES', min: 0, max: 1.5, value: 1, reset: 1, size: 'sm', onInput: (v) => engine.setPhonesLevel(v) }),
-      mk('phones.mix', 'Headphones Mix', { label: 'CUE/MST', min: 0, max: 1, value: 0, reset: 0.5, size: 'sm', onInput: (v) => engine.setPhonesMix(v) }),
+      mk('master.level', tx('Master Level'), { label: 'MASTER', min: 0, max: 1.2, value: 0.8, reset: 0.8, format: (v) => `${Math.round(v * 100)}`, onInput: (v) => engine.setMasterLevel(v) }),
+      mk('phones.level', tx('Headphones Level'), { label: 'PHONES', min: 0, max: 1.5, value: 1, reset: 1, size: 'sm', onInput: (v) => engine.setPhonesLevel(v) }),
+      mk('phones.mix', tx('Headphones Mix'), { label: 'CUE/MST', min: 0, max: 1, value: 0, reset: 0.5, size: 'sm', onInput: (v) => engine.setPhonesMix(v) }),
       h('div.knob-label', {}, 'COLOR FX'), cfxSel,
       h('div.fader-row', {}, this.masterMeter));
 
@@ -150,7 +151,7 @@ export class FxView {
     this.depth = knob({ label: 'LEVEL/DEPTH', min: 0, max: 1, value: unit.depth, reset: 0.5, size: 'sm', onInput: (v) => unit.setDepth(v) });
     // Channel assign as a segmented control (1 2 3 4 M S), like the hardware/rekordbox FX unit.
     this.assignBtns = [...Array.from({ length: deckCount }, (_, i) => [`ch${i + 1}`, String(i + 1)]), ['master', 'M'], ['sampler', 'S']]
-      .map(([t, label]) => h('button.seg-btn', { title: t === 'master' ? 'Master' : t === 'sampler' ? 'Sampler' : `Channel ${label}`, onclick: () => unit.setTarget(t), dataset: { t } }, label));
+      .map(([t, label]) => h('button.seg-btn', { title: t === 'master' ? 'Master' : t === 'sampler' ? 'Sampler' : tx`Channel ${label}`, onclick: () => unit.setTarget(t), dataset: { t } }, label));
     this.bpmVal = h('span.fx-bpm');
     this.el = h('div.fx-unit', {},
       h('span.fx-title', {}, 'BEAT FX'),

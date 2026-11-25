@@ -1,3 +1,4 @@
+import { errText, tx } from '../shared/i18n.js';
 import { Library } from './library.js';
 import { UiMemory } from './ui-memory.js';
 import { AudioEngine } from './audio/engine.js';
@@ -50,7 +51,7 @@ const fmtLoopBeats =(b) => (b >= 1 ? String(Math.round(b * 100) / 100) : `1/${Ma
 async function readStem(meta, name) {
   const ext = { wav: 'wav', mp3: 'mp3' }[meta.format] ?? 'pcm';
   const res = await fetch(mediaUrl(`${meta.dir}/${name}.${ext}`));
-  if (!res.ok) throw new Error(`stem ${name}: ${res.status}`);
+  if (!res.ok) throw new Error(tx`stem ${name}: ${res.status}`);
   const buf = await res.arrayBuffer();
   if (ext === 'wav') return new Int16Array(buf, 44, (buf.byteLength - 44) >> 1);
   if (ext === 'pcm') return new Int16Array(buf);
@@ -137,8 +138,8 @@ class App {
     this.gridQuickBars = this.deckViews.map((v, i) => {
       const bar = this.gridQuickBar();
       v.el.querySelector('.deck-headbtns').append(bar,
-        h('button.dbtn.small.icon-btn', { title: 'Beatgrid', onclick: (e) => this.gridMenu(e, i) }, icon('grid')),
-        h('button.dbtn.small.icon-btn', { title: 'Deck menu', onclick: (e) => this.deckMenu(e, i) }, icon('more')));
+        h('button.dbtn.small.icon-btn', { title: tx('Beatgrid'), onclick: (e) => this.gridMenu(e, i) }, icon('grid')),
+        h('button.dbtn.small.icon-btn', { title: tx('Deck menu'), onclick: (e) => this.deckMenu(e, i) }, icon('more')));
       return bar;
     });
     this.renderGridQuick();
@@ -163,7 +164,7 @@ class App {
     }
     this.browser = new Browser(this);
     this.waveCanvases = this.engine.decks.map((d, i) => {
-      const c = h('canvas.detail', { title: 'Drag to scrub, wheel to zoom' });
+      const c = h('canvas.detail', { title: tx('Drag to scrub, wheel to zoom') });
       this.attachScrub(c, d);
       return c;
     });
@@ -176,38 +177,38 @@ class App {
     // ---- global section (top bar) ----
     const s = this.library.settings;
     const gtoggle = (iconName, label, title, onclick) => h('button.gbtn', { title, onclick }, icon(iconName), h('span', {}, label));
-    this.recBtn = gtoggle('rec', 'REC', 'Record the master output (WAV)', () => this.toggleRecording());
+    this.recBtn = gtoggle('rec', 'REC', tx('Record the master output (WAV)'), () => this.toggleRecording());
     this.recBtn.classList.add('rec');
     this.recTime = h('span.rec-time');
     this.downloads = new DownloadCenter(this);
-    this.dlBtn = gtoggle('download', 'DOWNLOAD', 'Download tracks from YouTube, SoundCloud, Spotify or Deezer: search, links, playlists, new releases', () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'search'));
+    this.dlBtn = gtoggle('download', 'DOWNLOAD', tx('Download tracks from YouTube, SoundCloud, Spotify or Deezer: search, links, playlists, new releases'), () => this.downloads.open(this.downloads.newCount ? 'feeds' : 'search'));
     this.dlBadge = h('span.dl-badge', { hidden: true });
     // Shown when GitHub has a newer version.
-    this.updatePill = h('button.update-pill', { hidden: true, title: 'A new version of Reboxed is available', onclick: () => openUpdateDialog(this) });
-    this.trialPill = h('button.trial-pill', { hidden: true, title: 'Free trial: activate a licence in Preferences > About', onclick: () => this.openSettings('about') });
+    this.updatePill = h('button.update-pill', { hidden: true, title: tx('A new version of Reboxed is available'), onclick: () => openUpdateDialog(this) });
+    this.trialPill = h('button.trial-pill', { hidden: true, title: tx('Free trial: activate a licence in Preferences > About'), onclick: () => this.openSettings('about') });
     this.dlBtn.append(this.dlBadge);
     // Lyrics in their own window (can go on a second screen), synced with the deck on air.
     this.lyrics = new LyricsLink(this);
-    this.lyricsBtn = gtoggle('lyrics', 'LYRICS', 'Lyrics of the track on air, synced, in a window you can move to another screen (F11: full screen)', () => this.lyrics.openWindow());
+    this.lyricsBtn = gtoggle('lyrics', 'LYRICS', tx('Lyrics of the track on air, synced, in a window you can move to another screen (F11: full screen)'), () => this.lyrics.openWindow());
     this.samplerView = new SamplerView(this.sampler, this);
     this.samplerView.el.hidden = !s.showSampler;
-    this.samplerBtn = gtoggle('sampler', 'SAMPLER', 'Show/hide the sampler', () => this.toggleSampler());
+    this.samplerBtn = gtoggle('sampler', 'SAMPLER', tx('Show/hide the sampler'), () => this.toggleSampler());
     this.samplerBtn.classList.toggle('on', !this.samplerView.el.hidden);
     this.padView = new PadSamplerView(this, this.padSurface);
-    this.padsBtn = gtoggle('pads', 'PADS', 'Pad sampler: 64 pads, instrument and light show (Launchpad X)', () => this.togglePads());
-    this.fxBtn =gtoggle('fx', 'FX', 'Show/hide the Beat FX panel', () => this.togglePanel('fx'));
-    this.mixerBtn = gtoggle('mixer', 'MIXER', 'Show/hide the mixer', () => this.togglePanel('mixer'));
-    this.automixBtn = gtoggle('automix', 'AUTOMIX', 'Automix the current list', (e) => this.automixMenu(e));
+    this.padsBtn = gtoggle('pads', 'PADS', tx('Pad sampler: 64 pads, instrument and light show (Launchpad X)'), () => this.togglePads());
+    this.fxBtn =gtoggle('fx', 'FX', tx('Show/hide the Beat FX panel'), () => this.togglePanel('fx'));
+    this.mixerBtn = gtoggle('mixer', 'MIXER', tx('Show/hide the mixer'), () => this.togglePanel('mixer'));
+    this.automixBtn = gtoggle('automix', 'AUTOMIX', tx('Automix the current list'), (e) => this.automixMenu(e));
     this.automixStatus = h('span.automix-status');
     this.automix.addEventListener('change', () => this.refreshAutomix());
-    this.mplBtn = gtoggle('link', 'MIX POINT LINK', 'Mix Point Link: when a deck reaches its MIX OUT, start the other deck from its MIX IN (synced)', () => {
+    this.mplBtn = gtoggle('link', 'MIX POINT LINK', tx('Mix Point Link: when a deck reaches its MIX OUT, start the other deck from its MIX IN (synced)'), () => {
       this.library.setSetting('mixPointLink', !this.library.settings.mixPointLink);
       this.mplBtn.classList.toggle('on', this.library.settings.mixPointLink);
     });
-    this.mplBtn.classList.toggle('on', !!s.mixPointLink);
+    this.refreshMixPoint();
     // CLASSIC / PERFORMANCE: the decks, with or without the history; LIBRARY: the full browser
     this.modeSel = h('select.mode-select', {
-      title: 'CLASSIC: play freely, nothing goes into the history · PERFORMANCE: every track played goes into the day\'s history (a set) · LIBRARY: the full browser',
+      title: tx('CLASSIC: play freely, nothing goes into the history · PERFORMANCE: every track played goes into the day\'s history (a set) · LIBRARY: the full browser'),
       onchange: (e) => this.setMode(e.target.value),
     },
     h('option', { value: 'classic' }, 'CLASSIC'), h('option', { value: 'performance' }, 'PERFORMANCE'), h('option', { value: 'library' }, 'LIBRARY'));
@@ -216,10 +217,10 @@ class App {
     this.layoutBtns = [
       h('button.lbtn', { title: '2 decks', onclick: () => { this.library.setSetting('deckCount', 2); this.applyLayout(); } }, icon('layout2')),
       h('button.lbtn', { title: '4 decks', onclick: () => { this.library.setSetting('deckCount', 4); this.applyLayout(); } }, icon('layout4')),
-      h('button.lbtn', { title: 'Full browser (Space)', onclick: () => this.toggleLayout() }, icon('browser')),
+      h('button.lbtn', { title: tx('Full browser (Space)'), onclick: () => this.toggleLayout() }, icon('browser')),
     ];
-    this.midiStatus = h('span.gstat.midi', { title: 'MIDI controller' }, icon('midi'), h('span', {}, '—'));
-    this.stemStatus = h('span.stem-status', { hidden: true, title: 'Stem separation' }, h('span.ss-dot'), h('span.ss-label', {}, 'STEMS'), h('span.ss-text'));
+    this.midiStatus = h('span.gstat.midi', { title: tx('MIDI controller') }, icon('midi'), h('span', {}, '—'));
+    this.stemStatus = h('span.stem-status', { hidden: true, title: tx('Stem separation') }, h('span.ss-dot'), h('span.ss-label', {}, 'STEMS'), h('span.ss-text'));
     this.clock = h('span.gstat.clock');
     this.fxPanel = h('section.fxpanel', {}, this.fxView.el);
     this.lastPos = [];
@@ -232,13 +233,13 @@ class App {
           this.modeSel,
           h('div.lbtns', {}, this.layoutBtns)),
         h('div.gbar-center', {},
-          h('div.ggroup', { title: 'Panels' }, this.fxBtn, this.mixerBtn, this.samplerBtn, this.padsBtn),
-          h('div.ggroup', { title: 'Mixing helpers' }, this.mplBtn, this.automixBtn, this.automixStatus),
-          h('div.ggroup', { title: 'Tools' }, this.dlBtn, this.lyricsBtn, this.recBtn, this.recTime)),
+          h('div.ggroup', { title: tx('Panels') }, this.fxBtn, this.mixerBtn, this.samplerBtn, this.padsBtn),
+          h('div.ggroup', { title: tx('Mixing helpers') }, this.mplBtn, this.automixBtn, this.automixStatus),
+          h('div.ggroup', { title: tx('Tools') }, this.dlBtn, this.lyricsBtn, this.recBtn, this.recTime)),
         h('div.gbar-right', {}, this.trialPill, this.updatePill, this.stemStatus, this.midiStatus, this.clock,
-          h('button.lbtn.help-btn', { onclick: () => openManual(), title: 'Manual: every menu explained' }, '?'),
-          h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: 'Appearance: themes, colours, size' }, icon('palette')),
-          h('button.lbtn', { onclick: () => this.openSettings(), title: 'Preferences' }, icon('gear')))),
+          h('button.lbtn.help-btn', { onclick: () => openManual(), title: tx('Manual: every menu explained') }, '?'),
+          h('button.lbtn', { onclick: () => this.openSettings('appearance'), title: tx('Appearance: themes, colours, size') }, icon('palette')),
+          h('button.lbtn', { onclick: () => this.openSettings(), title: tx('Preferences') }, icon('gear')))),
       this.fxPanel,
       (this.wavesEl = h('section.waves')),
       (this.decksEl = h('section.decks')),
@@ -276,7 +277,7 @@ class App {
     });
     // New releases from followed channels, quietly, a few seconds after start.
     if (!new URLSearchParams(location.search).has('smoke') && !new URLSearchParams(location.search).has('shots') && this.library.settings.checkUpdates !== false) {
-      setTimeout(() => checkForUpdates(this, { silent: true }).then((info) => { if (info?.newer) toast(`Reboxed ${info.latest} is available: click the update button in the top bar`, 7000); }), 5000);
+      setTimeout(() => checkForUpdates(this, { silent: true }).then((info) => { if (info?.newer) toast(tx`Reboxed ${info.latest} is available: click the update button in the top bar`, 7000); }), 5000);
     }
     if (!new URLSearchParams(location.search).has('smoke') && !new URLSearchParams(location.search).has('shots')) {
       setTimeout(() => this.downloads.recoverLost().catch((err) => console.warn('recover downloads', err)), 4000);
@@ -304,12 +305,12 @@ class App {
     if (s.masterDevice) {
       this.engine.setMasterDevice(s.masterDevice)
         .then(() => { if (s.outputLayout === 'quad') this.engine.setOutputLayout('quad'); })
-        .catch(() => toast('Master output device unavailable'));
+        .catch(() => toast(tx('Master output device unavailable')));
     }
-    if (s.phonesDevice) this.engine.setPhonesDevice(s.phonesDevice).catch(() => toast('Headphone device unavailable'));
+    if (s.phonesDevice) this.engine.setPhonesDevice(s.phonesDevice).catch(() => toast(tx('Headphone device unavailable')));
     if ((s.masterCopyDevice ?? '') !== (this.masterCopyApplied ?? '')) {
       this.masterCopyApplied = s.masterCopyDevice ?? '';
-      this.engine.setMasterCopyDevice(this.masterCopyApplied).catch(() => toast('Second master output unavailable'));
+      this.engine.setMasterCopyDevice(this.masterCopyApplied).catch(() => toast(tx('Second master output unavailable')));
     }
   }
 
@@ -322,10 +323,11 @@ class App {
   /** Change one setting and apply it (Preferences, setup assistant). */
   applySetting(key, value) {
     this.library.setSetting(key, value);
-    if (key === 'masterDevice') this.engine.setMasterDevice(value).catch((e) => toast(String(e)));
-    else if (key === 'outputLayout') { try { this.engine.setOutputLayout(value); } catch (e) { toast(e.message, 6000); } }
-    else if (key === 'phonesDevice') this.engine.setPhonesDevice(value).catch((e) => toast(String(e)));
+    if (key === 'masterDevice') this.engine.setMasterDevice(value).catch((e) => toast(errText(e)));
+    else if (key === 'outputLayout') { try { this.engine.setOutputLayout(value); } catch (e) { toast(errText(e), 6000); } }
+    else if (key === 'phonesDevice') this.engine.setPhonesDevice(value).catch((e) => toast(errText(e)));
     else if (key === 'deckCount') this.applyLayout();
+    else if (key === 'showMixPoint') this.refreshMixPoint();
     else if (['theme', 'themeAccent', 'uiScale', 'topbarLabels'].includes(key)) applyTheme(this.library.settings);
     else this.applySettingsToEngine();
     this.deckViews.forEach((v) => v.refresh());
@@ -351,7 +353,7 @@ class App {
     if (value === 'classic' || value === 'performance') {
       const changed = value !== this.playMode;
       this.library.setSetting('playMode', value);
-      if (changed) toast(value === 'performance' ? 'PERFORMANCE: the tracks you play go into today\'s history' : 'CLASSIC: play freely, nothing goes into the history', 4000);
+      if (changed) toast(value === 'performance' ? tx('PERFORMANCE: the tracks you play go into today\'s history') : tx('CLASSIC: play freely, nothing goes into the history'), 4000);
     }
     if (this.modeSel) {
       this.modeSel.value = value;
@@ -404,7 +406,7 @@ class App {
   loadToFreeDeck(trackId) {
     const decks = this.visibleDecks();
     const target = decks.find((d) => !d.loaded) ?? decks.find((d) => !d.playing) ?? null;
-    if (!target) { toast('All decks are playing'); return; }
+    if (!target) { toast(tx('All decks are playing')); return; }
     this.loadTrack(target.index, trackId);
   }
 
@@ -413,7 +415,7 @@ class App {
     const track = this.library.get(trackId);
     if (!deck || !track) return;
     // Load lock (Preferences ▸ Decks & Mixer): by default a playing deck cannot be replaced by mistake.
-    if (deck.playing && !this.library.settings.loadOnPlaying) { toast(`Deck ${deckIndex + 1} is playing — pause it first, or turn on "Load while playing" (deck menu ⋯)`, 4000); return; }
+    if (deck.playing && !this.library.settings.loadOnPlaying) { toast(tx`Deck ${deckIndex + 1} is playing — pause it first, or turn on "Load while playing" (deck menu ⋯)`, 4000); return; }
     deck.loading = true;
     try {
       let buffer = await this.analyzer.decode(track.path);
@@ -438,7 +440,7 @@ class App {
       }).catch((err) => console.warn('stems', err));
     } catch (err) {
       console.error(err);
-      toast(`Cannot load "${track.title}": ${err.message}`, 5000);
+      toast(tx`Cannot load "${track.title}": ${errText(err)}`, 5000);
       this.library.update(trackId, { missing: true });
     } finally {
       deck.loading = false;
@@ -456,7 +458,7 @@ class App {
     if (this.library.settings.analysisMode !== 'normal' || !t.beatgrid?.beats || t.gridLocked || t.dynamicGrid) return t;
     const { grid, drift } = constantFromBeats(t.beatgrid);
     if (t.source === 'rekordbox' && drift > 0.03) {
-      toast(`"${t.title}": its imported grid has real tempo changes, so its BPM moves. To make it constant: grid button on the deck > Convert to constant grid`, 7000);
+      toast(tx`"${t.title}": its imported grid has real tempo changes, so its BPM moves. To make it constant: grid button on the deck > Convert to constant grid`, 7000);
       return t;
     }
     return this.library.update(t.id, { beatgrid: grid, bpm: grid.bpm });
@@ -549,11 +551,11 @@ class App {
   async createCuesFor(trackId) {
     const t = this.library.get(trackId);
     const stored = await window.rb.getAnalysis(trackId);
-    if (!t || !stored?.phrases?.phrases?.length) { toast('No phrase analysis for this track yet (analyze it first)'); return; }
+    if (!t || !stored?.phrases?.phrases?.length) { toast(tx('No phrase analysis for this track yet (analyze it first)')); return; }
     const cues = createCues(stored.phrases, toBeatgrid(t.beatgrid ?? stored.beatgrid), t.cues ?? []);
     const added = cues.length - (t.cues?.length ?? 0);
     this.library.update(trackId, { cues });
-    toast(added ? `${added} cue(s) created from phrases` : 'Cues already present');
+    toast(added ? tx`${added} cue(s) created from phrases` : tx('Cues already present'));
   }
 
   analyzeTracks(ids) {
@@ -571,7 +573,7 @@ class App {
       const id = this.queue.shift();
       const t = this.library.get(id);
       done++;
-      this.browser.setStatus(`Analyzing ${done}/${done + this.queue.length}: ${t?.title ?? ''}`);
+      this.browser.setStatus(tx`Analyzing ${done}/${done + this.queue.length}: ${t?.title ?? ''}`);
       if (!t) continue;
       try {
         const r = await this.analyzer.analyzePath(t.path, this.analysisOptions(t));
@@ -584,7 +586,7 @@ class App {
     }
     this.analyzing = false;
     this.analyzeTotal = 0;
-    this.browser.setStatus(done ? `Analysis finished (${done} track${done > 1 ? 's' : ''})` : '');
+    this.browser.setStatus(done ? tx`Analysis finished (${done} track${done > 1 ? 's' : ''})` : '');
   }
 
   // ---- import / export -------------------------------------------------------------------------
@@ -592,18 +594,18 @@ class App {
   /** @returns {Promise<string[]>} ids of the tracks added */
   async importPaths(paths) {
     if (!paths.length) return [];
-    const off = window.rb.onScanProgress((d, n) => this.browser.setStatus(`Reading tags ${d}/${n}`));
+    const off = window.rb.onScanProgress((d, n) => this.browser.setStatus(tx`Reading tags ${d}/${n}`));
     try {
       const results = await window.rb.scanPaths(paths);
       const added = this.library.addScanned(results);
-      this.browser.setStatus(`${added.length} track(s) added`);
+      this.browser.setStatus(tx`${added.length} track(s) added`);
       // Stems already there (beside the track, or in the stems folder): the track joins the Stems list.
       for (const id of added) {
         const t = this.library.get(id);
         const m = t && await window.rb.stems.meta(id, t.path).catch(() => null);
         if (m && m.format !== 'pcm') this.library.update(id, { stems: m.quality === 'hq' ? 'hq' : 'fast' }, { silent: true });
       }
-      toast(`${added.length} track(s) added to the collection`);
+      toast(tx`${added.length} track(s) added to the collection`);
       if (added.length && this.library.settings.autoAnalyze) this.analyzeTracks(added);
       return added;
     } finally { off(); }
@@ -625,11 +627,11 @@ class App {
       await window.rb.writeFile(path, exportRekordboxXml({ tracks: this.library.all(), playlists: resolve(this.library.playlists) }));
     } catch (err) {
       // never silent: say why the file is not there
-      toast(`Export failed: ${String(err.message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`, 9000);
+      toast(tx`Export failed: ${errText(err)}`, 9000);
       return;
     }
-    const t = toast(`Collection exported (${this.library.tracks.size} tracks): ${path}`, 9000);
-    t.append(' ', h('button.dbtn.small', { onclick: () => window.rb.showItem(path) }, 'Show'));
+    const t = toast(tx`Collection exported (${this.library.tracks.size} tracks): ${path}`, 9000);
+    t.append(' ', h('button.dbtn.small', { onclick: () => window.rb.showItem(path) }, tx('Show')));
   }
 
   async exportM3u(node) {
@@ -638,10 +640,10 @@ class App {
     const lines = ['#EXTM3U', ...node.trackIds.map((id) => this.library.get(id)).filter(Boolean)
       .flatMap((t) => [`#EXTINF:${Math.round(t.duration ?? 0)},${t.artist ? `${t.artist} - ` : ''}${t.title}`, t.path])];
     try { await window.rb.writeFile(path, `${lines.join('\n')}\n`); } catch (err) {
-      toast(`Export failed: ${String(err.message).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`, 9000);
+      toast(tx`Export failed: ${errText(err)}`, 9000);
       return;
     }
-    toast(`Playlist exported: ${path}`, 6000);
+    toast(tx`Playlist exported: ${path}`, 6000);
   }
 
   async findMissing() {
@@ -653,7 +655,7 @@ class App {
       if (!!t.missing !== !exists) this.library.update(t.id, { missing: !exists }, { silent: true });
     }
     this.browser.refreshRows();
-    toast(missing ? `${missing} missing file(s) (shown in red)` : 'All files found');
+    toast(missing ? tx`${missing} missing file(s) (shown in red)` : tx('All files found'));
   }
 
   installFileDrop() {
@@ -728,7 +730,7 @@ class App {
       const buffer = await this.analyzer.decode(t.path);
       this.sampler.setSlot(i, { name: t.title, path: t.path, bpm: t.beatgrid?.bpm ?? t.bpm ?? 0, buffer, mode: buffer.duration < 20 ? 'oneshot' : 'loop' });
     } catch (err) {
-      toast(`Cannot load sample: ${err.message}`);
+      toast(tx`Cannot load sample: ${errText(err)}`);
     }
   }
 
@@ -776,7 +778,7 @@ class App {
       const parts = ['DRUMS', 'BASS', 'INST', 'VOCAL'].filter((_, k) => gains[k] >= 1e-3);
       return { chans, sr, parts };
     }
-    if (partial) toast('Stems are still being separated: the full mix was captured', 4000);
+    if (partial) toast(tx('Stems are still being separated: the full mix was captured'), 4000);
     const full = await this.analyzer.decode(d.track.path);
     const sr = full.sampleRate;
     const a = Math.round(start * sr); const b = Math.round(end * sr);
@@ -793,9 +795,9 @@ class App {
   async captureLoop(deckIndex, slot = null) {
     const d = this.engine.decks[deckIndex];
     const range = this.captureRange(d);
-    if (!range) { toast('Load a track first'); return null; }
+    if (!range) { toast(tx('Load a track first')); return null; }
     if (slot === null) slot = this.sampler.slots.findIndex((s) => !s.buffer);
-    if (slot < 0) { toast('Sampler is full'); return null; }
+    if (slot < 0) { toast(tx('Sampler is full')); return null; }
     this.capturing ??= new Set();
     if (this.capturing.has(slot)) return null; // a capture into this slot is already running
     this.capturing.add(slot);
@@ -807,10 +809,10 @@ class App {
       const buffer = new AudioBuffer({ numberOfChannels: chans.length, length: chans[0].length, sampleRate: sr });
       chans.forEach((c, i) => buffer.copyToChannel(c, i));
       this.sampler.setSlot(slot, { name, path, bpm: d.originalBpm, buffer, mode: 'loop' });
-      toast(`${d.loop ? 'Loop' : `${fmtLoopBeats(range.beats)} beats`} captured to sampler slot ${slot + 1}${parts ? ` (${parts.join(' + ')})` : ''}`);
+      toast(tx`${d.loop ? tx('Loop') : `${fmtLoopBeats(range.beats)} beats`} captured to sampler slot ${slot + 1}${parts ? ` (${parts.join(' + ')})` : ''}`);
       return slot;
     } catch (err) {
-      toast(`Capture failed: ${err.message}`, 5000);
+      toast(tx`Capture failed: ${errText(err)}`, 5000);
       return null;
     } finally {
       this.capturing.delete(slot);
@@ -825,7 +827,7 @@ class App {
     if (this.sampler.slots[i].buffer) { this.sampler.trigger(i); return; }
     const decks = [deck, this.engine.masterDeck, ...this.visibleDecks().filter((d) => d.playing), ...this.visibleDecks()].filter((d) => d?.loaded);
     const src = deck?.loaded ? deck : decks.find((d) => d.loop) ?? decks[0];
-    if (!src) { toast('Load a track on a deck, then click an empty sampler slot to capture its loop (or drop a track on the slot)', 5000); return; }
+    if (!src) { toast(tx('Load a track on a deck, then click an empty sampler slot to capture its loop (or drop a track on the slot)'), 5000); return; }
     await this.captureLoop(src.index, i);
   }
 
@@ -855,7 +857,7 @@ class App {
     if (!file) return;
     const chans = Array.from({ length: s.buffer.numberOfChannels }, (_, c) => s.buffer.getChannelData(c));
     await window.rb.writeFile(file, encodeWav(chans, s.buffer.sampleRate));
-    toast(`Sample saved: ${file}`);
+    toast(tx`Sample saved: ${file}`);
   }
 
   async editSample(i) { return editSample(this, i); }
@@ -869,28 +871,28 @@ class App {
     const others = this.visibleDecks().filter((x) => x !== d && x.loaded);
     const r = e.currentTarget.getBoundingClientRect();
     contextMenu(r.left, r.bottom, [
-      ...others.map((o) => ({ label: `Instant Double from Deck ${o.index + 1}`, disabled: d.playing, action: () => this.instantDouble(o.index, i) })),
+      ...others.map((o) => ({ label: tx`Instant Double from Deck ${o.index + 1}`, disabled: d.playing, action: () => this.instantDouble(o.index, i) })),
       ...(others.length ? ['-'] : []),
-      { label: d.loop ? 'Capture loop to sampler' : `Capture ${fmtLoopBeats(d.beatLoopSize)} beats to sampler`, disabled: !d.loaded, action: () => this.captureLoop(i) },
-      { label: 'Create cues from phrases', disabled: !d.loaded, action: () => this.createCuesFor(d.track.id) },
+      { label: d.loop ? tx('Capture loop to sampler') : tx`Capture ${fmtLoopBeats(d.beatLoopSize)} beats to sampler`, disabled: !d.loaded, action: () => this.captureLoop(i) },
+      { label: tx('Create cues from phrases'), disabled: !d.loaded, action: () => this.createCuesFor(d.track.id) },
       // Every phrase of the track at once (also: right-click the waveform for one phrase).
       { label: 'Phrases', disabled: !d.loaded || !d.analysis?.phrases?.phrases?.length, submenu: [
-        { label: 'Shift all phrases ← 1 bar', action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, -4 * d.period)) },
-        { label: 'Shift all phrases → 1 bar', action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, 4 * d.period)) },
-        { label: 'Shift all phrases ← 1 beat', action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, -d.period)) },
-        { label: 'Shift all phrases → 1 beat', action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, d.period)) },
+        { label: tx('Shift all phrases ← 1 bar'), action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, -4 * d.period)) },
+        { label: tx('Shift all phrases → 1 bar'), action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, 4 * d.period)) },
+        { label: tx('Shift all phrases ← 1 beat'), action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, -d.period)) },
+        { label: tx('Shift all phrases → 1 beat'), action: () => this.setPhrases(d, shiftPhrases(d.analysis.phrases.phrases, d.period)) },
         '-',
-        { label: 'Back to the analysed phrases', disabled: !d.analysis?.phrases?.edited, action: () => this.resetPhrases(d) },
+        { label: tx('Back to the analysed phrases'), disabled: !d.analysis?.phrases?.edited, action: () => this.resetPhrases(d) },
       ] },
-      { label: 'DRUM SWAP slots…', action: () => this.openDrumSwapEditor(i) },
+      { label: tx('DRUM SWAP slots…'), action: () => this.openDrumSwapEditor(i) },
+      ...(!this.library.settings.showMixPoint ? [] : ['-',
+      { label: tx('Set MIX IN at play head'), disabled: !d.loaded, action: () => d.setMixPoint('mixin') },
+      { label: tx('Set MIX OUT at play head'), disabled: !d.loaded, action: () => d.setMixPoint('mixout') },
+      { label: tx('Clear mix points'), disabled: !d.mixPoint('mixin') && !d.mixPoint('mixout'), action: () => d.setCues(d.track.cues.filter((c) => c.kind !== 'mixin' && c.kind !== 'mixout')) }]),
       '-',
-      { label: 'Set MIX IN at play head', disabled: !d.loaded, action: () => d.setMixPoint('mixin') },
-      { label: 'Set MIX OUT at play head', disabled: !d.loaded, action: () => d.setMixPoint('mixout') },
-      { label: 'Clear mix points', disabled: !d.mixPoint('mixin') && !d.mixPoint('mixout'), action: () => d.setCues(d.track.cues.filter((c) => c.kind !== 'mixin' && c.kind !== 'mixout')) },
+      { label: tx('Eject'), disabled: !d.loaded || d.playing, action: () => d.unload() },
       '-',
-      { label: 'Eject', disabled: !d.loaded || d.playing, action: () => d.unload() },
-      '-',
-      { label: 'Load while playing (all decks)', checked: !!this.library.settings.loadOnPlaying, action: () => this.toggleLoadOnPlaying() },
+      { label: tx('Load while playing (all decks)'), checked: !!this.library.settings.loadOnPlaying, action: () => this.toggleLoadOnPlaying() },
     ]);
   }
 
@@ -898,7 +900,7 @@ class App {
   toggleLoadOnPlaying() {
     const on = !this.library.settings.loadOnPlaying;
     this.library.setSetting('loadOnPlaying', on);
-    toast(on ? 'Load while playing: on — a playing deck can take another track' : 'Load while playing: off — pause a deck to load it (load lock)', 4000);
+    toast(on ? tx('Load while playing: on — a playing deck can take another track') : tx('Load while playing: off — pause a deck to load it (load lock)'), 4000);
   }
 
   /** Load the same track on `to` at the same position, tempo and play state as `from`. */
@@ -939,7 +941,7 @@ class App {
       this.onStemsChange();
     });
     window.rb.stems.on('stems:fallback', (id, ep, quality) => {
-      toast(`Stem separation on the GPU (${ENGINE_NAMES[ep] ?? ep}) failed — retrying on the CPU`, 6000);
+      toast(tx`Stem separation on the GPU (${ENGINE_NAMES[ep] ?? ep}) failed — retrying on the CPU`, 6000);
       // Auto never picks this engine again for this model on this computer.
       const bench = { ...(this.library.settings.stemsBench ?? {}) };
       if (quality) { bench[quality] = { ...(bench[quality] ?? {}), [ep]: 'crash' }; this.library.setSetting('stemsBench', bench); }
@@ -1015,10 +1017,10 @@ class App {
   async ensureStemModel(quality) {
     const status = await window.rb.stems.status();
     if (status.models[quality]) return true;
-    if (quality === 'hq') { toast('The HQ stem model is not installed (Preferences > Stems)', 6000); return false; }
-    const t = toast('Downloading the FAST stem model (79 MB)…', 600000);
-    const off = window.rb.stems.on('stems:download', (_q, got, total) => { t.textContent = `Downloading the FAST stem model… ${Math.round((got / total) * 100)}%`; });
-    try { await window.rb.stems.download('fast'); return true; } catch (err) { toast(`Download failed: ${err.message}`, 6000); return false; } finally { off(); t.remove(); }
+    if (quality === 'hq') { toast(tx('The HQ stem model is not installed (Preferences > Stems)'), 6000); return false; }
+    const t = toast(tx('Downloading the FAST stem model (79 MB)…'), 600000);
+    const off = window.rb.stems.on('stems:download', (_q, got, total) => { t.textContent = tx`Downloading the FAST stem model… ${Math.round((got / total) * 100)}%`; });
+    try { await window.rb.stems.download('fast'); return true; } catch (err) { toast(tx`Download failed: ${errText(err)}`, 6000); return false; } finally { off(); t.remove(); }
   }
 
   /**
@@ -1060,7 +1062,7 @@ class App {
         d.stemQuality = q;
         d.vocals = meta.vocals ?? d.vocals;
       }
-      this.browser.setStatus(`Stems ready (${q.toUpperCase()}): ${t.title}`);
+      this.browser.setStatus(tx`Stems ready (${q.toUpperCase()}): ${t.title}`);
       // AUTO: FAST first for immediate use, then upgrade to HQ quietly if the model is there.
       if (q === 'fast' && mode === 'auto' && (await window.rb.stems.status()).models.hq) {
         this.stemJobs.delete(trackId);
@@ -1068,7 +1070,7 @@ class App {
       }
       return meta;
     } catch (err) {
-      toast(`Stem separation failed: ${err.message}`, 6000);
+      toast(tx`Stem separation failed: ${errText(err)}`, 6000);
       return null;
     } finally {
       if (this.stemJobs.get(trackId)?.quality === q) this.stemJobs.delete(trackId);
@@ -1081,15 +1083,15 @@ class App {
   applyLicense(st) {
     this.license = st;
     this.trialPill.hidden = st.mode !== 'trial' && st.mode !== 'beta';
-    if (!this.trialPill.hidden) this.trialPill.textContent = `${st.mode === 'beta' ? 'Beta' : 'Trial'} · ${st.daysLeft} day${st.daysLeft > 1 ? 's' : ''}`;
-    this.trialPill.title = st.mode === 'beta' ? 'Open beta: free until its end date (Preferences > About)' : 'Free trial: activate a licence in Preferences > About';
+    if (!this.trialPill.hidden) this.trialPill.textContent = tx`${st.mode === 'beta' ? 'Beta' : tx('Trial')} · ${st.daysLeft} day${st.daysLeft > 1 ? 's' : ''}`;
+    this.trialPill.title = st.mode === 'beta' ? tx('Open beta: free until its end date (Preferences > About)') : tx('Free trial: activate a licence in Preferences > About');
     if (st.mode === 'expired') openLicenseGate(this, st);
   }
 
   refreshUpdatePill() {
     const info = this.updateInfo;
     this.updatePill.hidden = !info?.newer;
-    if (info?.newer) this.updatePill.textContent = `⬆ Update ${info.latest}`;
+    if (info?.newer) this.updatePill.textContent = tx`⬆ Update ${info.latest}`;
   }
 
   refreshDownloadStatus() {
@@ -1101,7 +1103,7 @@ class App {
       this.dlBadge.textContent = `${active.length} · ${pct}%`;
       this.dlBadge.className = 'dl-badge busy';
     } else if (dl.newCount) {
-      this.dlBadge.textContent = `${dl.newCount} new`;
+      this.dlBadge.textContent = tx`${dl.newCount} new`;
       this.dlBadge.className = 'dl-badge new';
     }
     this.dlBadge.hidden = !active.length && !dl.newCount;
@@ -1131,7 +1133,7 @@ class App {
     if (d?.stemsReady) return true;
     if (d?.track && !this.stemJobs?.has(d.track.id)) {
       this.separateStems(d.track.id, { deck: d });
-      toast(`Deck ${d.index + 1}: separating stems…`, 2500);
+      toast(tx`Deck ${d.index + 1}: separating stems…`, 2500);
     }
     return false;
   }
@@ -1177,9 +1179,9 @@ class App {
   /** DRUM CAPTURE: store bars of the deck's drum stem into a DRUM SWAP slot (default: the next free one). */
   async drumCapture(i, slot) {
     const d = this.engine.decks[i];
-    if (!d.stemMeta) { toast('Separate stems first (they are needed to capture the drums)'); this.ensureStems(d); return -1; }
+    if (!d.stemMeta) { toast(tx('Separate stems first (they are needed to capture the drums)')); this.ensureStems(d); return -1; }
     const got = this.groove[i].capture(await readStem(d.stemMeta, 'drums'), d.stemMeta.rate, slot);
-    toast(got >= 0 ? `Drums captured to ${'AB'[this.groove[i].bank]}${got + 1} (${this.groove[i].captureBars * 4} beats)` : 'Nothing to capture here');
+    toast(got >= 0 ? tx`Drums captured to ${'AB'[this.groove[i].bank]}${got + 1} (${this.groove[i].captureBars * 4} beats)` : tx('Nothing to capture here'));
     return got;
   }
 
@@ -1209,20 +1211,27 @@ class App {
     const name = driver.plugin.name ?? driver.device;
     const devices = await this.engine.outputDevices().catch(() => []);
     const dev = devices.find((x) => x.label.toLowerCase().includes(audio.device.toLowerCase()));
-    if (!dev) { toast(`${name}: its sound card was not found — choose the output in Preferences > Audio output`, 6000); return; }
+    if (!dev) { toast(tx`${name}: its sound card was not found — choose the output in Preferences > Audio output`, 6000); return; }
     const layout = audio.layout === 'quad' ? 'quad' : 'stereo';
     try {
       await this.engine.setMasterDevice(dev.deviceId);
       this.engine.setOutputLayout(layout);
       this.library.setSetting('masterDevice', dev.deviceId);
       this.library.setSetting('outputLayout', layout);
-      toast(`${layout === 'quad' ? `${name} audio: master on outputs 1/2, headphones on 3/4` : `${name} audio: master output`}${s.masterCopyDevice ? '' : ' · to hear it on the computer too: Preferences > Audio'}`, 6000);
+      toast(`${layout === 'quad' ? tx`${name} audio: master on outputs 1/2, headphones on 3/4` : tx`${name} audio: master output`}${s.masterCopyDevice ? '' : tx(' · to hear it on the computer too: Preferences > Audio')}`, 6000);
     } catch (err) {
-      toast(`${name} audio: ${err.message}`, 6000);
+      toast(tx`${name} audio: ${errText(err)}`, 6000);
     }
   }
 
   // ---- Mix Point Link --------------------------------------------------------------------------
+
+  /** Mix Point Link is an option (Preferences > Decks & Mixer): its button shows only when it is on. */
+  refreshMixPoint() {
+    const s = this.library.settings;
+    this.mplBtn.hidden = !s.showMixPoint;
+    this.mplBtn.classList.toggle('on', !!(s.showMixPoint && s.mixPointLink));
+  }
 
   /** When a playing deck crosses its MIX OUT, start a paused deck from its MIX IN, synced. */
   mixPointTick() {
@@ -1231,7 +1240,7 @@ class App {
       const pos = d.position();
       const prev = this.lastPos[i] ?? pos;
       this.lastPos[i] = pos;
-      if (!this.library.settings.mixPointLink || this.automix.active || !d.playing) return;
+      if (!this.library.settings.showMixPoint || !this.library.settings.mixPointLink || this.automix.active || !d.playing) return;
       const out = d.mixPoint('mixout');
       if (!out || !(prev < out.start && pos >= out.start)) return;
       // Prefer the partner deck (1<->2, 3<->4), then any other ready deck.
@@ -1243,7 +1252,7 @@ class App {
       target.seek(target.mixPoint('mixin').start);
       if (!target.sync) target.toggleSync();
       target.play();
-      toast(`Mix Point Link: Deck ${target.index + 1} started from MIX IN`);
+      toast(tx`Mix Point Link: Deck ${target.index + 1} started from MIX IN`);
     });
   }
 
@@ -1258,24 +1267,24 @@ class App {
     };
     contextMenu(r.left, r.bottom + 2, [
       a.active
-        ? { label: 'Stop Automix', action: () => a.stop() }
-        : { label: 'Start Automix with the current list', action: () => {
+        ? { label: tx('Stop Automix'), action: () => a.stop() }
+        : { label: tx('Start Automix with the current list'), action: () => {
           const rows = this.browser.rows;
-          if (!rows.length) { toast('The current list is empty'); return; }
+          if (!rows.length) { toast(tx('The current list is empty')); return; }
           const from = Math.max(0, this.browser.anchor ?? 0);
           a.start(rows.map((x) => x.track.id), from);
         } },
       '-',
-      { label: 'Crossfade length', submenu: [4, 8, 16, 32].map((b) => ({ label: `${b} beats`, checked: a.settings.mixBeats === b, action: () => save({ mixBeats: b }) })) },
-      { label: 'Repeat', checked: a.settings.repeat, action: () => save({ repeat: !a.settings.repeat }) },
-      { label: 'Shuffle', checked: a.settings.shuffle, action: () => save({ shuffle: !a.settings.shuffle }) },
+      { label: tx('Crossfade length'), submenu: [4, 8, 16, 32].map((b) => ({ label: `${b} beats`, checked: a.settings.mixBeats === b, action: () => save({ mixBeats: b }) })) },
+      { label: tx('Repeat'), checked: a.settings.repeat, action: () => save({ repeat: !a.settings.repeat }) },
+      { label: tx('Shuffle'), checked: a.settings.shuffle, action: () => save({ shuffle: !a.settings.shuffle }) },
     ]);
   }
 
   refreshAutomix() {
     const a = this.automix;
     this.automixBtn.classList.toggle('on', a.active);
-    this.automixStatus.textContent = a.active ? `${a.mixing ? 'mixing → ' : ''}${a.index + 1}/${a.queue.length}` : '';
+    this.automixStatus.textContent = a.active ? `${a.mixing ? tx('mixing → ') : ''}${a.index + 1}/${a.queue.length}` : '';
   }
 
   // ---- beatgrid editing ------------------------------------------------------------------------
@@ -1289,32 +1298,32 @@ class App {
     const g = d.grid;
     const locked = !!d.track?.gridLocked;
     const set = (make) => () => {
-      if (!d.loaded || !d.grid) { toast('Load an analyzed track first'); return; }
-      if (d.track.gridLocked) { toast('Beatgrid is locked'); return; }
+      if (!d.loaded || !d.grid) { toast(tx('Load an analyzed track first')); return; }
+      if (d.track.gridLocked) { toast(tx('Beatgrid is locked')); return; }
       this.setTrackGrid(d, make(d.grid));
     };
     const off = !ready || locked;
     return [
-      { id: 'downbeat', icon: 'grid-downbeat', label: 'Set downbeat (bar start) at play head', disabled: off, run: set((x) => setDownbeatAt(x, d.position())) },
-      { id: 'nudgeLeft', icon: 'grid-nudge-left', label: 'Shift grid ← 10 ms', disabled: off, run: set((x) => shiftGrid(x, -0.01)) },
-      { id: 'nudgeRight', icon: 'grid-nudge-right', label: 'Shift grid → 10 ms', disabled: off, run: set((x) => shiftGrid(x, 0.01)) },
-      { id: 'beatLeft', icon: 'grid-beat-left', label: 'Shift grid ← 1 beat', disabled: off, run: set((x) => shiftGrid(x, -d.period)) },
-      { id: 'beatRight', icon: 'grid-beat-right', label: 'Shift grid → 1 beat', disabled: off, run: set((x) => shiftGrid(x, d.period)) },
+      { id: 'downbeat', icon: 'grid-downbeat', label: tx('Set downbeat (bar start) at play head'), disabled: off, run: set((x) => setDownbeatAt(x, d.position())) },
+      { id: 'nudgeLeft', icon: 'grid-nudge-left', label: tx('Shift grid ← 10 ms'), disabled: off, run: set((x) => shiftGrid(x, -0.01)) },
+      { id: 'nudgeRight', icon: 'grid-nudge-right', label: tx('Shift grid → 10 ms'), disabled: off, run: set((x) => shiftGrid(x, 0.01)) },
+      { id: 'beatLeft', icon: 'grid-beat-left', label: tx('Shift grid ← 1 beat'), disabled: off, run: set((x) => shiftGrid(x, -d.period)) },
+      { id: 'beatRight', icon: 'grid-beat-right', label: tx('Shift grid → 1 beat'), disabled: off, run: set((x) => shiftGrid(x, d.period)) },
       { id: 'double', icon: 'grid-double', label: 'BPM × 2', disabled: off, run: set((x) => doubleGrid(x)) },
       { id: 'half', icon: 'grid-half', label: 'BPM ÷ 2', disabled: off, run: set((x) => halveGrid(x)) },
       { id: 'bpmDown', icon: 'grid-bpm-down', label: 'BPM − 0.01', disabled: off || !!g?.beats, run: set((x) => ({ ...x, bpm: Math.round((x.bpm - 0.01) * 100) / 100 })) },
       { id: 'bpmUp', icon: 'grid-bpm-up', label: 'BPM + 0.01', disabled: off || !!g?.beats, run: set((x) => ({ ...x, bpm: Math.round((x.bpm + 0.01) * 100) / 100 })) },
-      { id: 'tap', icon: 'grid-tap', label: 'Tap tempo…', disabled: off, run: () => { if (d.loaded && d.grid && !d.track.gridLocked) this.tapTempo(d); } },
-      { id: 'constant', icon: 'grid-constant', label: 'Convert to constant grid', disabled: off || !g?.beats,
+      { id: 'tap', icon: 'grid-tap', label: tx('Tap tempo…'), disabled: off, run: () => { if (d.loaded && d.grid && !d.track.gridLocked) this.tapTempo(d); } },
+      { id: 'constant', icon: 'grid-constant', label: tx('Convert to constant grid'), disabled: off || !g?.beats,
         run: set((x) => { this.library.update(d.track.id, { dynamicGrid: false }, { silent: true }); return constantFromBeats(x).grid; }) },
-      { id: 'lock', icon: locked ? 'grid-unlock' : 'grid-lock', label: locked ? 'Unlock beatgrid' : 'Lock beatgrid', disabled: !d.loaded,
-        run: () => { if (!d.track) return; const l = !!d.track.gridLocked; this.library.update(d.track.id, { gridLocked: !l }); toast(l ? 'Beatgrid unlocked' : 'Beatgrid locked'); this.renderGridQuick(); } },
+      { id: 'lock', icon: locked ? 'grid-unlock' : 'grid-lock', label: locked ? tx('Unlock beatgrid') : tx('Lock beatgrid'), disabled: !d.loaded,
+        run: () => { if (!d.track) return; const l = !!d.track.gridLocked; this.library.update(d.track.id, { gridLocked: !l }); toast(l ? tx('Beatgrid unlocked') : tx('Beatgrid locked')); this.renderGridQuick(); } },
     ];
   }
 
   gridMenu(e, deckIndex) {
     const d = this.engine.decks[deckIndex];
-    if (!d.loaded || !d.grid) { toast('Load an analyzed track first'); return; }
+    if (!d.loaded || !d.grid) { toast(tx('Load an analyzed track first')); return; }
     const g = d.grid;
     const locked = !!d.track.gridLocked;
     const reanalyze = async (mode) => {
@@ -1322,7 +1331,7 @@ class App {
       this.modeOverride.set(t.id, mode);
       await window.rb.putAnalysis(t.id, null);
       this.analyzeTracks([t.id]);
-      toast(`Re-analyzing (${mode === 'dynamic' ? 'dynamic' : 'normal'} grid)…`);
+      toast(tx`Re-analyzing (${mode === 'dynamic' ? 'dynamic' : 'normal'} grid)…`);
     };
     const pinned = this.library.settings.gridQuick ?? [];
     const actions = this.gridActions(d);
@@ -1330,16 +1339,16 @@ class App {
     const item = (a) => ({ label: a.label, icon: a.icon, disabled: a.disabled, action: a.run, drag: { type: GRID_BTN_TYPE, value: a.id } });
     const r = e.currentTarget.getBoundingClientRect();
     contextMenu(r.left, r.bottom, [
-      { label: `${toBeatgrid(g).dynamic ? 'Dynamic' : 'Constant'} grid · ${g.bpm.toFixed(2)} BPM${locked ? ' · locked' : ''}`, disabled: true },
+      { label: tx`${toBeatgrid(g).dynamic ? tx('Dynamic') : tx('Constant')} grid · ${g.bpm.toFixed(2)} BPM${locked ? tx(' · locked') : ''}`, disabled: true },
       '-',
       ...actions.filter((a) => a.id !== 'lock').map(item),
       '-',
       item(actions.find((a) => a.id === 'lock')),
-      { label: 'Re-analyze (normal grid)', action: () => reanalyze('normal') },
-      { label: 'Re-analyze (dynamic grid)', action: () => reanalyze('dynamic') },
+      { label: tx('Re-analyze (normal grid)'), action: () => reanalyze('normal') },
+      { label: tx('Re-analyze (dynamic grid)'), action: () => reanalyze('dynamic') },
       '-',
-      { label: 'Buttons on the deck bar', submenu: [
-        { label: 'Drag an item above onto the deck bar, or tick it here', disabled: true },
+      { label: tx('Buttons on the deck bar'), submenu: [
+        { label: tx('Drag an item above onto the deck bar, or tick it here'), disabled: true },
         ...actions.map((a) => ({ label: a.label, icon: a.icon, checked: pinned.includes(a.id),
           action: () => this.setGridQuick(pinned.includes(a.id) ? pinned.filter((x) => x !== a.id) : [...pinned, a.id]) })),
       ] },
@@ -1359,7 +1368,7 @@ class App {
       const byId = new Map(this.gridActions(d).map((a) => [a.id, a]));
       bar.replaceChildren(...ids.filter((id) => byId.has(id)).map((id) => {
         const a = byId.get(id);
-        const b = h('button.dbtn.small.icon-btn.gq-btn', { title: `${a.label} — drag to move, drag off the bar to remove`, draggable: true, dataset: { id }, disabled: a.disabled && id !== 'lock' && !d.loaded },
+        const b = h('button.dbtn.small.icon-btn.gq-btn', { title: tx`${a.label} — drag to move, drag off the bar to remove`, draggable: true, dataset: { id }, disabled: a.disabled && id !== 'lock' && !d.loaded },
           icon(a.icon));
         b.onclick = () => this.gridActions(d).find((x) => x.id === id)?.run();
         b.addEventListener('dragstart', (e) => { e.dataTransfer.setData(GRID_BTN_TYPE, id); e.dataTransfer.effectAllowed = 'move'; document.body.classList.add('gq-dragging'); });
@@ -1367,7 +1376,7 @@ class App {
           document.body.classList.remove('gq-dragging');
           if (e.dataTransfer.dropEffect === 'none') this.setGridQuick((this.library.settings.gridQuick ?? []).filter((x) => x !== id)); // dropped off the bar
         });
-        b.addEventListener('contextmenu', (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, [{ label: 'Remove from the deck bar', action: () => this.setGridQuick(ids.filter((x) => x !== id)) }]); });
+        b.addEventListener('contextmenu', (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, [{ label: tx('Remove from the deck bar'), action: () => this.setGridQuick(ids.filter((x) => x !== id)) }]); });
         return b;
       }));
       bar.classList.toggle('empty', !bar.children.length);
@@ -1376,7 +1385,7 @@ class App {
 
   /** Drop zone of the pinned beatgrid buttons on a deck bar: a dropped action goes where it falls. */
   gridQuickBar() {
-    const bar = h('div.grid-quick', { title: 'Beatgrid buttons: drag them here from the beatgrid menu' });
+    const bar = h('div.grid-quick', { title: tx('Beatgrid buttons: drag them here from the beatgrid menu') });
     const at = (e) => [...bar.children].findIndex((c) => e.clientX < c.getBoundingClientRect().left + c.offsetWidth / 2);
     bar.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes(GRID_BTN_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; bar.classList.add('drop'); } });
     bar.addEventListener('dragleave', () => bar.classList.remove('drop'));
@@ -1412,14 +1421,14 @@ class App {
       if (taps.length && now - taps.at(-1) > 2000) taps.length = 0; // pause = restart
       taps.push(now);
       const bpm = tapBpm(taps);
-      readout.textContent = bpm ? `${bpm.toFixed(2)} BPM (${taps.length} taps)` : 'keep tapping…';
+      readout.textContent = bpm ? tx`${bpm.toFixed(2)} BPM (${taps.length} taps)` : tx('keep tapping…');
     };
     tapBtn.addEventListener('pointerdown', tap);
-    const body = h('div.tap', {}, h('p.dim', {}, 'Tap on the beat (button or T key). The beat nearest the play head stays where it is.'), tapBtn, readout);
+    const body = h('div.tap', {}, h('p.dim', {}, tx('Tap on the beat (button or T key). The beat nearest the play head stays where it is.')), tapBtn, readout);
     body.tabIndex = 0;
     body.addEventListener('keydown', (e) => { if (e.code === 'KeyT') tap(); });
     setTimeout(() => body.focus());
-    const ok = await modal('Tap tempo', body, [{ label: 'Apply', primary: true, value: true }, { label: 'Cancel', value: null }]);
+    const ok = await modal(tx('Tap tempo'), body, [{ label: tx('Apply'), primary: true, value: true }, { label: tx('Cancel'), value: null }]);
     const bpm = tapBpm(taps);
     if (!ok || !bpm) return;
     const anchor = deck.bg ? deck.bg.snap(deck.position()) : deck.position();
@@ -1453,7 +1462,7 @@ class App {
     canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const phrases = deck.analysis?.phrases?.phrases;
-      if (!deck.loaded || !phrases?.length) { toast('No phrases on this track yet (analyse it first)'); return; }
+      if (!deck.loaded || !phrases?.length) { toast(tx('No phrases on this track yet (analyse it first)')); return; }
       const r = canvas.getBoundingClientRect();
       const t = deck.position() + ((e.clientX - r.left) / r.width - 0.5) * this.zoom * (deck.rate || 1);
       const i = phraseAt(phrases, t);
@@ -1461,22 +1470,22 @@ class App {
       const p = phrases[i];
       const save = (next) => this.setPhrases(deck, next);
       contextMenu(e.clientX, e.clientY, [
-        { label: `${p.label}${p.num > 1 ? ` ${p.num}` : ''} · ${p.bars} bars`, disabled: true },
-        { label: 'Change to', submenu: PHRASE_LABELS.map((l) => ({ label: l, checked: l === p.label, action: () => save(relabelPhrase(phrases, i, l)) })) },
-        { label: 'Cut the phrase here (at the nearest bar)', disabled: !(p.bars > 1), action: () => save(splitPhrase(phrases, i, t)) },
-        { label: 'Join with the next phrase', disabled: i >= phrases.length - 1, action: () => save(mergePhrase(phrases, i)) },
+        { label: tx`${p.label}${p.num > 1 ? ` ${p.num}` : ''} · ${p.bars} bars`, disabled: true },
+        { label: tx('Change to'), submenu: PHRASE_LABELS.map((l) => ({ label: l, checked: l === p.label, action: () => save(relabelPhrase(phrases, i, l)) })) },
+        { label: tx('Cut the phrase here (at the nearest bar)'), disabled: !(p.bars > 1), action: () => save(splitPhrase(phrases, i, t)) },
+        { label: tx('Join with the next phrase'), disabled: i >= phrases.length - 1, action: () => save(mergePhrase(phrases, i)) },
         '-',
         // Move a boundary to the beat under the mouse, or slide the whole structure.
-        { label: `Start ${p.label}${p.num > 1 ? ` ${p.num}` : ''} here (at the beat)`, disabled: i === 0,
-          action: () => { const next = moveBoundary(phrases, i, deck.bg ? deck.bg.snap(t) : t); if (next === phrases) toast('Too close to another phrase'); else save(next); } },
-        { label: 'Shift all phrases', submenu: [
-          { label: '← 1 bar', action: () => save(shiftPhrases(phrases, -4 * deck.period)) },
-          { label: '← 1 beat', action: () => save(shiftPhrases(phrases, -deck.period)) },
-          { label: '→ 1 beat', action: () => save(shiftPhrases(phrases, deck.period)) },
-          { label: '→ 1 bar', action: () => save(shiftPhrases(phrases, 4 * deck.period)) },
+        { label: tx`Start ${p.label}${p.num > 1 ? ` ${p.num}` : ''} here (at the beat)`, disabled: i === 0,
+          action: () => { const next = moveBoundary(phrases, i, deck.bg ? deck.bg.snap(t) : t); if (next === phrases) toast(tx('Too close to another phrase')); else save(next); } },
+        { label: tx('Shift all phrases'), submenu: [
+          { label: tx('← 1 bar'), action: () => save(shiftPhrases(phrases, -4 * deck.period)) },
+          { label: tx('← 1 beat'), action: () => save(shiftPhrases(phrases, -deck.period)) },
+          { label: tx('→ 1 beat'), action: () => save(shiftPhrases(phrases, deck.period)) },
+          { label: tx('→ 1 bar'), action: () => save(shiftPhrases(phrases, 4 * deck.period)) },
         ] },
         '-',
-        { label: 'Back to the analysed phrases', disabled: !deck.analysis.phrases.edited, action: () => this.resetPhrases(deck) },
+        { label: tx('Back to the analysed phrases'), disabled: !deck.analysis.phrases.edited, action: () => this.resetPhrases(deck) },
       ]);
     });
   }
@@ -1525,7 +1534,7 @@ class App {
       if (!node) node = this.library.createNode('playlist', 'Recordings');
       this.library.addToPlaylist(node.id, [id]);
     }
-    toast(`Recording saved: ${r.path}`, 6000);
+    toast(tx`Recording saved: ${r.path}`, 6000);
     return r;
   }
 
@@ -1547,7 +1556,7 @@ class App {
       const now = new Date();
       this.clock.textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const names = [...(this.midi?.controllers?.values() ?? [])].map((c) => c.device);
-      this.midiStatus.lastChild.textContent = names.length ? names.join(', ') : 'No controller';
+      this.midiStatus.lastChild.textContent = names.length ? names.join(', ') : tx('No controller');
       this.midiStatus.classList.toggle('on', names.length > 0);
     }
     lap('ticks');
@@ -1963,11 +1972,16 @@ async function smoke(app) {
       d3.seek(d3.position()); d3.setMixPoint('mixout');
       const out = d3.mixPoint('mixout').start;
       d3.seek(Math.max(0, out - 0.6));
+      // an option, off by default: no button in the top bar, no entry in the deck menu
+      const hiddenFirst = app.mplBtn.hidden && getComputedStyle(app.mplBtn).display === 'none';
+      app.applySetting('showMixPoint', true);
+      const shownThen = !app.mplBtn.hidden && getComputedStyle(app.mplBtn).display !== 'none';
       lib.setSetting('mixPointLink', true);
       await new Promise((r) => setTimeout(r, 1500));
-      step('mix point link', d4.playing && d4.position() > 4 && d4.position() < 6,
-        `deck4 playing=${d4.playing} pos=${d4.position().toFixed(2)} in=${JSON.stringify(d4.mixPoint('mixin'))} | deck3 playing=${d3.playing} pos=${d3.position().toFixed(2)} out=${out.toFixed(2)} link=${lib.settings.mixPointLink} automix=${app.automix.active}`);
+      step('mix point link', hiddenFirst && shownThen && d4.playing && d4.position() > 4 && d4.position() < 6,
+        `hidden first ${hiddenFirst}, then shown ${shownThen}; deck4 playing=${d4.playing} pos=${d4.position().toFixed(2)} in=${JSON.stringify(d4.mixPoint('mixin'))} | deck3 playing=${d3.playing} pos=${d3.position().toFixed(2)} out=${out.toFixed(2)} link=${lib.settings.mixPointLink} automix=${app.automix.active}`);
       lib.setSetting('mixPointLink', false);
+      app.applySetting('showMixPoint', false);
       d3.pause(); d4.pause();
     }
     // Play head centred: every waveform canvas fills its box exactly (the marker is drawn at width / 2).

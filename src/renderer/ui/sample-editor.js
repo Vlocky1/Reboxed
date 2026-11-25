@@ -1,5 +1,6 @@
 // Sampler slot editor: name, trim (drag the start / end handles on the waveform, preview), mode,
 // tempo sync, BPM and gain. Trimming writes a new WAV next to the other samples.
+import { tx } from '../../shared/i18n.js';
 import { h, modal } from './dom.js';
 
 /**
@@ -17,7 +18,7 @@ export async function editSample(app, i) {
   const canvas = h('canvas.se-wave');
   const times = h('div.se-times');
   const name = h('input.text', { value: s.name, spellcheck: false });
-  const mode = h('select', {}, h('option', { value: 'oneshot', selected: s.mode === 'oneshot' }, 'One shot'), h('option', { value: 'loop', selected: s.mode === 'loop' }, 'Loop'));
+  const mode = h('select', {}, h('option', { value: 'oneshot', selected: s.mode === 'oneshot' }, 'One shot'), h('option', { value: 'loop', selected: s.mode === 'loop' }, tx('Loop')));
   const sync = h('input', { type: 'checkbox', checked: !!s.sync });
   const bpm = h('input.text', { type: 'number', step: '0.01', min: 0, value: s.bpm ? s.bpm.toFixed(2) : '' });
   const gainVal = h('span.dim');
@@ -47,7 +48,7 @@ export async function editSample(app, i) {
     }
     g.fillStyle = '#fff';
     for (const x of [xa, xb]) { g.fillRect(x - dpr, 0, 2 * dpr, hh); g.fillRect(x - 5 * dpr, 0, 10 * dpr, 6 * dpr); }
-    times.textContent = `Start ${fmt(start)} · End ${fmt(end)} · Length ${fmt(end - start)}`;
+    times.textContent = tx`Start ${fmt(start)} · End ${fmt(end)} · Length ${fmt(end - start)}`;
   };
   let dragging = null;
   canvas.addEventListener('pointerdown', (e) => {
@@ -67,7 +68,7 @@ export async function editSample(app, i) {
 
   // Preview of the trimmed part (stops when the dialog closes).
   let preview = null;
-  const stopPreview = () => { try { preview?.stop(); } catch { /* ended */ } preview = null; playBtn.textContent = '▶ Preview'; };
+  const stopPreview = () => { try { preview?.stop(); } catch { /* ended */ } preview = null; playBtn.textContent = tx('▶ Preview'); };
   const playBtn = h('button.dbtn.small', { type: 'button', onclick: () => {
     if (preview) { stopPreview(); return; }
     const ctx = app.engine.ctx; app.engine.resume();
@@ -77,20 +78,20 @@ export async function editSample(app, i) {
     preview.loop = mode.value === 'loop'; preview.loopStart = start; preview.loopEnd = end;
     preview.start(0, start, preview.loop ? undefined : end - start);
     preview.onended = () => stopPreview();
-    playBtn.textContent = '■ Stop';
-  } }, '▶ Preview');
+    playBtn.textContent = tx('■ Stop');
+  } }, tx('▶ Preview'));
 
   const body = h('div.sample-editor', {},
     h('div.form-grid', {},
-      h('label', {}, 'Name'), name,
-      h('label', {}, 'Trim'), h('div', {}, canvas, h('div.frow', {}, playBtn, times, h('button.dbtn.small', { type: 'button', onclick: () => { start = 0; end = dur; draw(); } }, 'Reset'))),
-      h('label', {}, 'Play mode'), mode,
-      h('label', {}, 'Sync to master tempo'), h('div', {}, sync),
-      h('label', {}, 'Original BPM'), bpm,
+      h('label', {}, tx('Name')), name,
+      h('label', {}, tx('Trim')), h('div', {}, canvas, h('div.frow', {}, playBtn, times, h('button.dbtn.small', { type: 'button', onclick: () => { start = 0; end = dur; draw(); } }, tx('Reset')))),
+      h('label', {}, tx('Play mode')), mode,
+      h('label', {}, tx('Sync to master tempo')), h('div', {}, sync),
+      h('label', {}, tx('Original BPM')), bpm,
       h('label', {}, 'Gain'), h('div.frow', {}, gain, gainVal)));
   requestAnimationFrame(draw);
   setTimeout(draw, 60);
-  const ok = await modal(`Edit sample ${i + 1}`, body, [{ label: 'Cancel', value: false }, { label: 'Apply', primary: true, value: true }]);
+  const ok = await modal(tx`Edit sample ${i + 1}`, body, [{ label: tx('Cancel'), value: false }, { label: tx('Apply'), primary: true, value: true }]);
   stopPreview();
   if (!ok) return false;
   const patch = { name: name.value.trim() || s.name, mode: mode.value, sync: sync.checked, bpm: Number(bpm.value) || 0, gain: Number(gain.value) };

@@ -2,41 +2,42 @@
 // re-evaluated against the collection whenever it changes (Rekordbox smartlist semantics:
 // text contains / does not contain / starts with / ends with, numeric and date ranges,
 // "in the last N days").
+import { tx } from './i18n.js';
 import { normalizeForSearch } from '../search/normalize.js';
 import { compatibleKeys } from './keys.js';
 
 export const SMART_FIELDS = {
-  title: { label: 'Track Title', type: 'text' },
-  artist: { label: 'Artist', type: 'text' },
+  title: { label: tx('Track Title'), type: 'text' },
+  artist: { label: tx('Artist'), type: 'text' },
   album: { label: 'Album', type: 'text' },
-  albumArtist: { label: 'Album Artist', type: 'text' },
+  albumArtist: { label: tx('Album Artist'), type: 'text' },
   genre: { label: 'Genre', type: 'text' },
-  comments: { label: 'Comments', type: 'text' },
-  composer: { label: 'Composer', type: 'text' },
+  comments: { label: tx('Comments'), type: 'text' },
+  composer: { label: tx('Composer'), type: 'text' },
   label: { label: 'Label', type: 'text' },
-  mixName: { label: 'Mix Name', type: 'text' },
-  originalArtist: { label: 'Original Artist', type: 'text' },
-  remixer: { label: 'Remixer', type: 'text' },
-  grouping: { label: 'Grouping', type: 'text' },
-  fileName: { label: 'File Name', type: 'text', get: (t) => String(t.path ?? '').split(/[\\/]/).pop() },
-  key: { label: 'Key', type: 'key' },
+  mixName: { label: tx('Mix Name'), type: 'text' },
+  originalArtist: { label: tx('Original Artist'), type: 'text' },
+  remixer: { label: tx('Remixer'), type: 'text' },
+  grouping: { label: tx('Grouping'), type: 'text' },
+  fileName: { label: tx('File Name'), type: 'text', get: (t) => String(t.path ?? '').split(/[\\/]/).pop() },
+  key: { label: tx('Key'), type: 'key' },
   myTags: { label: 'My Tag', type: 'tags' },
-  color: { label: 'Color', type: 'enum' },
+  color: { label: tx('Color'), type: 'enum' },
   bpm: { label: 'BPM', type: 'number' },
-  year: { label: 'Year', type: 'number' },
-  rating: { label: 'Rating', type: 'number' },
-  playCount: { label: 'DJ Play Count', type: 'number' },
-  duration: { label: 'Time (sec)', type: 'number' },
-  dateAdded: { label: 'Date Added', type: 'date' },
+  year: { label: tx('Year'), type: 'number' },
+  rating: { label: tx('Rating'), type: 'number' },
+  playCount: { label: tx('DJ Play Count'), type: 'number' },
+  duration: { label: tx('Time (sec)'), type: 'number' },
+  dateAdded: { label: tx('Date Added'), type: 'date' },
 };
 
 export const SMART_OPS = {
-  text: [['contains', 'contains'], ['notContains', 'does not contain'], ['is', 'is'], ['isNot', 'is not'], ['startsWith', 'starts with'], ['endsWith', 'ends with']],
-  key: [['is', 'is'], ['isNot', 'is not'], ['compatible', 'is compatible with']],
-  tags: [['has', 'has'], ['hasNot', 'does not have']],
-  enum: [['is', 'is'], ['isNot', 'is not']],
-  number: [['range', 'is in the range'], ['is', 'is'], ['gte', 'is at least'], ['lte', 'is at most']],
-  date: [['inLast', 'is in the last (days)'], ['notInLast', 'is not in the last (days)'], ['range', 'is in the range']],
+  text: [['contains', tx('contains')], ['notContains', tx('does not contain')], ['is', tx('is')], ['isNot', tx('is not')], ['startsWith', tx('starts with')], ['endsWith', tx('ends with')]],
+  key: [['is', tx('is')], ['isNot', tx('is not')], ['compatible', tx('is compatible with')]],
+  tags: [['has', 'has'], ['hasNot', tx('does not have')]],
+  enum: [['is', tx('is')], ['isNot', tx('is not')]],
+  number: [['range', tx('is in the range')], ['is', tx('is')], ['gte', tx('is at least')], ['lte', tx('is at most')]],
+  date: [['inLast', tx('is in the last (days)')], ['notInLast', tx('is not in the last (days)')], ['range', tx('is in the range')]],
 };
 
 /** @typedef {{field: string, op: string, value: any, value2?: any}} Condition */
