@@ -2,6 +2,7 @@
 // channels for new releases, and download the audio with yt-dlp. Finished files join the
 // collection, get analysed and land in a "Downloads" playlist. Quality and folder live in
 // Preferences > Downloads.
+import { errText, locale, tx } from '../../shared/i18n.js';
 import { h, toast, fmtTime } from './dom.js';
 import { icon } from './icons.js';
 import { DEFAULT_SETTINGS } from '../library.js';
@@ -21,24 +22,24 @@ const LOGOS = {
   deezer: '<svg viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="6" fill="#a238ff"/><path d="M5 17.5h2.6M5 15h2.6M9.3 17.5h2.6M9.3 15h2.6M9.3 12.5h2.6M13.6 17.5h2.6M13.6 15h2.6M13.6 12.5h2.6M13.6 10h2.6M17.9 17.5h1.4M17.9 15h1.4M17.9 12.5h1.4M17.9 10h1.4M17.9 7.5h1.4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>',
 };
 const SOURCE_HINT = {
-  youtube: 'YouTube: search, videos, playlists, channels',
-  soundcloud: 'SoundCloud: search, tracks, sets, artist pages',
-  spotify: 'Spotify: tracks, albums and playlists (links; search with your Spotify keys) — the audio comes from YouTube',
-  deezer: 'Deezer: search, tracks, albums and playlists (no account needed) — the audio comes from YouTube',
+  youtube: tx('YouTube: search, videos, playlists, channels'),
+  soundcloud: tx('SoundCloud: search, tracks, sets, artist pages'),
+  spotify: tx('Spotify: tracks, albums and playlists (links; search with your Spotify keys) — the audio comes from YouTube'),
+  deezer: tx('Deezer: search, tracks, albums and playlists (no account needed) — the audio comes from YouTube'),
 };
 const PLACEHOLDER = {
-  youtube: 'Search YouTube, or paste a link (video, playlist, channel)',
-  soundcloud: 'Search SoundCloud, or paste a link (track, set, artist)',
-  spotify: 'Paste a Spotify link (track, album, playlist), or search with your Spotify keys',
-  deezer: 'Search Deezer, or paste a Deezer link (track, album, playlist)',
+  youtube: tx('Search YouTube, or paste a link (video, playlist, channel)'),
+  soundcloud: tx('Search SoundCloud, or paste a link (track, set, artist)'),
+  spotify: tx('Paste a Spotify link (track, album, playlist), or search with your Spotify keys'),
+  deezer: tx('Search Deezer, or paste a Deezer link (track, album, playlist)'),
 };
 const INTRO = {
-  youtube: 'Search YouTube, or paste any YouTube link: a playlist lists its tracks, with "Download all". A link from Spotify, Deezer or SoundCloud also works here.',
-  soundcloud: 'Search SoundCloud, or paste a track, a set or an artist page.',
-  spotify: 'Spotify gives the tracks (no account needed for links; with your Spotify keys in Preferences > Accounts: search, and playlists of any length). Each one is found on YouTube (same title, artist and length; no live, cover or sped-up versions), then downloaded with Spotify\'s title and artist.',
-  deezer: 'Deezer gives the tracks (search, track, album or playlist link; no account needed). Each one is found on YouTube (same title, artist and length), then downloaded with Deezer\'s title and artist.',
+  youtube: tx('Search YouTube, or paste any YouTube link: a playlist lists its tracks, with "Download all". A link from Spotify, Deezer or SoundCloud also works here.'),
+  soundcloud: tx('Search SoundCloud, or paste a track, a set or an artist page.'),
+  spotify: tx('Spotify gives the tracks (no account needed for links; with your Spotify keys in Preferences > Accounts: search, and playlists of any length). Each one is found on YouTube (same title, artist and length; no live, cover or sped-up versions), then downloaded with Spotify\'s title and artist.'),
+  deezer: tx('Deezer gives the tracks (search, track, album or playlist link; no account needed). Each one is found on YouTube (same title, artist and length), then downloaded with Deezer\'s title and artist.'),
 };
-const cleanErr = (err) => String(err?.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+const cleanErr = (err) => errText(err);
 /** A square cover: the image, or an empty square when there is none or it does not load (rows stay aligned). */
 const coverThumb = (src) => (src
   ? h('img.dlc-thumb.sq', { src, loading: 'lazy', alt: '', onerror: (e) => e.target.replaceWith(h('div.dlc-thumb.sq.none')) })
@@ -65,9 +66,9 @@ const ago = (ts) => {
   const d = (Date.now() / 1000 - ts) / 86400;
   if (d < 1) return 'today';
   if (d < 2) return 'yesterday';
-  if (d < 31) return `${Math.floor(d)} days ago`;
-  if (d < 365) return `${Math.floor(d / 30)} months ago`;
-  return `${Math.floor(d / 365)} years ago`;
+  if (d < 31) return tx`${Math.floor(d)} days ago`;
+  if (d < 365) return tx`${Math.floor(d / 30)} months ago`;
+  return tx`${Math.floor(d / 365)} years ago`;
 };
 
 export class DownloadCenter {
@@ -106,24 +107,24 @@ export class DownloadCenter {
     const busy = (text) => { el.classList.add('busy'); status.textContent = text; };
     const run = async (task) => {
       const off = window.rb.dl.onToolsProgress((name, rec, total, phase) => {
-        busy(phase === 'extract' ? `${name}: unpacking…` : phase === 'done' ? `${name} ✓` : total ? `${name}: ${Math.round((rec / total) * 100)}% of ${Math.round(total / 1048576)} MB` : `${name}: starting…`);
+        busy(phase === 'extract' ? tx`${name}: unpacking…` : phase === 'done' ? `${name} ✓` : total ? tx`${name}: ${Math.round((rec / total) * 100)}% of ${Math.round(total / 1048576)} MB` : tx`${name}: starting…`);
       });
-      try { await task(); onChange?.(); } catch (err) { toast(`Tools: ${err.message}`, 6000); } finally { off(); el.classList.remove('busy'); render(); }
+      try { await task(); onChange?.(); } catch (err) { toast(tx`Tools: ${errText(err)}`, 6000); } finally { off(); el.classList.remove('busy'); render(); }
     };
     const render = async () => {
       const t = await this.tools();
       const missing = [!t.ytdlp && 'yt-dlp', !t.ffmpeg && 'ffmpeg', !t.deno && 'deno'].filter(Boolean);
       const mb = missing.reduce((a, n) => a + TOOL_MB[n], 0);
       status.textContent = t.ytdlp
-        ? `yt-dlp ${t.version ?? ''} · ffmpeg ${t.ffmpeg ? '✓' : '✗ (needed for MP3/FLAC/WAV and covers)'} · deno ${t.deno ? '✓' : '✗ (YouTube may refuse some videos)'}`
-        : `Missing: ${missing.join(', ')}`;
+        ? `yt-dlp ${t.version ?? ''} · ffmpeg ${t.ffmpeg ? '✓' : tx('✗ (needed for MP3/FLAC/WAV and covers)')} · deno ${t.deno ? '✓' : tx('✗ (YouTube may refuse some videos)')}`
+        : tx`Missing: ${missing.join(', ')}`;
       status.className = t.ytdlp ? 'dim' : 'rbi-error';
       el.replaceChildren(status,
-        missing.length ? h('button.dbtn.small.primary', { title: 'Downloads them from their official releases into Reboxed\'s tools folder',
-          onclick: () => run(() => window.rb.dl.installTools(missing)) }, `Install ${missing.join(' + ')} (${mb} MB)`) : '',
-        t.ytdlp ? h('button.dbtn.small', { title: 'YouTube changes often: a newer yt-dlp fixes most download errors',
-          onclick: () => run(async () => { busy('yt-dlp: updating…'); const r = await window.rb.dl.updateYtdlp(); toast(r.installed ? `yt-dlp ${r.tools.version ?? ''} installed in Reboxed's tools folder` : (r.output || 'yt-dlp is up to date'), 5000); }) }, 'Update yt-dlp') : '',
-        h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { this.save({ toolsDir: d }); render(); onChange?.(); } } }, 'Choose folder…'));
+        missing.length ? h('button.dbtn.small.primary', { title: tx('Downloads them from their official releases into Reboxed\'s tools folder'),
+          onclick: () => run(() => window.rb.dl.installTools(missing)) }, tx`Install ${missing.join(' + ')} (${mb} MB)`) : '',
+        t.ytdlp ? h('button.dbtn.small', { title: tx('YouTube changes often: a newer yt-dlp fixes most download errors'),
+          onclick: () => run(async () => { busy(tx('yt-dlp: updating…')); const r = await window.rb.dl.updateYtdlp(); toast(r.installed ? tx`yt-dlp ${r.tools.version ?? ''} installed in Reboxed's tools folder` : (r.output || tx('yt-dlp is up to date')), 5000); }) }, tx('Update yt-dlp')) : '',
+        h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { this.save({ toolsDir: d }); render(); onChange?.(); } } }, tx('Choose folder…')));
     };
     render();
     return el;
@@ -156,13 +157,13 @@ export class DownloadCenter {
   /** "Already in your collection: Artist – Title" (or "Maybe…" with both lengths). */
   ownedLabel(own, duration) {
     const t = own.track; const name = `${t.artist ? `${t.artist} – ` : ''}${t.title}`;
-    return own.sure ? `Already in your collection: ${name}`
-      : `Maybe already in your collection: ${name} (same names, ${t.duration ? fmtTime(t.duration) : '?'} in the collection${duration ? ` vs ${fmtTime(duration)} here` : ''}: another edit? Checked by ear once downloaded)`;
+    return own.sure ? tx`Already in your collection: ${name}`
+      : tx`Maybe already in your collection: ${name} (same names, ${t.duration ? fmtTime(t.duration) : '?'} in the collection${duration ? tx` vs ${fmtTime(duration)} here` : ''}: another edit? Checked by ear once downloaded)`;
   }
 
   /** The badge of a result already (or maybe) in the collection. */
   ownedBadge(own, duration) {
-    return h(own.sure ? 'span.dlc-owned' : 'span.dlc-owned.maybe', { title: this.ownedLabel(own, duration) }, own.sure ? '✓ In collection' : '≈ Maybe in collection');
+    return h(own.sure ? 'span.dlc-owned' : 'span.dlc-owned.maybe', { title: this.ownedLabel(own, duration) }, own.sure ? tx('✓ In collection') : tx('≈ Maybe in collection'));
   }
 
   /** A track into the playlist named after a list (created on first use). */
@@ -194,7 +195,7 @@ export class DownloadCenter {
     const job = this.jobs.get(key);
     if (!job) return;
     Object.assign(job, p);
-    if (p.state === 'error') toast(`Download failed: ${job.item.title} — ${p.error}`, 7000);
+    if (p.state === 'error') toast(tx`Download failed: ${job.item.title} — ${p.error}`, 7000);
     this.changed();
   }
 
@@ -202,17 +203,17 @@ export class DownloadCenter {
   notAdded(item, reason) {
     const job = this.jobs.get(item.id);
     if (job) Object.assign(job, { state: 'error', error: reason });
-    toast(`"${item.title}" was downloaded but not added to the library: ${reason}`, 9000);
+    toast(tx`"${item.title}" was downloaded but not added to the library: ${reason}`, 9000);
     this.changed();
   }
 
   /** Add the file to the collection (and the Downloads playlist), remember it was downloaded. */
   async finished(item, file) {
-    if (!file) { this.notAdded(item, 'no file came back from the download'); return; }
+    if (!file) { this.notAdded(item, tx('no file came back from the download')); return; }
     await this.app.importPaths([file]);
-    if (!this.app.library.idForPath(file)) { this.notAdded(item, `cannot read ${file}`); return; }
+    if (!this.app.library.idForPath(file)) { this.notAdded(item, tx`cannot read ${file}`); return; }
     this.afterImport(item, file);
-    toast(`Downloaded: ${item.title}`);
+    toast(tx`Downloaded: ${item.title}`);
     this.changed();
   }
 
@@ -236,7 +237,7 @@ export class DownloadCenter {
     const fixed = new Set(found.map((f) => f.id));
     for (const l of lost) if (!fixed.has(l.id) && l.path.includes('�')) delete done[l.id];
     this.save({ done: { ...done, ...Object.fromEntries(found.map((f) => [f.id, f.path])) } });
-    if (found.length) toast(`${found.length} downloaded track(s) that never reached the library were added`, 7000);
+    if (found.length) toast(tx`${found.length} downloaded track(s) that never reached the library were added`, 7000);
     this.changed();
     return found.length;
   }
@@ -310,7 +311,7 @@ export class DownloadCenter {
     const ids = [...new Set(fresh.flatMap((p) => [p.a.id, p.b.id]))].filter((x) => !pl.trackIds.includes(x));
     if (ids.length) lib.addToPlaylist(pl.id, ids);
     const p = fresh[0]; const twin = p.a.id === id ? p.b : p.a;
-    toast(`"${t.title}" sounds like "${twin.artist ? `${twin.artist} – ` : ''}${twin.title}" already in your collection (${p.verdict.label}). Both are in the playlist "${SUSPECTS_NAME}": right-click it > Find duplicates… to keep one.`, 12000);
+    toast(tx`"${t.title}" sounds like "${twin.artist ? `${twin.artist} – ` : ''}${twin.title}" already in your collection (${p.verdict.label}). Both are in the playlist "${SUSPECTS_NAME}": right-click it > Find duplicates… to keep one.`, 12000);
   }
 
   /** Followed channels / playlists: latest uploads, newest first, with the "new" ones counted. */
@@ -333,13 +334,13 @@ export class DownloadCenter {
     }
     this.listNews.forEach((x) => { x.list.tracks = x.tracks; });
     const listCount = this.listNews.reduce((n, x) => n + x.tracks.length, 0);
-    if (listCount > before) toast(`${listCount} new track${listCount > 1 ? 's' : ''} in your followed playlists (${this.listNews.map((x) => x.list.name).join(', ')}): see New releases`, 8000);
+    if (listCount > before) toast(tx`${listCount} new track${listCount > 1 ? 's' : ''} in your followed playlists (${this.listNews.map((x) => x.list.name).join(', ')}): see New releases`, 8000);
     if (!subs.length) { this.feedItems = []; this.newCount = listCount; this.checking = false; this.changed(true); return []; }
     const results = [];
     for (let i = 0; i < subs.length; i += 3) {
       const part = await Promise.all(subs.slice(i, i + 3).map((s) => window.rb.dl.feed(s.url, 15)
         .then((f) => f.items.map((it) => ({ ...it, source: s.name || f.name })))
-        .catch((err) => { toast(`${s.name}: ${err.message}`, 6000); return []; })));
+        .catch((err) => { toast(`${s.name}: ${errText(err)}`, 6000); return []; })));
       results.push(...part.flat());
     }
     const byId = new Map(results.map((r) => [r.id, r]));
@@ -372,7 +373,7 @@ export class DownloadCenter {
   followList(sp) {
     if (!sp?.url || this.isFollowedList(sp.url)) return;
     this.save({ lists: [...(this.cfg.lists ?? []), followEntry({ platform: sp.platform ?? 'spotify', url: sp.url, name: sp.name, src: sp.src, cover: sp.tracks?.[0]?.cover ?? '' }, sp.tracks)] });
-    toast(`★ ${sp.name}: tracks added to it from now on show in New releases`, 5000);
+    toast(tx`★ ${sp.name}: tracks added to it from now on show in New releases`, 5000);
     this.changed(true);
   }
 
@@ -388,16 +389,16 @@ export class DownloadCenter {
   followButton(sp) {
     const on = this.isFollowedList(sp.url);
     return h(on ? 'button.dbtn.dlc-star.on' : 'button.dbtn.dlc-star', {
-      title: on ? 'Followed: tracks added to this playlist show in New releases. Click to stop.' : 'Follow this playlist: tracks added to it later show in New releases (like followed channels)',
+      title: on ? tx('Followed: tracks added to this playlist show in New releases. Click to stop.') : tx('Follow this playlist: tracks added to it later show in New releases (like followed channels)'),
       onclick: () => { if (on) this.unfollowList(sp.url); else this.followList(sp); this.renderTab(false); },
-    }, on ? '★ Following' : '☆ Follow');
+    }, on ? tx('★ Following') : tx('☆ Follow'));
   }
 
   follow(url, name) {
     const subs = this.cfg.subs;
-    if (subs.some((s) => s.url === url)) { toast(`Already following ${name || url}`); return; }
+    if (subs.some((s) => s.url === url)) { toast(tx`Already following ${name || url}`); return; }
     this.save({ subs: [...subs, { url, name: name || url }] });
-    toast(`Following ${name || url} — new uploads show in New releases`);
+    toast(tx`Following ${name || url} — new uploads show in New releases`);
     this.changed(true);
   }
 
@@ -420,23 +421,23 @@ export class DownloadCenter {
     if (this.overlay) { this.showTab(view); return; }
     this.sourceBtns = new Map(Object.entries(PLATFORMS).map(([id, label]) => [id, h('button.dlc-source', { dataset: { platform: id }, title: SOURCE_HINT[id], onclick: () => this.setSource(id) },
       h('span.dlc-logo', { innerHTML: LOGOS[id] }), h('span', {}, label))]));
-    this.tabBtns = new Map([['feeds', 'New releases'], ['queue', 'Queue']].map(([id, label]) => [id, h('button.seg-btn', { onclick: () => this.showTab(id) }, label)]));
+    this.tabBtns = new Map([['feeds', tx('New releases')], ['queue', tx('Queue')]].map(([id, label]) => [id, h('button.seg-btn', { onclick: () => this.showTab(id) }, label)]));
     this.body = h('div.dlc-body');
     this.toolsLine = h('div.dlc-tools');
     const folderEl = h('span.dlc-folder');
     const summary = async () => { const f = await this.folder(); folderEl.textContent = `${FORMAT_NAMES[this.cfg.format] ?? this.cfg.format} → ${f}`; folderEl.title = f; };
     summary();
     const footer = h('div.dlc-footer', {},
-      h('label', {}, 'Saving as '), folderEl,
-      h('button.dbtn.small', { onclick: async () => { await this.app.openSettings('downloads'); summary(); } }, 'Quality & folder…'));
+      h('label', {}, tx('Saving as ')), folderEl,
+      h('button.dbtn.small', { onclick: async () => { await this.app.openSettings('downloads'); summary(); } }, tx('Quality & folder…')));
     const close = () => { this.overlay.remove(); this.overlay = null; this.listeners.delete(this.rerender); };
     this.overlay = h('div.overlay', { onpointerdown: (e) => { if (e.target === this.overlay) close(); } },
       h('div.dialog.dlc', { role: 'dialog' },
-        h('h2', {}, icon('download'), ' Download tracks', h('button.dlc-x', { title: 'Close (downloads continue)', onclick: close }, '✕')),
+        h('h2', {}, icon('download'), tx(' Download tracks'), h('button.dlc-x', { title: tx('Close (downloads continue)'), onclick: close }, '✕')),
         h('div.dlc-tabs', {}, h('div.dlc-sources', {}, [...this.sourceBtns.values()]), h('span.spacer'), h('div.seg', {}, [...this.tabBtns.values()])),
         this.toolsLine, this.body, footer,
-        h('p.dlc-legal', {}, 'Only download music you have the right to use (free downloads, your own or licensed releases). ',
-          'Spotify and Deezer give the track lists; the audio of each track comes from YouTube. Uses yt-dlp, ffmpeg and deno (installed from here, or already on this computer).')));
+        h('p.dlc-legal', {}, tx('Only download music you have the right to use (free downloads, your own or licensed releases). '),
+          tx('Spotify and Deezer give the track lists; the audio of each track comes from YouTube. Uses yt-dlp, ffmpeg and deno (installed from here, or already on this computer).'))));
     this.overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); e.stopPropagation(); });
     document.body.append(this.overlay);
     this.rerender = (full) => this.renderTab(!full);
@@ -467,8 +468,8 @@ export class DownloadCenter {
   /** soft: progress update only (keep inputs and scroll). */
   renderTab(soft) {
     if (!this.overlay) return;
-    this.tabBtns.get('queue').textContent = `Queue${this.activeCount() ? ` (${this.activeCount()})` : ''}`;
-    this.tabBtns.get('feeds').textContent = `New releases${this.newCount ? ` (${this.newCount})` : ''}`;
+    this.tabBtns.get('queue').textContent = tx`Queue${this.activeCount() ? ` (${this.activeCount()})` : ''}`;
+    this.tabBtns.get('feeds').textContent = tx`New releases${this.newCount ? ` (${this.newCount})` : ''}`;
     if (soft) { this.rows?.forEach((update) => update()); return; }
     const scroll = this.body.scrollTop;
     if (this.tab === 'feeds') this.renderFeeds();
@@ -485,38 +486,38 @@ export class DownloadCenter {
       if (job && ACTIVE.has(job.state)) {
         const pct = Math.round(job.pct ?? 0);
         action.replaceChildren(h('div.dlc-prog', { style: { '--p': `${pct}%` } },
-          job.state === 'queued' ? 'Queued' : job.state === 'converting' ? 'Converting…' : `${pct}%${job.eta && job.eta !== 'NA' ? ` · ${job.eta}` : ''}`),
-        h('button.dbtn.small', { title: 'Cancel', onclick: () => this.cancel(item.id) }, '✕'));
+          job.state === 'queued' ? tx('Queued') : job.state === 'converting' ? tx('Converting…') : `${pct}%${job.eta && job.eta !== 'NA' ? ` · ${job.eta}` : ''}`),
+        h('button.dbtn.small', { title: tx('Cancel'), onclick: () => this.cancel(item.id) }, '✕'));
       } else if (job?.state === 'done' || this.isDone(item.id)) {
-        action.replaceChildren(h('span.dlc-done', {}, '✓ In collection'));
+        action.replaceChildren(h('span.dlc-done', {}, tx('✓ In collection')));
       } else if (own && !job) {
         action.replaceChildren(this.ownedBadge(own, item.duration),
-          h('button.dbtn.small', { title: `${this.ownedLabel(own, item.duration)}. Download it anyway`, onclick: () => this.enqueue([item]) }, icon('download')));
+          h('button.dbtn.small', { title: tx`${this.ownedLabel(own, item.duration)}. Download it anyway`, onclick: () => this.enqueue([item]) }, icon('download')));
       } else {
-        const get = h('button.dbtn.small.dlc-get', { onclick: () => this.enqueue([item]) }, icon('download'), ' Download');
-        action.replaceChildren(...(job?.state === 'error' ? [h('span.rbi-error', { title: job.error }, 'Failed '), get] : [get]));
+        const get = h('button.dbtn.small.dlc-get', { onclick: () => this.enqueue([item]) }, icon('download'), tx(' Download'));
+        action.replaceChildren(...(job?.state === 'error' ? [h('span.rbi-error', { title: job.error }, tx('Failed ')), get] : [get]));
       }
     };
     const own = this.ownedUpload(item);
     update();
     this.rows.push(update);
     const follow = item.channelUrl
-      ? h('button.dlc-follow', { title: `Follow ${item.channel}: its new uploads show in New releases`, onclick: () => this.follow(item.channelUrl, item.channel) }, '+ follow')
+      ? h('button.dlc-follow', { title: tx`Follow ${item.channel}: its new uploads show in New releases`, onclick: () => this.follow(item.channelUrl, item.channel) }, tx('+ follow'))
       : null;
     return h('div.dlc-row', {},
       item.thumb ? h('img.dlc-thumb', { src: item.thumb, loading: 'lazy', alt: '' }) : h('div.dlc-thumb'),
       h('div.dlc-info', {},
         h('div.dlc-title', { title: item.title }, item.isNew ? h('span.dlc-new', {}, 'NEW') : null, item.title,
-          item.preview ? h('span.dlc-preview', { title: 'SoundCloud only gives a 30 second preview of this track (SoundCloud Go+)' }, '30 s preview') : null),
+          item.preview ? h('span.dlc-preview', { title: tx('SoundCloud only gives a 30 second preview of this track (SoundCloud Go+)') }, tx('30 s preview')) : null),
         h('div.dlc-sub', {}, item.channel, follow, showSource && item.source && item.source !== item.channel ? ` · ${item.source}` : '',
-          item.timestamp ? ` · ${ago(item.timestamp)}` : '', item.views ? ` · ${item.views.toLocaleString()} views` : '')),
+          item.timestamp ? ` · ${ago(item.timestamp)}` : '', item.views ? tx` · ${item.views.toLocaleString(locale)} views` : '')),
       h('div.dlc-dur', {}, item.duration ? fmtTime(item.duration) : ''),
       action);
   }
 
   list(items, opts) {
     this.rows = [];
-    return h('div.dlc-list', {}, items.length ? items.map((it) => this.row(it, opts)) : h('p.dim', {}, 'Nothing here.'));
+    return h('div.dlc-list', {}, items.length ? items.map((it) => this.row(it, opts)) : h('p.dim', {}, tx('Nothing here.')));
   }
 
   /** The chosen source: one field for a search or a link, then what it found. */
@@ -530,7 +531,7 @@ export class DownloadCenter {
       if (!v) return;
       (this.queries ??= {})[p] = v;
       const lp = platformOf(v);
-      if (/^https?:\/\/|^spotify:/i.test(v) && !lp) { this.flash('This link is not from YouTube, SoundCloud, Spotify or Deezer'); return; }
+      if (/^https?:\/\/|^spotify:/i.test(v) && !lp) { this.flash(tx('This link is not from YouTube, SoundCloud, Spotify or Deezer')); return; }
       if (lp) { if (lp !== p) { (this.queries ??= {})[lp] = v; this.setSource(lp, false); } await this.readLink(v); return; }
       await this.search(v);
     };
@@ -547,18 +548,18 @@ export class DownloadCenter {
       parts.push(acct);
       window.rb.spotify.account().then((a) => {
         acct.replaceChildren(...(a.signedIn
-          ? [h('span.dim', {}, `Spotify: ${a.user ?? 'connected'} · whole playlists`), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.renderMyPlaylists() }, '♫ My playlists')]
-          : [h('span.dim', {}, 'Without a Spotify account, Spotify shows only the first 100 tracks of a playlist.'), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.app.openSettings('accounts') }, 'Connect my Spotify account…')]));
+          ? [h('span.dim', {}, tx`Spotify: ${a.user ?? 'connected'} · whole playlists`), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.renderMyPlaylists() }, tx('♫ My playlists'))]
+          : [h('span.dim', {}, tx('Without a Spotify account, Spotify shows only the first 100 tracks of a playlist.')), h('span.spacer'), h('button.dbtn.small', { onclick: () => this.app.openSettings('accounts') }, tx('Connect my Spotify account…'))]));
       }).catch(() => acct.remove());
     }
     if (p === 'spotify' && this.showMyPls && this.myPls) {
       parts.push(...this.myPlaylistsView());
     } else if (catalog && this.sp && (this.sp.platform ?? 'spotify') === p && !this.sp.search) {
       // a list read from a link (playlist, album, artist page)
-      parts.push(h('div.dlc-bar.dlc-filters', {}, check('addToPlaylist', 'Add to a playlist named after it')));
+      parts.push(h('div.dlc-bar.dlc-filters', {}, check('addToPlaylist', tx('Add to a playlist named after it'))));
       parts.push(...this.catalogView(this.sp));
     } else if (catalog && this.sp && (this.sp.platform ?? 'spotify') === p && this.sp.search) {
-      parts.push(h('p.dim', {}, `The audio is found on YouTube and saved with ${PLATFORMS[p]}'s title, artist and cover.`));
+      parts.push(h('p.dim', {}, tx`The audio is found on YouTube and saved with ${PLATFORMS[p]}'s title, artist and cover.`));
       parts.push(h('div.dlc-list', {}, this.sp.tracks.map((t) => this.spotifyRow(t, this.sp))));
     } else if (!catalog && this.linkList?.platform === p) {
       const L = this.linkList;
@@ -567,13 +568,13 @@ export class DownloadCenter {
       const left = pending.filter((it) => !owned.some(([x]) => x === it));
       if (L.items.length > 1) {
         const addTo = () => (opts.addToPlaylist ? { name: L.name, src: `${p}:${L.url}` } : null);
-        parts.push(h('div.dlc-bar.dlc-filters', {}, check('addToPlaylist', 'Add to a playlist named after it')));
+        parts.push(h('div.dlc-bar.dlc-filters', {}, check('addToPlaylist', tx('Add to a playlist named after it'))));
         parts.push(h('div.dlc-bar', {}, h('b', {}, L.name),
-          h('span.dim', {}, ` ${L.items.length} tracks${owned.length ? ` · ${owned.length} already in your collection (skipped)` : ''}`), h('span.spacer'),
+          h('span.dim', {}, tx` ${L.items.length} tracks${owned.length ? tx` · ${owned.length} already in your collection (skipped)` : ''}`), h('span.spacer'),
           left.length ? h('button.dbtn.dlc-primary', {
-            title: owned.length ? 'The tracks already in your collection are not downloaded again (they join the playlist when that option is on)' : '',
+            title: owned.length ? tx('The tracks already in your collection are not downloaded again (they join the playlist when that option is on)') : '',
             onclick: () => { owned.forEach(([, o]) => this.addToNamed(o.id, addTo())); this.enqueue(left.map((it) => ({ ...it, addTo: addTo() }))); },
-          }, `Download all ${left.length}`) : null));
+          }, tx`Download all ${left.length}`) : null));
       }
       parts.push(this.list(L.items));
     } else if (!catalog && this.searchResults && this.searchPlatform === p) {
@@ -592,7 +593,7 @@ export class DownloadCenter {
   /** Search the chosen source. */
   async search(q) {
     const p = this.source;
-    this.flash(`Searching ${PLATFORMS[p]}…`, false);
+    this.flash(tx`Searching ${PLATFORMS[p]}…`, false);
     try {
       if (p === 'spotify' || p === 'deezer') {
         const tracks = await window.rb.catalog.search(p, q);
@@ -609,7 +610,7 @@ export class DownloadCenter {
   /** A link: one track or a list (playlist, album, artist page) from any of the four sources. */
   async readLink(url) {
     const p = this.source;
-    this.flash('Reading the link…', false);
+    this.flash(tx('Reading the link…'), false);
     try {
       if (p === 'spotify' || p === 'deezer') {
         await this.readSpotify(url);
@@ -665,7 +666,7 @@ export class DownloadCenter {
     this.changed(true);
     const found = sp.tracks.filter((t) => t.match).length;
     const owned = sp.tracks.filter((t) => this.ownedCatalog(t)?.sure).length;
-    if (sp.tracks.length > 1) toast(`${sp.name}: ${owned ? `${owned} already in your collection, ` : ''}${found} / ${sp.tracks.length - owned} found on YouTube${download ? ', downloading' : ''}`, 6000);
+    if (sp.tracks.length > 1) toast(tx`${sp.name}: ${owned ? tx`${owned} already in your collection, ` : ''}${found} / ${sp.tracks.length - owned} found on YouTube${download ? tx(', downloading') : ''}`, 6000);
   }
 
   /** One track of a list: its YouTube upload, downloaded when asked. */
@@ -695,22 +696,22 @@ export class DownloadCenter {
     return [
       h('div.dlc-bar', {},
         h('span.dlc-logo.small', { innerHTML: LOGOS[sp.platform] ?? '' }), h('b', {}, sp.name),
-        h('span.dim', {}, ` ${sp.tracks.length} track${sp.tracks.length > 1 ? 's' : ''} · ${found} found on YouTube${owned ? ` · ${owned} already in your collection` : ''}`),
+        h('span.dim', {}, tx` ${sp.tracks.length} track${sp.tracks.length > 1 ? 's' : ''} · ${found} found on YouTube${owned ? tx` · ${owned} already in your collection` : ''}`),
         h('span.spacer'),
         sp.kind !== 'track' && sp.url ? this.followButton(sp) : null,
-        sp.running ? h('button.dbtn', { onclick: () => { sp.stop = true; } }, 'Stop') : h('button.dbtn', { onclick: () => this.findSpotifyOnYoutube(opts) }, 'Search again (not found)'),
-        left ? h('button.dbtn.dlc-primary', { onclick: () => sp.tracks.forEach((t) => this.enqueueSpotify(t, opts.addToPlaylist, sp)) }, `Download all ${left}`) : null),
+        sp.running ? h('button.dbtn', { onclick: () => { sp.stop = true; } }, tx('Stop')) : h('button.dbtn', { onclick: () => this.findSpotifyOnYoutube(opts) }, tx('Search again (not found)')),
+        left ? h('button.dbtn.dlc-primary', { onclick: () => sp.tracks.forEach((t) => this.enqueueSpotify(t, opts.addToPlaylist, sp)) }, tx`Download all ${left}`) : null),
       // Spotify's public page stops at 100 tracks: the whole list needs the Spotify account
       sp.via === 'embed' && sp.platform !== 'deezer' && sp.tracks.length >= 100 ? h('div.dlc-bar.dlc-note', {},
-        h('span', {}, `Only the first 100 tracks: Spotify gives a whole playlist only to a signed-in account${sp.accountError ? ` (${sp.accountError})` : ''}.`), h('span.spacer'),
-        h('button.dbtn.small', { onclick: () => this.app.openSettings('accounts') }, 'Connect my Spotify account…')) : null,
+        h('span', {}, tx`Only the first 100 tracks: Spotify gives a whole playlist only to a signed-in account${sp.accountError ? ` (${sp.accountError})` : ''}.`), h('span.spacer'),
+        h('button.dbtn.small', { onclick: () => this.app.openSettings('accounts') }, tx('Connect my Spotify account…'))) : null,
       h('div.dlc-list', {}, sp.tracks.map((t) => this.spotifyRow(t, sp))),
     ];
   }
 
   /** The signed-in Spotify account's playlists, to open or follow. */
   async renderMyPlaylists() {
-    this.flash('Reading your Spotify playlists…', false);
+    this.flash(tx('Reading your Spotify playlists…'), false);
     try {
       this.myPls = await window.rb.spotify.myPlaylists();
       this.showMyPls = true;
@@ -720,14 +721,14 @@ export class DownloadCenter {
 
   myPlaylistsView() {
     return [
-      h('div.dlc-bar', {}, h('span.dlc-logo.small', { innerHTML: LOGOS.spotify }), h('b', {}, 'My Spotify playlists'), h('span.dim', {}, ` ${this.myPls.length}`), h('span.spacer'),
-        h('button.dbtn.small', { onclick: () => { this.showMyPls = false; this.renderTab(false); } }, 'Close')),
+      h('div.dlc-bar', {}, h('span.dlc-logo.small', { innerHTML: LOGOS.spotify }), h('b', {}, tx('My Spotify playlists')), h('span.dim', {}, ` ${this.myPls.length}`), h('span.spacer'),
+        h('button.dbtn.small', { onclick: () => { this.showMyPls = false; this.renderTab(false); } }, tx('Close'))),
       h('div.dlc-list', {}, this.myPls.map((p) => h('div.dlc-row', {},
         coverThumb(p.cover),
-        h('div.dlc-info', {}, h('div.dlc-title', { title: p.name }, p.name), h('div.dlc-sub', {}, `${p.total} track${p.total > 1 ? 's' : ''}${p.owner ? ` · ${p.owner}` : ''}`)),
+        h('div.dlc-info', {}, h('div.dlc-title', { title: p.name }, p.name), h('div.dlc-sub', {}, tx`${p.total} track${p.total > 1 ? 's' : ''}${p.owner ? ` · ${p.owner}` : ''}`)),
         h('div.dlc-action', {},
-          this.isFollowedList(p.url) ? h('span.dlc-owned', { title: 'Followed: new tracks show in New releases' }, '★') : null,
-          h('button.dbtn.small.dlc-get', { onclick: async () => { this.showMyPls = false; (this.queries ??= {}).spotify = p.url; await this.readLink(p.url); } }, 'Open'))))),
+          this.isFollowedList(p.url) ? h('span.dlc-owned', { title: tx('Followed: new tracks show in New releases') }, '★') : null,
+          h('button.dbtn.small.dlc-get', { onclick: async () => { this.showMyPls = false; (this.queries ??= {}).spotify = p.url; await this.readLink(p.url); } }, tx('Open')))))),
     ];
   }
 
@@ -743,23 +744,23 @@ export class DownloadCenter {
       const own = this.ownedCatalog(t);
       if (own?.sure) {
         right.replaceChildren(this.ownedBadge(own, t.duration), h('span.dim', {}, ` · ${own.track.artist ? `${own.track.artist} – ` : ''}${own.track.title}`));
-        action.replaceChildren(h('button.dbtn.small', { title: `${this.ownedLabel(own, t.duration)}. Find it on YouTube and download it anyway`, onclick: () => { t.forced = true; this.findOne(t, list, { download: true, addToPlaylist: this.listOpts?.addToPlaylist !== false }); } }, icon('download')));
+        action.replaceChildren(h('button.dbtn.small', { title: tx`${this.ownedLabel(own, t.duration)}. Find it on YouTube and download it anyway`, onclick: () => { t.forced = true; this.findOne(t, list, { download: true, addToPlaylist: this.listOpts?.addToPlaylist !== false }); } }, icon('download')));
         return;
       }
-      right.replaceChildren(...(t.status === 'searching' ? [h('span.dim', {}, 'Searching YouTube…')]
-        : t.status === 'none' ? [h('span.rbi-error', {}, 'Not found on YouTube')]
-          : t.status === 'error' ? [h('span.rbi-error', { title: t.error }, 'Search failed')]
-            : m ? [t.longer ? h('span.dlc-new', { title: 'The list has the short edit: this is the longer club version of the same track' }, 'EXTENDED') : null,
+      right.replaceChildren(...(t.status === 'searching' ? [h('span.dim', {}, tx('Searching YouTube…'))]
+        : t.status === 'none' ? [h('span.rbi-error', {}, tx('Not found on YouTube'))]
+          : t.status === 'error' ? [h('span.rbi-error', { title: t.error }, tx('Search failed'))]
+            : m ? [t.longer ? h('span.dlc-new', { title: tx('The list has the short edit: this is the longer club version of the same track') }, 'EXTENDED') : null,
               h('a.dlc-yt', { href: '#', title: m.url, onclick: (e) => { e.preventDefault(); window.rb.openExternal(m.url); } }, m.title), h('span.dim', {}, ` · ${m.channel ?? ''} · ${m.duration ? fmtTime(m.duration) : ''}`)].filter(Boolean)
-              : [h('span.dim', {}, list?.search ? '' : 'Waiting')]));
+              : [h('span.dim', {}, list?.search ? '' : tx('Waiting'))]));
       if (own) right.prepend(this.ownedBadge(own, t.duration));
       const job = m ? this.jobs.get(m.id) : null;
       if (job && ACTIVE.has(job.state)) {
         const pct = Math.round(job.pct ?? 0);
-        action.replaceChildren(h('div.dlc-prog', { style: { '--p': `${pct}%` } }, job.state === 'queued' ? 'Queued' : job.state === 'converting' ? 'Converting…' : `${pct}%`));
+        action.replaceChildren(h('div.dlc-prog', { style: { '--p': `${pct}%` } }, job.state === 'queued' ? tx('Queued') : job.state === 'converting' ? tx('Converting…') : `${pct}%`));
       } else if (m && (job?.state === 'done' || this.isDone(m.id))) action.replaceChildren(h('span.dlc-done', {}, '✓'));
       else if (m) action.replaceChildren(h('button.dbtn.small.dlc-get', { onclick: () => this.enqueueSpotify(t, this.listOpts?.addToPlaylist !== false, list) }, icon('download')));
-      else if (list?.search && t.status === 'waiting') action.replaceChildren(h('button.dbtn.small.dlc-get', { title: 'Find it on YouTube and download it', onclick: () => this.findOne(t, list, { addToPlaylist: !!list.followed }) }, icon('download'), ' Download'));
+      else if (list?.search && t.status === 'waiting') action.replaceChildren(h('button.dbtn.small.dlc-get', { title: tx('Find it on YouTube and download it'), onclick: () => this.findOne(t, list, { addToPlaylist: !!list.followed }) }, icon('download'), tx(' Download')));
       else action.replaceChildren();
     };
     update();
@@ -773,7 +774,7 @@ export class DownloadCenter {
 
   renderFeeds() {
     const c = this.cfg;
-    const add = h('input.text', { placeholder: 'Follow a channel or playlist: paste its link (e.g. youtube.com/@label)', spellcheck: false });
+    const add = h('input.text', { placeholder: tx('Follow a channel or playlist: paste its link (e.g. youtube.com/@label)'), spellcheck: false });
     const doAdd = () => { const u = add.value.trim(); if (u) { this.follow(u, u.replace(/^https?:\/\/(www\.)?youtube\.com\//, '')); this.feedItems = null; this.checkFeeds(); } };
     add.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
     const fits = (it) => !c.maxMinutes || !it.duration || it.duration <= c.maxMinutes * 60;
@@ -781,29 +782,29 @@ export class DownloadCenter {
     const fresh = items.filter((it) => it.isNew && !this.isDone(it.id) && !this.ownedUpload(it)?.sure);
     const lists = c.lists ?? [];
     // (the channel list first: list() starts the row updaters afresh)
-    const feedEl = this.checking && !this.feedItems ? h('p.dim', {}, 'Checking followed channels and playlists…') : (c.subs.length ? this.list(items, { showSource: true }) : (this.rows = [], null));
+    const feedEl = this.checking && !this.feedItems ? h('p.dim', {}, tx('Checking followed channels and playlists…')) : (c.subs.length ? this.list(items, { showSource: true }) : (this.rows = [], null));
     // followed Spotify / Deezer playlists: the tracks added to them since last seen
     const listParts = (this.listNews ?? []).flatMap((x) => [
       h('div.dlc-bar.dlc-listnew', {}, h('span.dlc-logo.small', { innerHTML: LOGOS[x.list.platform] ?? '' }), h('b', {}, x.list.name),
         h('span.dlc-new', {}, `${x.tracks.length} NEW`), h('span.spacer'),
-        h('button.dbtn.dlc-primary', { title: 'Find each new track on YouTube and download it (into the playlist named after it)', onclick: () => x.tracks.forEach((t) => { if (t.status === 'waiting' || t.status === 'error') this.findOne(t, x.list, { download: true, addToPlaylist: true }); }) }, `Find & download all ${x.tracks.length}`)),
+        h('button.dbtn.dlc-primary', { title: tx('Find each new track on YouTube and download it (into the playlist named after it)'), onclick: () => x.tracks.forEach((t) => { if (t.status === 'waiting' || t.status === 'error') this.findOne(t, x.list, { download: true, addToPlaylist: true }); }) }, tx`Find & download all ${x.tracks.length}`)),
       h('div.dlc-list', {}, x.tracks.map((t) => this.spotifyRow(t, x.list))),
     ]);
     this.body.replaceChildren(
       h('div.dlc-subs', {},
-        c.subs.map((s) => h('span.chip', { title: s.url }, s.name, h('button.dlc-unfollow', { title: 'Unfollow', onclick: () => { this.unfollow(s.url); this.feedItems = null; this.checkFeeds(); } }, '×'))),
-        lists.map((l) => h('span.chip.dlc-chip-list', { title: `${l.url}\nFollowed playlist: its new tracks show here` }, h('span.dlc-logo.tiny', { innerHTML: LOGOS[l.platform] ?? '' }), `★ ${l.name}`,
-          h('button.dlc-unfollow', { title: 'Stop following this playlist', onclick: () => { this.unfollowList(l.url); this.renderTab(false); } }, '×'))),
-        c.subs.length || lists.length ? null : h('span.dim', {}, 'Follow channels ("+ follow" in results) or playlists (☆ Follow) to see their new tracks here.')),
+        c.subs.map((s) => h('span.chip', { title: s.url }, s.name, h('button.dlc-unfollow', { title: tx('Unfollow'), onclick: () => { this.unfollow(s.url); this.feedItems = null; this.checkFeeds(); } }, '×'))),
+        lists.map((l) => h('span.chip.dlc-chip-list', { title: tx`${l.url}\nFollowed playlist: its new tracks show here` }, h('span.dlc-logo.tiny', { innerHTML: LOGOS[l.platform] ?? '' }), `★ ${l.name}`,
+          h('button.dlc-unfollow', { title: tx('Stop following this playlist'), onclick: () => { this.unfollowList(l.url); this.renderTab(false); } }, '×'))),
+        c.subs.length || lists.length ? null : h('span.dim', {}, tx('Follow channels ("+ follow" in results) or playlists (☆ Follow) to see their new tracks here.'))),
       ...listParts,
-      h('div.dlc-bar', {}, add, h('button.dbtn', { onclick: doAdd }, 'Follow')),
+      h('div.dlc-bar', {}, add, h('button.dbtn', { onclick: doAdd }, tx('Follow'))),
       h('div.dlc-bar.dlc-filters', {},
-        h('button.dbtn.dlc-primary', { disabled: this.checking, onclick: () => this.checkFeeds() }, this.checking ? 'Checking…' : 'Check now'),
-        h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: !!c.maxMinutes, onchange: (e) => { this.save({ maxMinutes: e.target.checked ? 12 : 0 }); this.renderTab(false); } }), ' Hide mixes / streams (> 12 min)'),
-        h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: !!this.hideDone, onchange: (e) => { this.hideDone = e.target.checked; this.renderTab(false); } }), ' Hide downloaded'),
-        h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: c.checkOnStart, onchange: (e) => this.save({ checkOnStart: e.target.checked }) }), ' Check at startup'),
-        fresh.length ? h('button.dbtn', { onclick: () => this.enqueue(fresh) }, `Download ${fresh.length} new`) : null,
-        this.newCount ? h('button.dbtn', { onclick: () => { this.markSeen(); this.renderTab(false); } }, 'Mark all as seen') : null),
+        h('button.dbtn.dlc-primary', { disabled: this.checking, onclick: () => this.checkFeeds() }, this.checking ? tx('Checking…') : tx('Check now')),
+        h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: !!c.maxMinutes, onchange: (e) => { this.save({ maxMinutes: e.target.checked ? 12 : 0 }); this.renderTab(false); } }), tx(' Hide mixes / streams (> 12 min)')),
+        h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: !!this.hideDone, onchange: (e) => { this.hideDone = e.target.checked; this.renderTab(false); } }), tx(' Hide downloaded')),
+        h('label.dlc-check', {}, h('input', { type: 'checkbox', checked: c.checkOnStart, onchange: (e) => this.save({ checkOnStart: e.target.checked }) }), tx(' Check at startup')),
+        fresh.length ? h('button.dbtn', { onclick: () => this.enqueue(fresh) }, tx`Download ${fresh.length} new`) : null,
+        this.newCount ? h('button.dbtn', { onclick: () => { this.markSeen(); this.renderTab(false); } }, tx('Mark all as seen')) : null),
       feedEl);
   }
 
@@ -813,9 +814,9 @@ export class DownloadCenter {
     this.body.replaceChildren(jobs.length
       ? h('div.dlc-list', {}, jobs.map((j) => {
         const el = this.row(j.item);
-        if (j.state === 'done' && j.file) el.querySelector('.dlc-action').append(h('button.dbtn.small', { title: j.file, onclick: () => window.rb.showItem(j.file) }, 'Show file'));
+        if (j.state === 'done' && j.file) el.querySelector('.dlc-action').append(h('button.dbtn.small', { title: j.file, onclick: () => window.rb.showItem(j.file) }, tx('Show file')));
         return el;
       }))
-      : h('p.dim', {}, 'No downloads yet.'));
+      : h('p.dim', {}, tx('No downloads yet.')));
   }
 }

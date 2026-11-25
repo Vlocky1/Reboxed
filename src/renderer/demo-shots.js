@@ -254,12 +254,16 @@ export async function runShots(app) {
     // ---- preferences: appearance, themes, plugins, library, stems ----
     const prefs = async (tab, name, extra) => {
       const done = app.openSettings(tab);
+      for (let k = 0; k < 40 && !document.querySelector('.settings-close'); k++) await wait(250);
       await wait(400);
       if (extra) await extra();
       await shot(name);
       document.querySelector('.settings-close').click();
       await done;
     };
+    await attempt('general settings', () => prefs('general', '26-general-settings'));
+    await attempt('decks settings', () => prefs('decks', '27-decks-settings'));
+    await attempt('accounts settings', () => prefs('accounts', '28-accounts-settings', async () => { document.querySelector('.acct-card .help-btn')?.click(); await wait(200); }));
     await attempt('appearance', () => prefs('appearance', '13-appearance'));
     for (const [theme, name] of [['midnight', '14-theme-midnight'], ['neon', '15-theme-neon'], ['ember', '16-theme-ember']]) {
       await attempt(name, async () => { lib.setSetting('theme', theme); applyTheme(lib.settings); d1.play(); d2.play(); await wait(800); await shot(name); d1.pause(); d2.pause(); });

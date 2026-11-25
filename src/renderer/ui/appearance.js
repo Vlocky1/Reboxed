@@ -1,4 +1,5 @@
 // Preferences > Appearance: theme, accent colour, interface size, top bar style.
+import { tx } from '../../shared/i18n.js';
 import { h } from './dom.js';
 import { THEMES, ACCENTS, UI_SCALES, themeVars } from '../themes.js';
 
@@ -29,9 +30,9 @@ export function appearanceSection(library, apply) {
     const cur = s().themeAccent;
     const themeAccent = themeVars({ theme: s().theme })['--accent'];
     accents.replaceChildren(
-      h(`button.accent-dot.auto${cur ? '' : '.on'}`, { type: 'button', title: 'The theme\'s own accent', style: { background: themeAccent }, onclick: () => { apply('themeAccent', null); renderCards(); renderAccents(); } }, 'A'),
+      h(`button.accent-dot.auto${cur ? '' : '.on'}`, { type: 'button', title: tx('The theme\'s own accent'), style: { background: themeAccent }, onclick: () => { apply('themeAccent', null); renderCards(); renderAccents(); } }, 'A'),
       ...ACCENTS.map((c) => h(`button.accent-dot${cur === c ? '.on' : ''}`, { type: 'button', title: c, dataset: { accent: c }, style: { background: c }, onclick: () => { apply('themeAccent', c); renderCards(); renderAccents(); } })),
-      h('label.accent-custom', { title: 'Any colour' }, h('input', { type: 'color', value: cur ?? themeAccent, onchange: (e) => { apply('themeAccent', e.target.value); renderCards(); renderAccents(); } })));
+      h('label.accent-custom', { title: tx('Any colour') }, h('input', { type: 'color', value: cur ?? themeAccent, onchange: (e) => { apply('themeAccent', e.target.value); renderCards(); renderAccents(); } })));
   };
   renderCards();
   renderAccents();
@@ -39,10 +40,10 @@ export function appearanceSection(library, apply) {
   const sel = (key, options, cast = (x) => x) => h('select', { onchange: (e) => apply(key, cast(e.target.value)) },
     options.map(([v, l]) => h('option', { value: v, selected: String(s()[key] ?? '') === String(v) }, l)));
   return h('div', {},
-    h('h4', {}, 'Theme'), cards,
-    h('h4', {}, 'Accent colour'), h('p.dim', {}, 'Buttons that are on, selections, SYNC, progress bars… "A" keeps the theme\'s own colour.'), accents,
-    h('h4', {}, 'Layout'),
+    h('h4', {}, tx('Theme')), cards,
+    h('h4', {}, tx('Accent colour')), h('p.dim', {}, tx('Buttons that are on, selections, SYNC, progress bars… "A" keeps the theme\'s own colour.')), accents,
+    h('h4', {}, tx('Layout')),
     h('div.form-grid', {},
-      h('label', {}, 'Interface size'), sel('uiScale', UI_SCALES, Number),
-      h('label', {}, 'Top bar'), sel('topbarLabels', [['full', 'Icons and names'], ['icons', 'Icons only (more room)']])));
+      h('label', {}, tx('Interface size')), sel('uiScale', UI_SCALES, Number),
+      h('label', {}, tx('Top bar')), sel('topbarLabels', [['full', tx('Icons and names')], ['icons', tx('Icons only (more room)')]])));
 }

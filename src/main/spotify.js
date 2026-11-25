@@ -186,8 +186,15 @@ export class Spotify {
     const j = await res.json().catch(() => ({}));
     if (!res.ok || !j.access_token) throw new Error(/redirect_uri/i.test(j.error_description ?? '') ? `Spotify refused the redirect URI: add ${REDIRECT_URI} to your Spotify app (developer.spotify.com/dashboard)` : `Spotify sign-in failed (${j.error_description ?? res.status})`);
     this.userToken = { value: j.access_token, until: Date.now() + ((j.expires_in ?? 3600) - 60) * 1000 };
+    // an app accepts only its owner and the accounts they added: checked before the account is kept
+    let me;
+    try { me = await this.me(); } catch (err) {
+      this.userToken = null;
+      if (err.status === 403) throw new Error('Spotify refused this account: the owner of the Spotify app must add your Spotify e-mail (dashboard > User Management), or create your own app');
+      throw err;
+    }
     await this.account?.set(j.refresh_token ?? null);
-    return this.me();
+    return me;
   }
 
   async signOut() { this.userToken = null; await this.account?.set(null); }
@@ -278,7 +285,7 @@ export class Spotify {
     return this.token.value;
   }
 
-  forget() { this.token = null; }
+  forget() { this.token = null; this.userToken = null; }
 
   async get(path) {
     const res = await this.fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${await this.auth()}` } });

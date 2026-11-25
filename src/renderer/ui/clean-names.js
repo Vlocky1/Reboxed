@@ -1,5 +1,6 @@
 // "Clean names": the name cleaner on tracks already in the collection — every change shown first,
 // ticked by default; Apply saves, Undo restores (shares the auto-tag undo).
+import { tx } from '../../shared/i18n.js';
 import { h, toast } from './dom.js';
 import { DEFAULT_SETTINGS } from '../library.js';
 import { cleanTrackName, parseKeywords, DEFAULT_KEYWORDS } from '../../shared/clean-name.js';
@@ -21,18 +22,18 @@ export function openCleanNames(app, ids) {
   const lib = app.library;
   const tracks = ids.map((id) => lib.get(id)).filter(Boolean);
   const props = cleanProposals(tracks, keywordsOf(lib));
-  if (!props.length) { toast(`Nothing to clean in ${tracks.length} track(s)`); return Promise.resolve(null); }
+  if (!props.length) { toast(tx`Nothing to clean in ${tracks.length} track(s)`); return Promise.resolve(null); }
   return new Promise((resolve) => {
     const boxes = props.map(() => h('input', { type: 'checkbox', checked: true }));
-    const cell = (from, to) => (from === to ? h('span.at-same', {}, to) : h('span', {}, h('span.at-from', {}, from || '(empty)'), ' → ', h('span.at-to', {}, to)));
-    const apply = h('button.primary', {}, 'Apply');
+    const cell = (from, to) => (from === to ? h('span.at-same', {}, to) : h('span', {}, h('span.at-from', {}, from || tx('(empty)')), ' → ', h('span.at-to', {}, to)));
+    const apply = h('button.primary', {}, tx('Apply'));
     const overlay = h('div.overlay', {}, h('div.dialog.autotag-dialog', { role: 'dialog' },
-      h('h2', {}, `Clean names: ${props.length} of ${tracks.length} track(s)`),
+      h('h2', {}, tx`Clean names: ${props.length} of ${tracks.length} track(s)`),
       h('div.dialog-body.autotag', {},
-        h('p.dim', {}, 'Removes "(Official Video)", "| Lyrics", "- Topic", "VEVO"… and splits "Artist - Title". Mix, remix, edit, feat. and live names stay. Keywords: Preferences > Downloads.'),
+        h('p.dim', {}, tx('Removes "(Official Video)", "| Lyrics", "- Topic", "VEVO"… and splits "Artist - Title". Mix, remix, edit, feat. and live names stay. Keywords: Preferences > Downloads.')),
         h('div.at-list', {}, props.map((p, i) => h('label.at-clean', {}, boxes[i],
-          h('div', {}, h('div', {}, h('span.at-k', {}, 'Title '), cell(p.track.title ?? '', p.title)), h('div', {}, h('span.at-k', {}, 'Artist '), cell(p.track.artist ?? '', p.artist))))))),
-      h('div.dialog-buttons', {}, h('button', { onclick: () => close(null) }, 'Cancel'), apply)));
+          h('div', {}, h('div', {}, h('span.at-k', {}, tx('Title ')), cell(p.track.title ?? '', p.title)), h('div', {}, h('span.at-k', {}, tx('Artist ')), cell(p.track.artist ?? '', p.artist))))))),
+      h('div.dialog-buttons', {}, h('button', { onclick: () => close(null) }, tx('Cancel')), apply)));
     const close = (v) => { overlay.remove(); resolve(v); };
     overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(null); e.stopPropagation(); });
     apply.onclick = () => {
@@ -44,7 +45,7 @@ export function openCleanNames(app, ids) {
         app.onTrackEdited?.(p.track.id);
       });
       app.lastAutoTag = undo;
-      toast(`${undo.length} name(s) cleaned — "Undo the last auto-tag" in the ⋯ menu puts them back`, 5000);
+      toast(tx`${undo.length} name(s) cleaned — "Undo the last auto-tag" in the ⋯ menu puts them back`, 5000);
       close({ cleaned: undo.length });
     };
     document.body.append(overlay);
@@ -57,14 +58,14 @@ export function cleanerSettings(cfg, save) {
   const test = h('input.text', { value: 'Indochine - Trois nuits par semaine (Clip officiel) [Paroles]', spellcheck: false });
   const testArtist = h('input.text', { value: 'IndochineVEVO', spellcheck: false, style: { maxWidth: '150px' } });
   const out = h('div.dim');
-  const run = () => { const c = cleanTrackName({ title: test.value, artist: testArtist.value }, parseKeywords(area.value)); out.textContent = `→ Artist: ${c.artist || '(empty)'} · Title: ${c.title}`; };
+  const run = () => { const c = cleanTrackName({ title: test.value, artist: testArtist.value }, parseKeywords(area.value)); out.textContent = tx`→ Artist: ${c.artist || tx('(empty)')} · Title: ${c.title}`; };
   area.addEventListener('input', run); test.addEventListener('input', run); testArtist.addEventListener('input', run);
   area.addEventListener('change', () => save({ cleanKeywords: area.value.trim() }));
   run();
   return [
-    h('label', {}, 'Clean names when adding'), h('div', {}, h('input', { type: 'checkbox', checked: cfg.cleanNames !== false, onchange: (e) => save({ cleanNames: e.target.checked }) }),
-      h('span.dim', {}, '  removes (Paroles), [Official Video], Lyrics, Visualizer, - Topic, VEVO… from downloaded tracks')),
-    h('label', {}, 'Words to remove'), h('div', {}, area, h('small.dim', {}, 'Comma separated. Empty = the default list. Mix, remix, edit, feat. and live names are always kept.')),
-    h('label', {}, 'Try it'), h('div', {}, h('div.frow', {}, testArtist, test), out),
+    h('label', {}, tx('Clean names when adding')), h('div', {}, h('input', { type: 'checkbox', checked: cfg.cleanNames !== false, onchange: (e) => save({ cleanNames: e.target.checked }) }),
+      h('span.dim', {}, tx('  removes (Paroles), [Official Video], Lyrics, Visualizer, - Topic, VEVO… from downloaded tracks'))),
+    h('label', {}, tx('Words to remove')), h('div', {}, area, h('small.dim', {}, tx('Comma separated. Empty = the default list. Mix, remix, edit, feat. and live names are always kept.'))),
+    h('label', {}, tx('Try it')), h('div', {}, h('div.frow', {}, testArtist, test), out),
   ];
 }

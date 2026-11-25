@@ -34,6 +34,7 @@ export const DEFAULT_SETTINGS = {
   midiMappings: [],
   analysisMode: 'normal',      // 'normal' (constant grid) | 'dynamic' (variable tempo)
   autoCues: false,             // create cues from phrases after analysis
+  showMixPoint: false,         // Mix Point Link available (top bar button, deck menu entries)
   mixPointLink: false,
   stemsProvider: 'auto',       // 'auto' (fastest measured) | 'cpu' | 'webgpu' | 'dml' (GPU engines)
   stemsBench: null,            // {fast: {cpu, webgpu, dml}, hq: {...}, date}: x real time, or 'crash'

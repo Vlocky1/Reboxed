@@ -1,4 +1,5 @@
 // Library browser: tree (collection / playlists / histories), search + track filter, track table.
+import { errText, lang, tx } from '../../shared/i18n.js';
 import { h, fmtTime, contextMenu, modal, promptText, confirmDialog, toast } from './dom.js';
 import { IndexedTrack, compileQuery, SEARCH_FIELDS, SearchController, compileTrackFilter, BPM_RANGE_PERCENTS } from '../../search/index.js';
 import { displayKey, compatibleKeys } from '../../shared/keys.js';
@@ -32,29 +33,29 @@ const CAMELOT = Array.from({ length: 12 }, (_, i) => [`${i + 1}A`, `${i + 1}B`])
 export const COLUMNS = {
   pos: { label: '#', width: 40, get: (r) => (r.pos >= 0 ? r.pos + 1 : ''), sort: (r) => r.pos, num: true },
   color: { label: '', width: 10, get: () => '', sort: (r) => TRACK_COLORS.findIndex((c) => c.name === r.track.color) },
-  artwork: { label: '', menuLabel: 'Artwork', width: 28, get: () => '', sort: (r) => (r.track.artwork ? 0 : 1) },
+  artwork: { label: '', menuLabel: tx('Artwork'), width: 28, get: () => '', sort: (r) => (r.track.artwork ? 0 : 1) },
   stems: { label: 'Stems', width: 58, get: () => '', sort: (r) => (r.track.stems === 'hq' ? 0 : r.track.stems ? 1 : 2) },
-  title: { label: 'Track Title', width: 260, get: (r) => r.track.title, sort: (r) => (r.track.title ?? '').toLowerCase() },
-  artist: { label: 'Artist', width: 170, get: (r) => r.track.artist, sort: (r) => (r.track.artist ?? '').toLowerCase() },
+  title: { label: tx('Track Title'), width: 260, get: (r) => r.track.title, sort: (r) => (r.track.title ?? '').toLowerCase() },
+  artist: { label: tx('Artist'), width: 170, get: (r) => r.track.artist, sort: (r) => (r.track.artist ?? '').toLowerCase() },
   album: { label: 'Album', width: 160, get: (r) => r.track.album, sort: (r) => (r.track.album ?? '').toLowerCase() },
   genre: { label: 'Genre', width: 120, get: (r) => r.track.genre, sort: (r) => (r.track.genre ?? '').toLowerCase() },
   bpm: { label: 'BPM', width: 64, get: (r) => (r.track.bpm ? r.track.bpm.toFixed(2) : ''), sort: (r) => r.track.bpm ?? 0, num: true },
-  key: { label: 'Key', width: 50, get: (r, s) => displayKey(r.track.key, s.keyNotation), sort: (r) => CAMELOT.indexOf(r.track.key) },
-  preview: { label: 'Preview', width: 130, get: () => '', sort: (r) => (r.track.wavePreview ? 0 : 1) },
-  duration: { label: 'Time', width: 56, get: (r) => (r.track.duration ? fmtTime(r.track.duration) : ''), sort: (r) => r.track.duration ?? 0, num: true },
-  rating: { label: 'Rating', width: 76, get: () => '', sort: (r) => r.track.rating ?? 0 },
-  dateAdded: { label: 'Date Added', width: 120, get: (r) => dateAddedText(r.track), sort: (r) => `${r.track.dateAdded ?? ''} ${addedTime(r.track) ?? '00:00'}` },
-  comments: { label: 'Comments', width: 180, get: (r) => r.track.comments, sort: (r) => (r.track.comments ?? '').toLowerCase() },
+  key: { label: tx('Key'), width: 50, get: (r, s) => displayKey(r.track.key, s.keyNotation), sort: (r) => CAMELOT.indexOf(r.track.key) },
+  preview: { label: tx('Preview'), width: 130, get: () => '', sort: (r) => (r.track.wavePreview ? 0 : 1) },
+  duration: { label: tx('Time'), width: 56, get: (r) => (r.track.duration ? fmtTime(r.track.duration) : ''), sort: (r) => r.track.duration ?? 0, num: true },
+  rating: { label: tx('Rating'), width: 76, get: () => '', sort: (r) => r.track.rating ?? 0 },
+  dateAdded: { label: tx('Date Added'), width: 120, get: (r) => dateAddedText(r.track), sort: (r) => `${r.track.dateAdded ?? ''} ${addedTime(r.track) ?? '00:00'}` },
+  comments: { label: tx('Comments'), width: 180, get: (r) => r.track.comments, sort: (r) => (r.track.comments ?? '').toLowerCase() },
   label: { label: 'Label', width: 120, get: (r) => r.track.label, sort: (r) => (r.track.label ?? '').toLowerCase() },
-  year: { label: 'Year', width: 50, get: (r) => r.track.year || '', sort: (r) => r.track.year ?? 0, num: true },
-  remixer: { label: 'Remixer', width: 120, get: (r) => r.track.remixer, sort: (r) => (r.track.remixer ?? '').toLowerCase() },
-  composer: { label: 'Composer', width: 120, get: (r) => r.track.composer, sort: (r) => (r.track.composer ?? '').toLowerCase() },
-  mixName: { label: 'Mix Name', width: 120, get: (r) => r.track.mixName, sort: (r) => (r.track.mixName ?? '').toLowerCase() },
-  playCount: { label: 'DJ Play Count', width: 60, get: (r) => r.track.playCount || '', sort: (r) => r.track.playCount ?? 0, num: true },
-  bitrate: { label: 'Bitrate', width: 60, get: (r) => (r.track.bitrate ? `${r.track.bitrate}` : ''), sort: (r) => r.track.bitrate ?? 0, num: true },
-  kind: { label: 'File Type', width: 60, get: (r) => r.track.kind, sort: (r) => r.track.kind ?? '' },
+  year: { label: tx('Year'), width: 50, get: (r) => r.track.year || '', sort: (r) => r.track.year ?? 0, num: true },
+  remixer: { label: tx('Remixer'), width: 120, get: (r) => r.track.remixer, sort: (r) => (r.track.remixer ?? '').toLowerCase() },
+  composer: { label: tx('Composer'), width: 120, get: (r) => r.track.composer, sort: (r) => (r.track.composer ?? '').toLowerCase() },
+  mixName: { label: tx('Mix Name'), width: 120, get: (r) => r.track.mixName, sort: (r) => (r.track.mixName ?? '').toLowerCase() },
+  playCount: { label: tx('DJ Play Count'), width: 60, get: (r) => r.track.playCount || '', sort: (r) => r.track.playCount ?? 0, num: true },
+  bitrate: { label: tx('Bitrate'), width: 60, get: (r) => (r.track.bitrate ? `${r.track.bitrate}` : ''), sort: (r) => r.track.bitrate ?? 0, num: true },
+  kind: { label: tx('File Type'), width: 60, get: (r) => r.track.kind, sort: (r) => r.track.kind ?? '' },
   myTags: { label: 'My Tag', width: 140, get: (r) => (r.track.myTags ?? []).join(', '), sort: (r) => (r.track.myTags ?? []).join(',') },
-  location: { label: 'Location', width: 280, get: (r) => r.track.path, sort: (r) => r.track.path },
+  location: { label: tx('Location'), width: 280, get: (r) => r.track.path, sort: (r) => r.track.path },
 };
 
 /** Preview images by track waveform data, width and colour style (rows are re-created on scroll). */
@@ -116,9 +117,9 @@ export class Browser {
     this.index = new WeakMap();
 
     this.tree = h('nav.tree');
-    this.searchInput = h('input.search-input', { placeholder: 'Search', spellcheck: false, type: 'search' });
-    this.fieldSelect = h('select.search-field', {}, SEARCH_FIELDS.map((f) => h('option', { value: f.id }, f.label)));
-    this.filterBtn = h('button.dbtn', { onclick: () => { this.filterOpen = !this.filterOpen; this.renderFilter(); }, title: 'Track filter' }, 'FILTER');
+    this.searchInput = h('input.search-input', { placeholder: tx('Search'), spellcheck: false, type: 'search' });
+    this.fieldSelect = h('select.search-field', {}, SEARCH_FIELDS.map((f) => h('option', { value: f.id }, f.id === 'all' && lang === 'fr' ? 'Tout' : tx(f.label))));
+    this.filterBtn = h('button.dbtn', { onclick: () => { this.filterOpen = !this.filterOpen; this.renderFilter(); }, title: tx('Track filter') }, 'FILTER');
     this.filterPanel = h('div.filter-panel');
     this.relatedEl = h('div.related-host');
     this.status = h('span.status');
@@ -140,9 +141,9 @@ export class Browser {
     this.el = h('section.browser', {},
       h('div.tree-pane', {},
         h('div.tree-tools', {},
-          h('button.dbtn.small', { onclick: () => app.importFolder(), title: 'Add a folder to the collection' }, '+ Folder'),
-          h('button.dbtn.small', { onclick: () => app.importFiles(), title: 'Add files to the collection' }, '+ Files'),
-          h('button.dbtn.small', { onclick: (e) => this.moreMenu(e), title: 'More' }, '⋯')),
+          h('button.dbtn.small', { onclick: () => app.importFolder(), title: tx('Add a folder to the collection') }, tx('+ Folder')),
+          h('button.dbtn.small', { onclick: () => app.importFiles(), title: tx('Add files to the collection') }, tx('+ Files')),
+          h('button.dbtn.small', { onclick: (e) => this.moreMenu(e), title: tx('More') }, '⋯')),
         this.tree),
       h('div.list-pane', {},
         h('div.list-tools', {},
@@ -196,7 +197,7 @@ export class Browser {
       el.addEventListener('drop', (e) => {
         el.classList.remove('drop');
         const ids = JSON.parse(e.dataTransfer.getData('application/x-rb-tracks') || '[]');
-        if (ids.length && dropTo) { dropTo(ids); toast(`${ids.length} track(s) added`); }
+        if (ids.length && dropTo) { dropTo(ids); toast(tx`${ids.length} track(s) added`); }
       });
       return el;
     };
@@ -225,7 +226,7 @@ export class Browser {
         clearMarks();
         if (!id) return;
         e.preventDefault(); e.stopPropagation();
-        if (!lib.moveNode(id, n.id, zone(e, row, n))) toast('A folder cannot go inside itself');
+        if (!lib.moveNode(id, n.id, zone(e, row, n))) toast(tx('A folder cannot go inside itself'));
       });
       row.addEventListener('dragend', clearMarks);
       return row;
@@ -249,10 +250,10 @@ export class Browser {
     });
     // Dropping on the "Playlists" header moves the node back to the top level.
     const playlistsHeader = h('div.tree-section', {}, h('span', {}, 'Playlists'),
-      h('button.icon', { title: 'New playlist', onclick: async () => { const n = await promptText('New playlist', 'Untitled Playlist'); if (n) this.select(lib.createNode('playlist', n).id); } }, icon('playlist')),
-      h('button.icon', { title: 'New intelligent playlist', onclick: () => this.newSmartList() }, icon('smart')),
-      h('button.icon', { title: 'New folder', onclick: async () => { const n = await promptText('New folder', 'New Folder'); if (n) lib.createNode('folder', n); } }, icon('folder')));
-    playlistsHeader.title = 'Drop a playlist or folder here to move it to the top level';
+      h('button.icon', { title: tx('New playlist'), onclick: async () => { const n = await promptText(tx('New playlist'), tx('Untitled Playlist')); if (n) this.select(lib.createNode('playlist', n).id); } }, icon('playlist')),
+      h('button.icon', { title: tx('New intelligent playlist'), onclick: () => this.newSmartList() }, icon('smart')),
+      h('button.icon', { title: tx('New folder'), onclick: async () => { const n = await promptText(tx('New folder'), tx('New Folder')); if (n) lib.createNode('folder', n); } }, icon('folder')));
+    playlistsHeader.title = tx('Drop a playlist or folder here to move it to the top level');
     playlistsHeader.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes(NODE_TYPE)) { e.preventDefault(); clearMarks(); playlistsHeader.classList.add('drop-into'); } });
     playlistsHeader.addEventListener('dragleave', () => playlistsHeader.classList.remove('drop-into'));
     playlistsHeader.addEventListener('drop', (e) => {
@@ -260,36 +261,36 @@ export class Browser {
       clearMarks();
       if (id) { e.preventDefault(); lib.moveNode(id, null); }
     });
-    const tagItem = item('tag-list', h('span', {}, icon('tag'), 'Tag List', h('span.dim.count-badge', {}, `${lib.tagList.length}`)), 'taglist');
+    const tagItem = item('tag-list', h('span', {}, icon('tag'), tx('Tag List'), h('span.dim.count-badge', {}, `${lib.tagList.length}`)), 'taglist');
     tagItem.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       contextMenu(e.clientX, e.clientY, [
-        { label: 'Convert to playlist…', disabled: !lib.tagList.length, action: async () => { const name = await promptText('New playlist', 'Tag List'); if (name) this.select(lib.tagListToPlaylist(name).id); } },
-        { label: 'Clear Tag List', disabled: !lib.tagList.length, action: () => lib.clearTagList() },
+        { label: tx('Convert to playlist…'), disabled: !lib.tagList.length, action: async () => { const name = await promptText(tx('New playlist'), tx('Tag List')); if (name) this.select(lib.tagListToPlaylist(name).id); } },
+        { label: tx('Clear Tag List'), disabled: !lib.tagList.length, action: () => lib.clearTagList() },
       ]);
     });
     this.tree.replaceChildren(
-      item('collection', h('span', {}, icon('collection'), 'Collection', h('span.dim.count-badge', {}, `${lib.tracks.size}`)), 'collection'),
+      item('collection', h('span', {}, icon('collection'), tx('Collection'), h('span.dim.count-badge', {}, `${lib.tracks.size}`)), 'collection'),
       tagItem,
       item('stems', h('span', {}, icon('wave'), 'Stems', (this.stemsBadge = h('span.dim.count-badge', {}, `${lib.all().filter((t) => t.stems).length}`))), 'stems',
-        { title: 'Tracks whose stems are already separated: they load with their stems ready' }),
-      item('related', h('span', {}, icon('related'), 'Related Tracks'), 'related',
-        { title: 'Tracks that match by their tags and analysis: key, BPM, genre, artist, rating… (criteria you choose)' }),
-      item('suggest', h('span', {}, icon('suggest'), 'Track Suggestion'), 'suggest',
-        { title: 'Tracks that sound alike, from the audio itself (timbre, harmony, energy, groove)' }),
+        { title: tx('Tracks whose stems are already separated: they load with their stems ready') }),
+      item('related', h('span', {}, icon('related'), tx('Related Tracks')), 'related',
+        { title: tx('Tracks that match by their tags and analysis: key, BPM, genre, artist, rating… (criteria you choose)') }),
+      item('suggest', h('span', {}, icon('suggest'), tx('Track Suggestion')), 'suggest',
+        { title: tx('Tracks that sound alike, from the audio itself (timbre, harmony, energy, groove)') }),
       playlistsHeader,
       ...nodes(lib.playlists, 0),
-      h('div.tree-section', {}, h('span', {}, 'Histories'),
-        lib.histories.length ? h('button.icon', { title: 'Delete all histories', onclick: () => this.clearHistories() }, icon('trash')) : null),
+      h('div.tree-section', {}, h('span', {}, tx('Histories')),
+        lib.histories.length ? h('button.icon', { title: tx('Delete all histories'), onclick: () => this.clearHistories() }, icon('trash')) : null),
       ...lib.histories.map((x) => {
         const row = item(x.id, h('span', {}, icon('history'), x.date, h('span.dim.count-badge', {}, `${x.trackIds.length}`)), 'history');
         row.addEventListener('contextmenu', (e) => {
           e.preventDefault();
           contextMenu(e.clientX, e.clientY, [
-            { label: 'Turn into playlist', action: () => lib.historyToPlaylist(x.id) },
+            { label: tx('Turn into playlist'), action: () => lib.historyToPlaylist(x.id) },
             '-',
-            { label: 'Delete this history', action: () => this.deleteHistory(x) },
-            { label: 'Delete all histories', action: () => this.clearHistories() },
+            { label: tx('Delete this history'), action: () => this.deleteHistory(x) },
+            { label: tx('Delete all histories'), action: () => this.clearHistories() },
           ]);
         });
         return row;
@@ -302,35 +303,35 @@ export class Browser {
     const lib = this.lib;
     contextMenu(e.clientX, e.clientY, [
       ...(n.type === 'folder' ? [
-        { label: 'New playlist here', action: async () => { const name = await promptText('New playlist', 'Untitled Playlist'); if (name) lib.createNode('playlist', name, n.id); } },
-        { label: 'New folder here', action: async () => { const name = await promptText('New folder', 'New Folder'); if (name) lib.createNode('folder', name, n.id); } },
-        { label: 'New intelligent playlist here', action: () => this.newSmartList(n.id) },
+        { label: tx('New playlist here'), action: async () => { const name = await promptText(tx('New playlist'), tx('Untitled Playlist')); if (name) lib.createNode('playlist', name, n.id); } },
+        { label: tx('New folder here'), action: async () => { const name = await promptText(tx('New folder'), tx('New Folder')); if (name) lib.createNode('folder', name, n.id); } },
+        { label: tx('New intelligent playlist here'), action: () => this.newSmartList(n.id) },
         '-'] : n.type === 'smart' ? [
-        { label: 'Edit conditions…', action: () => this.editSmart(n) },
-        { label: 'Freeze into a normal playlist', action: () => {
+        { label: tx('Edit conditions…'), action: () => this.editSmart(n) },
+        { label: tx('Freeze into a normal playlist'), action: () => {
           const p = lib.createNode('playlist', `${n.name} (frozen)`);
           lib.addToPlaylist(p.id, lib.rowsFor(n.id).map((r) => r.track.id));
         } },
         '-'] : [
-        { label: 'Analyze tracks', action: () => this.app.analyzeTracks(n.trackIds) },
-        { label: 'Export as M3U8…', action: () => this.app.exportM3u(n) },
+        { label: tx('Analyze tracks'), action: () => this.app.analyzeTracks(n.trackIds) },
+        { label: tx('Export as M3U8…'), action: () => this.app.exportM3u(n) },
         '-']),
-      ...(n.type !== 'folder' ? [{ label: 'Find duplicates…', action: () => openDuplicates(this.app, n.id) }] : []),
-      { label: 'Send to another Reboxed (USB drive)…', action: () => {
+      ...(n.type !== 'folder' ? [{ label: tx('Find duplicates…'), action: () => openDuplicates(this.app, n.id) }] : []),
+      { label: tx('Send to another Reboxed (USB drive)…'), action: () => {
         const ids = [];
         const walk = (x) => (x.type === 'folder' ? x.children.forEach(walk) : ids.push(x.id));
         walk(n);
         openTransferExport(this.app, ids);
       } },
-      { label: 'Move to', submenu: [
-        { label: 'Top level', disabled: lib.playlists.includes(n), action: () => lib.moveNode(n.id, null) },
+      { label: tx('Move to'), submenu: [
+        { label: tx('Top level'), disabled: lib.playlists.includes(n), action: () => lib.moveNode(n.id, null) },
         ...lib.folderTargets(n.id).map(({ node, depth }) => ({
           label: `${'   '.repeat(depth)}${node.name}`, disabled: node.children.includes(n), action: () => lib.moveNode(n.id, node.id, 'inside'),
         })),
       ] },
-      { label: 'Rename…', action: async () => { const name = await promptText('Rename', n.name); if (name) lib.renameNode(n.id, name); } },
-      { label: 'Delete', action: async () => {
-        if (await confirmDialog('Delete', `Delete "${n.name}"${n.type === 'folder' ? ' and everything in it' : ''}?`)) {
+      { label: tx('Rename…'), action: async () => { const name = await promptText(tx('Rename'), n.name); if (name) lib.renameNode(n.id, name); } },
+      { label: tx('Delete'), action: async () => {
+        if (await confirmDialog(tx('Delete'), tx`Delete "${n.name}"${n.type === 'folder' ? tx(' and everything in it') : ''}?`)) {
           if (this.source === n.id) this.select('collection');
           lib.deleteNode(n.id);
         }
@@ -341,20 +342,20 @@ export class Browser {
   moreMenu(e) {
     const r = e.currentTarget.getBoundingClientRect();
     contextMenu(r.left, r.bottom + 2, [
-      { label: 'Import a DJ library (XML: playlists, cues, tags)…', action: () => this.app.importXml() },
-      { label: 'Download tracks (YouTube, new releases)…', action: () => this.app.downloads.open() },
-      { label: 'Export to USB for DJ players…', action: () => openCdjExport(this.app) },
-      { label: 'Auto-tag the tracks shown… (Spotify / Deezer)', action: () => openAutoTag(this.app, (this.selectedRows().length > 1 ? this.selectedRows() : this.rows ?? []).map((r) => r.track.id)) },
-      { label: 'Clean the names of the tracks shown…', action: () => openCleanNames(this.app, (this.selectedRows().length > 1 ? this.selectedRows() : this.rows ?? []).map((r) => r.track.id)) },
-      { label: 'Undo the last auto-tag / clean', disabled: !this.app.lastAutoTag?.length, action: () => undoAutoTag(this.app) },
-      { label: 'Export collection as XML…', action: () => this.app.exportXml() },
-      { label: 'Send to another Reboxed (USB drive)…', action: () => openTransferExport(this.app) },
-      { label: 'Import from another Reboxed…', action: () => openTransferImport(this.app) },
+      { label: tx('Import a DJ library (XML: playlists, cues, tags)…'), action: () => this.app.importXml() },
+      { label: tx('Download tracks (YouTube, new releases)…'), action: () => this.app.downloads.open() },
+      { label: tx('Export to USB for DJ players…'), action: () => openCdjExport(this.app) },
+      { label: tx('Auto-tag the tracks shown… (Spotify / Deezer)'), action: () => openAutoTag(this.app, (this.selectedRows().length > 1 ? this.selectedRows() : this.rows ?? []).map((r) => r.track.id)) },
+      { label: tx('Clean the names of the tracks shown…'), action: () => openCleanNames(this.app, (this.selectedRows().length > 1 ? this.selectedRows() : this.rows ?? []).map((r) => r.track.id)) },
+      { label: tx('Undo the last auto-tag / clean'), disabled: !this.app.lastAutoTag?.length, action: () => undoAutoTag(this.app) },
+      { label: tx('Export collection as XML…'), action: () => this.app.exportXml() },
+      { label: tx('Send to another Reboxed (USB drive)…'), action: () => openTransferExport(this.app) },
+      { label: tx('Import from another Reboxed…'), action: () => openTransferImport(this.app) },
       '-',
-      { label: 'Find duplicates in the collection…', action: () => openDuplicates(this.app) },
-      { label: 'Analyze all unanalyzed tracks', action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },
-      { label: 'Find missing files', action: () => this.app.findMissing() },
-      { label: 'Move my collection to a USB drive…', action: () => openRelink(this.app) },
+      { label: tx('Find duplicates in the collection…'), action: () => openDuplicates(this.app) },
+      { label: tx('Analyze all unanalyzed tracks'), action: () => this.app.analyzeTracks(this.lib.all().filter((t) => !t.analyzed).map((t) => t.id)) },
+      { label: tx('Find missing files'), action: () => this.app.findMissing() },
+      { label: tx('Move my collection to a USB drive…'), action: () => openRelink(this.app) },
     ]);
   }
 
@@ -398,7 +399,7 @@ export class Browser {
   }
 
   async newSmartList(parentId = null) {
-    const r = await editSmartList({ name: 'Intelligent Playlist', rules: { match: 'all', conditions: [] } }, this.smartContext());
+    const r = await editSmartList({ name: tx('Intelligent Playlist'), rules: { match: 'all', conditions: [] } }, this.smartContext());
     if (r) this.select(this.lib.createNode('smart', r.name, parentId, r.rules).id);
   }
 
@@ -416,20 +417,20 @@ export class Browser {
     if (this.source === 'suggest') {
       const set = (patch) => { this.lib.settings = { ...this.lib.settings, ...patch }; this.lib.scheduleSave(); this.refreshRows(); };
       const seedSel = h('select', { onchange: (e) => set({ relatedSeed: e.target.value }) },
-        [['master', 'Master deck'], ...Array.from({ length: s.deckCount }, (_, i) => [`deck${i + 1}`, `Deck ${i + 1}`]), ['selected', 'Selected track']]
+        [['master', tx('Master deck')], ...Array.from({ length: s.deckCount }, (_, i) => [`deck${i + 1}`, `Deck ${i + 1}`]), ['selected', tx('Selected track')]]
           .map(([v, l]) => h('option', { value: v, selected: s.relatedSeed === v }, l)));
-      const moodSel = h('select', { title: 'Where the set goes next', onchange: (e) => { this.aiResult = null; set({ suggestMood: e.target.value }); } },
+      const moodSel = h('select', { title: tx('Where the set goes next'), onchange: (e) => { this.aiResult = null; set({ suggestMood: e.target.value }); } },
         Object.entries(MOODS).map(([v, l]) => h('option', { value: v, selected: (s.suggestMood ?? 'keep') === v }, l)));
-      this.aiBtn = h('button.dbtn.small', { title: 'Ask Gemini to re-rank the best matches and name tracks to discover (titles, artists, BPM and keys only are sent)', onclick: () => this.askAi() }, '✦ ASK GEMINI');
+      this.aiBtn = h('button.dbtn.small', { title: tx('Ask Gemini to re-rank the best matches and name tracks to discover (titles, artists, BPM and keys only are sent)'), onclick: () => this.askAi() }, '✦ ASK GEMINI');
       this.aiStatus = h('span.dim');
       this.whyEl = h('div.suggest-why');
       this.discoverEl = h('div.suggest-discover');
       window.rb.ai?.status().then((st) => {
-        if (!st?.hasKey) { this.aiBtn.disabled = true; this.aiBtn.title = 'Optional: add a Gemini API key in Preferences > Accounts'; }
+        if (!st?.hasKey) { this.aiBtn.disabled = true; this.aiBtn.title = tx('Optional: add a Gemini API key in Preferences > Accounts'); }
       }).catch(() => {});
       this.relatedEl.replaceChildren(h('div.filter-panel.related-panel.suggest-panel', {},
         h('div.frow', {}, h('span.ftoggle', {}, 'SUGGEST'), seedSel, moodSel, this.aiBtn, this.aiStatus,
-          h('span.dim', {}, 'Sound, key, tempo, energy and what you usually play next. Works offline.')),
+          h('span.dim', {}, tx('Sound, key, tempo, energy and what you usually play next. Works offline.'))),
         this.whyEl, this.discoverEl));
       this.renderDiscover();
       return;
@@ -460,13 +461,13 @@ export class Browser {
 
   suggestRows() {
     const seed = this.relatedSeedTrack();
-    this.count.title = seed ? `Next after: ${seed.artist ? `${seed.artist} - ` : ''}${seed.title}` : 'Load a track (or pick "Selected track")';
+    this.count.title = seed ? tx`Next after: ${seed.artist ? `${seed.artist} - ` : ''}${seed.title}` : tx('Load a track (or pick "Selected track")');
     if (!seed) { this.whyEl?.replaceChildren(); return []; }
     let list = this.localSuggestions(seed);
     const ai = this.aiResult?.seedId === seed.id ? this.aiResult : null;
     if (ai) {
       const picked = new Set(ai.picks.map((p) => p.track.id));
-      list = [...ai.picks.map((p) => ({ track: p.track, reasons: [`Gemini: ${p.why}`] })), ...list.filter((r) => !picked.has(r.track.id))];
+      list = [...ai.picks.map((p) => ({ track: p.track, reasons: [tx`Gemini: ${p.why}`] })), ...list.filter((r) => !picked.has(r.track.id))];
     }
     this.whyEl?.replaceChildren(...list.slice(0, 5).map((r) => h('span.suggest-chip', { title: r.reasons.join(' · ') },
       h('b', {}, r.track.title), r.reasons.length ? ` — ${r.reasons.slice(0, 3).join(', ')}` : '')));
@@ -481,15 +482,15 @@ export class Browser {
     const ids = (this.lib.histories[0]?.trackIds ?? []).slice(-8);
     const recent = ids.map((id) => this.lib.get(id)).filter((t) => t && t.id !== seed.id);
     this.aiBtn.disabled = true;
-    this.aiStatus.textContent = 'Asking Gemini…';
+    this.aiStatus.textContent = tx('Asking Gemini…');
     try {
       const text = await window.rb.ai.ask(aiPrompt(seed, candidates, recent, this.lib.settings.suggestMood ?? 'keep'));
       this.aiResult = { seedId: seed.id, ...parseAiAnswer(text, candidates) };
-      this.aiStatus.textContent = `Gemini: ${this.aiResult.picks.length} picks, ${this.aiResult.discover.length} to discover`;
+      this.aiStatus.textContent = tx`Gemini: ${this.aiResult.picks.length} picks, ${this.aiResult.discover.length} to discover`;
       this.renderDiscover();
       this.refreshRows();
     } catch (err) {
-      this.aiStatus.textContent = String(err.message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+      this.aiStatus.textContent = errText(err);
     } finally {
       this.aiBtn.disabled = false;
     }
@@ -503,14 +504,14 @@ export class Browser {
     if (!ai?.discover.length) { this.discoverEl.replaceChildren(); return; }
     const dl = this.app.downloads;
     this.discoverEl.replaceChildren(h('span.ftoggle', {}, 'DISCOVER'), ...ai.discover.map((d) => h('button.suggest-chip.discover', {
-      title: `${d.why} — search it to download`,
+      title: tx`${d.why} — search it to download`,
       onclick: () => { dl.query = `${d.artist} ${d.title}`.trim(); dl.open('search'); setTimeout(() => dl.body?.querySelector('.dlc-primary')?.click(), 60); },
     }, `${d.artist ? `${d.artist} – ` : ''}${d.title}`)));
   }
 
   relatedRows() {
     const seed = this.relatedSeedTrack();
-    this.count.title = seed ? `Related to: ${seed.artist ? `${seed.artist} - ` : ''}${seed.title}` : 'Load a track (or pick "Selected track")';
+    this.count.title = seed ? tx`Related to: ${seed.artist ? `${seed.artist} - ` : ''}${seed.title}` : tx('Load a track (or pick "Selected track")');
     return findRelated(this.lib.all(), seed, this.lib.settings.related).map((r) => ({ track: r.track, pos: -1 }));
   }
 
@@ -531,7 +532,7 @@ export class Browser {
     const allTags = [...new Set(this.lib.all().flatMap((t) => t.myTags ?? []))].sort();
     const fromDeck = () => {
       const d = this.app.engine.masterDeck ?? this.app.engine.decks.find((x) => x.loaded);
-      if (!d?.loaded) { toast('No track loaded on a deck'); return; }
+      if (!d?.loaded) { toast(tx('No track loaded on a deck')); return; }
       if (d.currentBpm) { f.bpm.base = Math.round(d.currentBpm * 100) / 100; f.bpm.enabled = true; }
       const key = d.analysis?.key || d.track.key;
       if (key) { f.key.keys = compatibleKeys(key); f.key.enabled = true; }
@@ -543,14 +544,14 @@ export class Browser {
         h('span', {}, '±'),
         h('select', { onchange: (e) => { f.bpm.rangePercent = Number(e.target.value); update(); } },
           BPM_RANGE_PERCENTS.map((p) => h('option', { value: p, selected: p === f.bpm.rangePercent }, `${p}%`))),
-        h('button.dbtn.small', { onclick: fromDeck, title: 'Set BPM and KEY from the master deck (compatible keys)' }, 'FROM DECK')),
+        h('button.dbtn.small', { onclick: fromDeck, title: tx('Set BPM and KEY from the master deck (compatible keys)') }, 'FROM DECK')),
       h('div.frow', {}, toggle(f.key, 'KEY'), chips(CAMELOT, f.key.keys, (k) => displayKey(k, this.lib.settings.keyNotation), update)),
       h('div.frow', {}, toggle(f.rating, 'RATING'), chips([0, 1, 2, 3, 4, 5], f.rating.ratings, (r) => (r ? '★'.repeat(r) : '0'), update)),
       h('div.frow', {}, toggle(f.color, 'COLOR'), chips(TRACK_COLORS.map((c) => c.name), f.color.colors, (c) => c, update, (c) => ({ borderColor: COLOR_CSS[c] }))),
       h('div.frow', {}, toggle(f.myTag, 'MY TAG'),
         h('select', { onchange: (e) => { f.myTag.mode = e.target.value; update(); } },
-          h('option', { value: 'all', selected: f.myTag.mode === 'all' }, 'Match all'), h('option', { value: 'any', selected: f.myTag.mode === 'any' }, 'Match any')),
-        allTags.length ? chips(allTags, f.myTag.tags, (t) => t, update) : h('span.dim', {}, 'No My Tags yet (edit a track to add some)')));
+          h('option', { value: 'all', selected: f.myTag.mode === 'all' }, tx('Match all')), h('option', { value: 'any', selected: f.myTag.mode === 'any' }, tx('Match any'))),
+        allTags.length ? chips(allTags, f.myTag.tags, (t) => t, update) : h('span.dim', {}, tx('No My Tags yet (edit a track to add some)'))));
   }
 
   filterActive() {
@@ -583,7 +584,7 @@ export class Browser {
     }
     const keys = new Set(this.rows.map((r) => r.key));
     for (const k of [...this.selected]) if (!keys.has(k)) this.selected.delete(k);
-    this.count.textContent = `${this.rows.length} track${this.rows.length === 1 ? '' : 's'}`;
+    this.count.textContent = tx`${this.rows.length} track${this.rows.length === 1 ? '' : 's'}`;
     this.renderHead();
     this.renderBody();
   }
@@ -593,11 +594,11 @@ export class Browser {
     this.applyWidths();
     this.head.replaceChildren(...this.columns.map((c) => {
       const def = COLUMNS[c];
-      const grip = h('span.col-grip', { title: 'Drag to resize · double-click to fit the content' });
+      const grip = h('span.col-grip', { title: tx('Drag to resize · double-click to fit the content') });
       grip.addEventListener('pointerdown', (e) => this.startResize(e, c, grip));
       grip.addEventListener('dblclick', (e) => { e.stopPropagation(); this.autoFit(c); });
       grip.addEventListener('click', (e) => e.stopPropagation());
-      const cell = h(`div.th.c-${c}${def.num ? '.num' : ''}`, { style: { width: `var(--w-${c})` }, draggable: true, title: 'Click to sort · drag to move the column' },
+      const cell = h(`div.th.c-${c}${def.num ? '.num' : ''}`, { style: { width: `var(--w-${c})` }, draggable: true, title: tx('Click to sort · drag to move the column') },
         def.label, s.col === c ? h('span.sort', {}, s.dir > 0 ? ' ▲' : ' ▼') : '', grip);
       cell.onclick = () => { this.sort = { col: c, dir: s.col === c ? -s.dir : 1 }; this.app.ui?.set(`sort:${this.source}`, this.sort); this.refreshRows(); };
       cell.oncontextmenu = (e) => this.columnMenu(e);
@@ -693,13 +694,13 @@ export class Browser {
     e.preventDefault();
     const cur = this.lib.settings.columns;
     contextMenu(e.clientX, e.clientY, Object.entries(COLUMNS).filter(([k]) => k !== 'pos').map(([k, def]) => ({
-      label: def.menuLabel || def.label || 'Color', checked: cur.includes(k),
+      label: def.menuLabel || def.label || tx('Color'), checked: cur.includes(k),
       action: () => this.lib.setSetting('columns', cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]),
     })).concat([
       '-',
-      { label: 'Fit all columns to their content', action: () => this.columns.forEach((c) => this.autoFit(c)) },
-      { label: 'Reset column widths', action: () => { this.lib.setSetting('columnWidths', {}); this.applyWidths(); } },
-      { label: 'Reset column order', action: () => {
+      { label: tx('Fit all columns to their content'), action: () => this.columns.forEach((c) => this.autoFit(c)) },
+      { label: tx('Reset column widths'), action: () => { this.lib.setSetting('columnWidths', {}); this.applyWidths(); } },
+      { label: tx('Reset column order'), action: () => {
         const order = DEFAULT_SETTINGS.columns;
         const rank = (k) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
         this.lib.setSetting('columns', [...cur].sort((a, b) => rank(a) - rank(b)));
@@ -745,8 +746,8 @@ export class Browser {
         }, '★')));
         else if (c === 'title') {
           cell.textContent = def.get(r, settings) ?? '';
-          if (!t.analyzed) cell.prepend(h('span.unanalyzed', { title: 'Not analyzed' }, '● '));
-          if (played.has(t.id)) cell.prepend(h('span.played-mark', { title: 'Already played today' }, '✓ '));
+          if (!t.analyzed) cell.prepend(h('span.unanalyzed', { title: tx('Not analyzed') }, '● '));
+          if (played.has(t.id)) cell.prepend(h('span.played-mark', { title: tx('Already played today') }, '✓ '));
         }
         else cell.textContent = def.get(r, settings) ?? '';
         if (c === 'key' && t.key) cell.classList.add('keycell');
@@ -914,7 +915,7 @@ export class Browser {
     const rows = this.selectedRows();
     if (!rows.length) return;
     if (this.source === 'collection') {
-      if (await confirmDialog('Remove from collection', `Remove ${rows.length} track(s) from the collection? Files are not deleted.`)) {
+      if (await confirmDialog(tx('Remove from collection'), tx`Remove ${rows.length} track(s) from the collection? Files are not deleted.`)) {
         this.lib.removeTracks(rows.map((r) => r.track.id));
       }
     } else if (this.source === 'tag-list') {
@@ -927,14 +928,14 @@ export class Browser {
   isHistory(id) { return this.lib.histories.some((x) => x.id === id); }
 
   async deleteHistory(x) {
-    if (!(await confirmDialog('Delete history', `Delete the history of ${x.date} (${x.trackIds.length} track(s))? The tracks stay in the collection.`))) return;
+    if (!(await confirmDialog(tx('Delete history'), tx`Delete the history of ${x.date} (${x.trackIds.length} track(s))? The tracks stay in the collection.`))) return;
     if (this.source === x.id) this.select('collection');
     this.lib.deleteHistory(x.id);
   }
 
   async clearHistories() {
     if (!this.lib.histories.length) return;
-    if (!(await confirmDialog('Delete all histories', `Delete all ${this.lib.histories.length} histories? The tracks stay in the collection.`))) return;
+    if (!(await confirmDialog(tx('Delete all histories'), tx`Delete all ${this.lib.histories.length} histories? The tracks stay in the collection.`))) return;
     if (this.isHistory(this.source)) this.select('collection');
     this.lib.clearHistories();
   }
@@ -948,41 +949,41 @@ export class Browser {
     const lib = this.lib;
     const playlists = lib.playlistList();
     contextMenu(e.clientX, e.clientY, [
-      ...this.app.visibleDecks().map((d) => ({ label: `Load to Deck ${d.index + 1}`, action: () => this.app.loadTrack(d.index, first.id) })),
+      ...this.app.visibleDecks().map((d) => ({ label: tx`Load to Deck ${d.index + 1}`, action: () => this.app.loadTrack(d.index, first.id) })),
       '-',
-      { label: 'Add to playlist', submenu: playlists.length
-        ? playlists.map((p) => ({ label: p.label, action: () => { lib.addToPlaylist(p.id, ids); toast(`Added to ${p.label}`); } }))
-        : [{ label: '(no playlists)', disabled: true }] },
-      { label: 'New playlist from selection…', action: async () => {
-        const name = await promptText('New playlist', 'Untitled Playlist');
+      { label: tx('Add to playlist'), submenu: playlists.length
+        ? playlists.map((p) => ({ label: p.label, action: () => { lib.addToPlaylist(p.id, ids); toast(tx`Added to ${p.label}`); } }))
+        : [{ label: tx('(no playlists)'), disabled: true }] },
+      { label: tx('New playlist from selection…'), action: async () => {
+        const name = await promptText(tx('New playlist'), tx('Untitled Playlist'));
         if (name) { const n = lib.createNode('playlist', name); lib.addToPlaylist(n.id, ids); }
       } },
-      { label: 'Add to Tag List', action: () => { lib.addToTagList(ids); toast(`${ids.length} track(s) tagged`); } },
-      { label: 'Show related tracks', action: () => {
+      { label: tx('Add to Tag List'), action: () => { lib.addToTagList(ids); toast(tx`${ids.length} track(s) tagged`); } },
+      { label: tx('Show related tracks'), action: () => {
         this.relatedSelected = first;
         this.lib.settings = { ...this.lib.settings, relatedSeed: 'selected' };
         this.select('related');
       } },
       '-',
-      { label: 'Analyze', action: () => this.app.analyzeTracks(ids) },
-      { label: 'Create cues from phrases', action: () => ids.forEach((id) => this.app.createCuesFor(id)) },
-      { label: 'Separate stems', action: () => ids.forEach((id) => this.app.separateStems(id)) },
-      { label: 'Show suggestions (sounds like)', action: () => {
+      { label: tx('Analyze'), action: () => this.app.analyzeTracks(ids) },
+      { label: tx('Create cues from phrases'), action: () => ids.forEach((id) => this.app.createCuesFor(id)) },
+      { label: tx('Separate stems'), action: () => ids.forEach((id) => this.app.separateStems(id)) },
+      { label: tx('Show suggestions (sounds like)'), action: () => {
         this.relatedSelected = first;
         this.lib.settings = { ...this.lib.settings, relatedSeed: 'selected' };
         this.select('suggest');
       } },
-      { label: 'Rating', submenu: [0, 1, 2, 3, 4, 5].map((n) => ({ label: n ? '★'.repeat(n) : 'None', action: () => ids.forEach((id) => lib.update(id, { rating: n })) })) },
-      { label: 'Color', submenu: [{ label: 'None', action: () => ids.forEach((id) => lib.update(id, { color: '' })) },
+      { label: tx('Rating'), submenu: [0, 1, 2, 3, 4, 5].map((n) => ({ label: n ? '★'.repeat(n) : tx('None'), action: () => ids.forEach((id) => lib.update(id, { rating: n })) })) },
+      { label: tx('Color'), submenu: [{ label: tx('None'), action: () => ids.forEach((id) => lib.update(id, { color: '' })) },
         ...TRACK_COLORS.map((c) => ({ label: c.name, checked: first.color === c.name, action: () => ids.forEach((id) => lib.update(id, { color: c.name })) }))] },
-      { label: 'Track information…', action: () => this.editTrack(first.id) },
-      { label: `Auto-tag with Spotify / Deezer… (${ids.length})`, action: () => openAutoTag(this.app, ids) },
-      { label: `Clean names (Lyrics, Official Video…)… (${ids.length})`, action: () => openCleanNames(this.app, ids) },
-      { label: 'Show in Explorer', action: () => window.rb.showItem(first.path) },
+      { label: tx('Track information…'), action: () => this.editTrack(first.id) },
+      { label: tx`Auto-tag with Spotify / Deezer… (${ids.length})`, action: () => openAutoTag(this.app, ids) },
+      { label: tx`Clean names (Lyrics, Official Video…)… (${ids.length})`, action: () => openCleanNames(this.app, ids) },
+      { label: tx('Show in Explorer'), action: () => window.rb.showItem(first.path) },
       '-',
       this.source === 'collection'
-        ? { label: 'Remove from collection', action: () => this.removeSelected() }
-        : { label: this.source === 'tag-list' ? 'Remove from Tag List' : this.isHistory(this.source) ? 'Remove from history' : 'Remove from playlist',
+        ? { label: tx('Remove from collection'), action: () => this.removeSelected() }
+        : { label: this.source === 'tag-list' ? tx('Remove from Tag List') : this.isHistory(this.source) ? tx('Remove from history') : tx('Remove from playlist'),
           disabled: !(this.source === 'tag-list' || this.isHistory(this.source) || lib.findNode(this.source)?.node.type === 'playlist'), action: () => this.removeSelected() },
     ]);
   }
@@ -1006,13 +1007,13 @@ export class Browser {
     const paintStars = () => rating.querySelectorAll('.ti-star').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) <= ratingValue));
     rating.onclick = (e) => { const n = Number(e.target.dataset?.n); if (n) { ratingValue = ratingValue === n ? 0 : n; paintStars(); } };
     paintStars();
-    const color = h('select', {}, h('option', { value: '' }, 'None'),
+    const color = h('select', {}, h('option', { value: '' }, tx('None')),
       TRACK_COLORS.map((c) => h('option', { value: c.name, selected: t.color === c.name, style: { color: c.css } }, `● ${c.name}`)));
     const notation = this.lib.settings.keyNotation;
     const key = h('select', {}, h('option', { value: '' }, '—'),
       CAMELOT.map((k) => h('option', { value: k, selected: t.key === k }, notation === 'musical' ? `${displayKey(k, 'musical')} (${k})` : `${k} (${displayKey(k, 'musical')})`)));
     const bpm = h('input.text', { type: 'number', step: '0.01', min: 0, value: t.bpm ? t.bpm.toFixed(2) : '' });
-    const tags = h('input.text', { value: (t.myTags ?? []).join(', '), placeholder: 'e.g. warm-up, vocal, peak' });
+    const tags = h('input.text', { value: (t.myTags ?? []).join(', '), placeholder: tx('e.g. warm-up, vocal, peak') });
     const cues = t.cues ?? [];
     const kb = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n ? `${Math.round(n / 1024)} kB` : '');
     const info = (label, value) => (value || value === 0 ? [h('label', {}, label), h('div.ti-ro', {}, String(value))] : []);
@@ -1021,43 +1022,43 @@ export class Browser {
 
     const body = h('div.trackinfo', {},
       h('div.ti-top', {},
-        h('p.ti-note', {}, 'Edits are saved in your Reboxed library (and its exports), not in the audio file.'),
+        h('p.ti-note', {}, tx('Edits are saved in your Reboxed library (and its exports), not in the audio file.')),
         sp.button),
       sp.panel,
       h('div.ti-cols', {},
         h('div', {},
-          h('h4', {}, 'Track'),
+          h('h4', {}, tx('Track')),
           h('div.form-grid', {},
-            row('Title', text('title')), row('Artist', text('artist'), 'Several artists: separate with ", " or " & "'),
-            row('Album', text('album')), row('Album artist', text('albumArtist')), row('Genre', text('genre')),
-            row('Year', text('year', { number: true })), row('Track number', text('trackNumber', { number: true })), row('Disc number', text('discNumber', { number: true }))),
-          h('h4', {}, 'Credits'),
+            row(tx('Title'), text('title')), row(tx('Artist'), text('artist'), tx('Several artists: separate with ", " or " & "')),
+            row('Album', text('album')), row(tx('Album artist'), text('albumArtist')), row('Genre', text('genre')),
+            row(tx('Year'), text('year', { number: true })), row(tx('Track number'), text('trackNumber', { number: true })), row(tx('Disc number'), text('discNumber', { number: true }))),
+          h('h4', {}, tx('Credits')),
           h('div.form-grid', {},
-            row('Remixer', text('remixer')), row('Original artist', text('originalArtist')), row('Composer', text('composer')),
-            row('Label', text('label')), row('Mix name', text('mixName'), 'e.g. Original Mix, Extended Mix'), row('Grouping', text('grouping')))),
+            row(tx('Remixer'), text('remixer')), row(tx('Original artist'), text('originalArtist')), row(tx('Composer'), text('composer')),
+            row('Label', text('label')), row(tx('Mix name'), text('mixName'), tx('e.g. Original Mix, Extended Mix')), row(tx('Grouping'), text('grouping')))),
         h('div', {},
           h('h4', {}, 'DJ'),
           h('div.form-grid', {},
-            row('Rating', rating, 'Click a star; click it again to clear'),
-            row('Color', color),
-            row('My Tag', tags, 'Comma separated; used by the Track Filter and Intelligent Playlists'),
-            row('Comments', text('comments', { area: true })),
-            row('BPM', bpm, t.beatgrid ? 'Changing it re-spaces the beatgrid from its first beat' : ''),
-            row('Key', key),
-            row('DJ play count', text('playCount', { number: true })),
-            row('Date added', (inputs.dateAdded = h('input.text', { type: 'datetime-local', value: dateTimeInput(t) })))),
-          h('h4', {}, 'File (read only)'),
+            row(tx('Rating'), rating, tx('Click a star; click it again to clear')),
+            row(tx('Color'), color),
+            row('My Tag', tags, tx('Comma separated; used by the Track Filter and Intelligent Playlists')),
+            row(tx('Comments'), text('comments', { area: true })),
+            row('BPM', bpm, t.beatgrid ? tx('Changing it re-spaces the beatgrid from its first beat') : ''),
+            row(tx('Key'), key),
+            row(tx('DJ play count'), text('playCount', { number: true })),
+            row(tx('Date added'), (inputs.dateAdded = h('input.text', { type: 'datetime-local', value: dateTimeInput(t) })))),
+          h('h4', {}, tx('File (read only)')),
           h('div.form-grid', {},
-            h('label', {}, 'Location'), h('div.ti-ro', {}, h('span.path', {}, t.path), ' ', h('button.dbtn.small', { onclick: () => window.rb.showItem(t.path) }, 'Show in folder')),
+            h('label', {}, tx('Location')), h('div.ti-ro', {}, h('span.path', {}, t.path), ' ', h('button.dbtn.small', { onclick: () => window.rb.showItem(t.path) }, tx('Show in folder'))),
             ...info('Type', t.kind || t.path.split('.').pop().toUpperCase()),
-            ...info('Duration', t.duration ? fmtTime(t.duration) : ''),
-            ...info('Bitrate', t.bitrate ? `${t.bitrate} kbps` : ''),
-            ...info('Sample rate', t.sampleRate ? `${(t.sampleRate / 1000).toFixed(1)} kHz` : ''),
-            ...info('Size', kb(t.fileSize)),
-            ...info('Analysis', t.analyzed ? 'analysed' : 'not analysed yet'),
+            ...info(tx('Duration'), t.duration ? fmtTime(t.duration) : ''),
+            ...info(tx('Bitrate'), t.bitrate ? `${t.bitrate} kbps` : ''),
+            ...info(tx('Sample rate'), t.sampleRate ? `${(t.sampleRate / 1000).toFixed(1)} kHz` : ''),
+            ...info(tx('Size'), kb(t.fileSize)),
+            ...info(tx('Analysis'), t.analyzed ? 'analysed' : tx('not analysed yet')),
             ...info('Stems', t.stems ? t.stems.toUpperCase() : 'none'),
-            ...info('Cues', `${cues.filter((c) => c.kind === 'hot').length} hot cues, ${cues.filter((c) => c.kind === 'memory').length} memory cues`)))));
-    const ok = await modal(`Track information — ${t.title || 'Untitled'}`, body, [{ label: 'Save', primary: true, value: true }, { label: 'Cancel', value: null }]);
+            ...info('Cues', tx`${cues.filter((c) => c.kind === 'hot').length} hot cues, ${cues.filter((c) => c.kind === 'memory').length} memory cues`)))));
+    const ok = await modal(tx`Track information — ${t.title || tx('Untitled')}`, body, [{ label: tx('Save'), primary: true, value: true }, { label: tx('Cancel'), value: null }]);
     if (!ok) return;
     const patch = { rating: ratingValue, color: color.value, key: key.value };
     for (const k of ['title', 'artist', 'album', 'albumArtist', 'genre', 'remixer', 'originalArtist', 'composer', 'label', 'mixName', 'grouping', 'comments']) patch[k] = inputs[k].value;
@@ -1067,7 +1068,7 @@ export class Browser {
       patch.addedAt = inputs.dateAdded.value.length > 10 ? new Date(inputs.dateAdded.value).getTime() : undefined;
     }
     if (pending.artwork) {
-      try { patch.artwork = await window.rb.artworkFromUrl(pending.artwork); } catch (err) { toast(`Cover not saved: ${err.message}`); }
+      try { patch.artwork = await window.rb.artworkFromUrl(pending.artwork); } catch (err) { toast(tx`Cover not saved: ${errText(err)}`); }
     }
     patch.myTags = tags.value.split(',').map((x) => x.trim()).filter(Boolean);
     const newBpm = Number(bpm.value);

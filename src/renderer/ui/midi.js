@@ -1,5 +1,6 @@
 // MIDI controller support via Web MIDI: learnable mappings from note/CC/pitch-bend messages to
 // app actions. Mappings persist in settings.midiMappings as {key, target, label}.
+import { errText, tx } from '../../shared/i18n.js';
 import { h, toast } from './dom.js';
 import { BEAT_FX } from '../audio/fx.js';
 import { decodeMessage } from '../../shared/midi.js';
@@ -15,27 +16,27 @@ export function buildTargets(app) {
   const pressOnly = (fn) => (m) => { if (m.press) fn(); };
   app.engine.decks.forEach((d, i) => {
     const n = i + 1;
-    add(`deck${n}.play`, `Deck ${n} Play/Pause`, 'button', pressOnly(() => d.playPause()));
+    add(`deck${n}.play`, tx`Deck ${n} Play/Pause`, 'button', pressOnly(() => d.playPause()));
     add(`deck${n}.cue`, `Deck ${n} Cue`, 'button', (m) => (m.press ? d.cueDown() : d.cueUp()));
     add(`deck${n}.sync`, `Deck ${n} Sync`, 'button', pressOnly(() => d.toggleSync()));
     add(`deck${n}.master`, `Deck ${n} Master`, 'button', pressOnly(() => app.engine.setMasterDeck(i)));
     add(`deck${n}.keylock`, `Deck ${n} Master Tempo`, 'button', pressOnly(() => d.toggleKeyLock()));
     add(`deck${n}.slip`, `Deck ${n} Slip`, 'button', pressOnly(() => d.toggleSlip()));
     add(`deck${n}.quantize`, `Deck ${n} Quantize`, 'button', pressOnly(() => d.toggleQuantize()));
-    add(`deck${n}.reverse`, `Deck ${n} Reverse (hold)`, 'button', (m) => d.setReverse(!!m.press));
+    add(`deck${n}.reverse`, tx`Deck ${n} Reverse (hold)`, 'button', (m) => d.setReverse(!!m.press));
     for (let s = 0; s < 8; s++) {
       add(`deck${n}.hotcue${s + 1}`, `Deck ${n} Hot Cue ${String.fromCharCode(65 + s)}`, 'button', pressOnly(() => d.hotCuePress(s)));
     }
     add(`deck${n}.loop`, `Deck ${n} Auto Beat Loop`, 'button', pressOnly(() => d.beatLoop(d.beatLoopSize)));
-    add(`deck${n}.reloop`, `Deck ${n} Reloop/Exit`, 'button', pressOnly(() => d.reloopExit()));
-    add(`deck${n}.loopHalf`, `Deck ${n} Loop 1/2`, 'button', pressOnly(() => d.resizeLoop(0.5)));
-    add(`deck${n}.loopDouble`, `Deck ${n} Loop x2`, 'button', pressOnly(() => d.resizeLoop(2)));
-    add(`deck${n}.jumpBack`, `Deck ${n} Beat Jump Back`, 'button', pressOnly(() => d.beatJump(-d.beatJumpSize)));
-    add(`deck${n}.jumpFwd`, `Deck ${n} Beat Jump Forward`, 'button', pressOnly(() => d.beatJump(d.beatJumpSize)));
-    add(`deck${n}.load`, `Deck ${n} Load Selected Track`, 'button', pressOnly(() => { const id = app.browser.currentTrackId(); if (id) app.loadTrack(i, id); }));
+    add(`deck${n}.reloop`, tx`Deck ${n} Reloop/Exit`, 'button', pressOnly(() => d.reloopExit()));
+    add(`deck${n}.loopHalf`, tx`Deck ${n} Loop 1/2`, 'button', pressOnly(() => d.resizeLoop(0.5)));
+    add(`deck${n}.loopDouble`, tx`Deck ${n} Loop x2`, 'button', pressOnly(() => d.resizeLoop(2)));
+    add(`deck${n}.jumpBack`, tx`Deck ${n} Beat Jump Back`, 'button', pressOnly(() => d.beatJump(-d.beatJumpSize)));
+    add(`deck${n}.jumpFwd`, tx`Deck ${n} Beat Jump Forward`, 'button', pressOnly(() => d.beatJump(d.beatJumpSize)));
+    add(`deck${n}.load`, tx`Deck ${n} Load Selected Track`, 'button', pressOnly(() => { const id = app.browser.currentTrackId(); if (id) app.loadTrack(i, id); }));
     // Tempo slider: top = slower like a CDJ (value 0 -> -range).
-    add(`deck${n}.tempo`, `Deck ${n} Tempo Slider`, 'abs', (m) => d.userTempo((m.value01 * 2 - 1) * d.tempoRange));
-    add(`deck${n}.jog`, `Deck ${n} Jog (relative)`, 'rel', (m) => {
+    add(`deck${n}.tempo`, tx`Deck ${n} Tempo Slider`, 'abs', (m) => d.userTempo((m.value01 * 2 - 1) * d.tempoRange));
+    add(`deck${n}.jog`, tx`Deck ${n} Jog (relative)`, 'rel', (m) => {
       if (d.playing) { d.setBend(1 + Math.max(-0.1, Math.min(0.1, m.delta * 0.01))); clearTimeout(d.jogTimer); d.jogTimer = setTimeout(() => d.setBend(1), 60); }
       else d.seek(d.position() + m.delta * 0.01);
     });
@@ -44,13 +45,13 @@ export function buildTargets(app) {
     add(id, c.label, c.button ? 'button' : 'abs', c.button ? pressOnly(() => c.apply()) : (m) => c.apply(m.value01));
   }
   const fx = app.engine.fx;
-  add('fx.on', 'Beat FX On/Off', 'button', pressOnly(() => fx.setOn(!fx.on)));
+  add('fx.on', tx('Beat FX On/Off'), 'button', pressOnly(() => fx.setOn(!fx.on)));
   add('fx.depth', 'Beat FX Level/Depth', 'abs', (m) => fx.setDepth(m.value01));
-  add('fx.next', 'Beat FX Next Effect', 'button', pressOnly(() => {
+  add('fx.next', tx('Beat FX Next Effect'), 'button', pressOnly(() => {
     const i = BEAT_FX.findIndex((f) => f.id === fx.effectId);
     fx.setEffect(BEAT_FX[(i + 1) % BEAT_FX.length].id);
   }));
-  add('browse.scroll', 'Browser Scroll (relative)', 'rel', (m) => app.browser.moveSelection(m.delta));
+  add('browse.scroll', tx('Browser Scroll (relative)'), 'rel', (m) => app.browser.moveSelection(m.delta));
   return t;
 }
 
@@ -108,7 +109,7 @@ export class MidiController {
     const plugin = this.app.plugins?.forPort(name);
     if (plugin) {
       try { return { plugin, profile: await this.app.plugins.mapping(plugin) }; } catch (err) {
-        toast(`Plugin ${plugin.name}: ${err.message}`, 6000);
+        toast(tx`Plugin ${plugin.name}: ${errText(err)}`, 6000);
       }
     }
     const found = await window.rb.rbMapping(name).catch(() => null);
@@ -122,7 +123,7 @@ export class MidiController {
       // Windows can list the same pad port twice ("LPX MIDI", "MIDIIN2 (LPX MIDI)"): one driver per output.
       const same = output && [...this.launchpads.values()].find((lp) => lp.outputId === output.id);
       if (same) { (this.lpAliases ??= new Map()).set(input.id, same); return; }
-      if (!output || !this.access.sysexEnabled) { toast(`${input.name}: SysEx is not allowed, the pad lights stay off`, 5000); }
+      if (!output || !this.access.sysexEnabled) { toast(tx`${input.name}: SysEx is not allowed, the pad lights stay off`, 5000); }
       const lp = this.attachLaunchpad(input.id, (bytes) => { try { output?.send(bytes); } catch { /* port closed */ } }, 'Launchpad X');
       lp.outputId = output?.id ?? null;
       return;
@@ -160,7 +161,7 @@ export class MidiController {
     const driver = new PioneerController(this.app, profile, send, plugin);
     this.controllers.set(id, driver);
     driver.updateLeds(true);
-    toast(`${name}: controller mapping loaded (${profile.entries.length} functions)`, 4000);
+    toast(tx`${name}: controller mapping loaded (${profile.entries.length} functions)`, 4000);
     this.app.onControllerChange?.(driver);
     return driver;
   }
@@ -170,7 +171,7 @@ export class MidiController {
     const lp = new LaunchpadDriver(this.app.padSurface, send, name);
     this.launchpads.set(id, lp);
     lp.frame(performance.now(), true);
-    toast(`${name}: pad sampler ready — PADS in the top bar (Session = pads, Note = instrument, Custom = light show)`, 6000);
+    toast(tx`${name}: pad sampler ready — PADS in the top bar (Session = pads, Note = instrument, Custom = light show)`, 6000);
     this.app.onPadControllerChange?.(lp);
     return lp;
   }
@@ -205,17 +206,17 @@ export class MidiController {
     const targetSel = h('select', {}, [...this.targets].map(([id, t]) => h('option', { value: id }, t.label)));
     const learnBtn = h('button.dbtn.small', {}, 'LEARN');
     const render = () => {
-      table.replaceChildren(h('tr', {}, h('th', {}, 'Function'), h('th', {}, 'MIDI message'), h('th', {}, '')),
+      table.replaceChildren(h('tr', {}, h('th', {}, tx('Function')), h('th', {}, tx('MIDI message')), h('th', {}, '')),
         ...this.mappings.map((m) => h('tr', {}, h('td', {}, this.targets.get(m.target)?.label ?? m.target), h('td', {}, m.key),
-          h('td', {}, h('button.icon', { title: 'Delete', onclick: () => {
+          h('td', {}, h('button.icon', { title: tx('Delete'), onclick: () => {
             this.app.library.setSetting('midiMappings', this.mappings.filter((x) => x !== m)); render();
           } }, '✕')))));
     };
     learnBtn.onclick = () => {
-      if (!this.access) { status.textContent = 'Web MIDI not available'; return; }
+      if (!this.access) { status.textContent = tx('Web MIDI not available'); return; }
       this.learnTarget = targetSel.value;
       learnBtn.classList.add('on');
-      status.textContent = 'Move or press a control on your MIDI device…';
+      status.textContent = tx('Move or press a control on your MIDI device…');
     };
     this.onLearn = (target, key) => { learnBtn.classList.remove('on'); status.textContent = `${this.targets.get(target).label} ← ${key}`; render(); };
     render();
@@ -225,17 +226,17 @@ export class MidiController {
     const monitor = h('pre.midi-monitor', {}, '—');
     const tick = setInterval(() => {
       if (!monitor.isConnected) { clearInterval(tick); return; }
-      const lines = drivers.flatMap((dr) => dr.monitor.slice(-12).map((m) => `${m.bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ')}  ${m.names.join(', ') || '(not mapped)'}`));
-      monitor.textContent = lines.length ? lines.join('\n') : 'Move a control on the controller…';
+      const lines = drivers.flatMap((dr) => dr.monitor.slice(-12).map((m) => `${m.bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ')}  ${m.names.join(', ') || tx('(not mapped)')}`));
+      monitor.textContent = lines.length ? lines.join('\n') : tx('Move a control on the controller…');
     }, 200);
     const invert = h('input', { type: 'checkbox', checked: this.app.library.settings.controllerTempoInvert, onchange: (e) => this.app.library.setSetting('controllerTempoInvert', e.target.checked) });
     return h('div', {},
-      h('p.dim', {}, devices.length ? `Inputs: ${devices.join(', ')}` : 'No MIDI input detected (plug a controller, it is picked up automatically).'),
+      h('p.dim', {}, devices.length ? tx`Inputs: ${devices.join(', ')}` : tx('No MIDI input detected (plug a controller, it is picked up automatically).')),
       drivers.length
-        ? h('div', {}, h('p', {}, `Controller mapping active: ${drivers.map((d) => d.device).join(', ')}`),
-          h('label', {}, invert, ' Invert tempo slider direction'), monitor)
-        : h('p.dim', {}, 'Works automatically with any controller that has a plugin (Preferences > Mods / Plugins) or an installed mapping file.'),
-      h('h4', {}, 'MIDI learn (extra mappings)'),
+        ? h('div', {}, h('p', {}, tx`Controller mapping active: ${drivers.map((d) => d.device).join(', ')}`),
+          h('label', {}, invert, tx(' Invert tempo slider direction')), monitor)
+        : h('p.dim', {}, tx('Works automatically with any controller that has a plugin (Preferences > Mods / Plugins) or an installed mapping file.')),
+      h('h4', {}, tx('MIDI learn (extra mappings)')),
       h('div.frow', {}, targetSel, learnBtn, status),
       table);
   }

@@ -1,4 +1,5 @@
 // Waveform canvases: scrolling detail view (play head centred) and full-track overview.
+import { tx } from '../../shared/i18n.js';
 import { waveformArrays } from '../analysis/analyzer.js';
 import { PHRASE_COLORS } from '../../shared/dsp/phrase.js';
 import { lerpAt } from '../../shared/dsp/waveform.js';
@@ -192,7 +193,7 @@ export function drawDetail(canvas, deck, opts) {
     g.fillStyle = themeColor.bg;
     g.fillRect(0, 0, w, h);
     g.fillStyle = themeColor.text; g.font = `${12 * dpr}px system-ui`; g.textAlign = 'center';
-    g.fillText(deck.loading ? 'Loading…' : `Deck ${deck.index + 1} — drop a track`, cx, h / 2 + 4 * dpr);
+    g.fillText(deck.loading ? tx('Loading…') : tx`Deck ${deck.index + 1} — drop a track`, cx, h / 2 + 4 * dpr);
     return;
   }
   const pos = deck.position();
@@ -207,7 +208,7 @@ export function drawDetail(canvas, deck, opts) {
 
   if (!wf) {
     g.fillStyle = themeColor.text; g.font = `${11 * dpr}px system-ui`; g.textAlign = 'center';
-    g.fillText('Analyzing…', cx, 14 * dpr);
+    g.fillText(tx('Analyzing…'), cx, 14 * dpr);
   }
 
   // Beat grid: bar lines (every 4 beats) in red, beats in white.

@@ -1,6 +1,7 @@
 // Interface themes: each one sets the colour variables of styles.css (:root). Settings:
 // theme (id), themeAccent (null = the theme's own), uiScale (zoom), topbarLabels ('full' | 'icons').
 
+import { tx } from '../shared/i18n.js';
 const base = {
   '--bg-0': '#0a0a0b', '--bg': '#0e0e0f', '--bg-2': '#141415', '--panel': '#1b1b1d', '--panel-2': '#232326', '--panel-3': '#2b2b2f',
   '--line': '#2f2f33', '--line-2': '#3a3a3f', '--text': '#e8e8ea', '--text-2': '#b4b4b8', '--dim': '#7d7d82', '--faint': '#55555a',
@@ -36,7 +37,7 @@ export const THEMES = [
 /** Accent colours offered on top of any theme (null = the theme's own). */
 export const ACCENTS = ['#1473eb', '#19b5d8', '#2fbf71', '#c6e630', '#f2c12e', '#e8762b', '#fa233b', '#ff4f8b', '#d43dff', '#8a6cff'];
 
-export const UI_SCALES = [[0.85, 'Small (85 %)'], [0.92, 'Compact (92 %)'], [1, 'Normal (100 %)'], [1.1, 'Large (110 %)'], [1.25, 'Extra large (125 %)']];
+export const UI_SCALES = [[0.85, tx('Small (85 %)')], [0.92, tx('Compact (92 %)')], [1, tx('Normal (100 %)')], [1.1, tx('Large (110 %)')], [1.25, tx('Extra large (125 %)')]];
 
 const lighten = (hex, t) => `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) + (255 - parseInt(hex.slice(i, i + 2), 16)) * t).toString(16).padStart(2, '0')).join('')}`;
 

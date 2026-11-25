@@ -1,3 +1,4 @@
+import { tx } from '../../shared/i18n.js';
 import { h, fmtTime, fader, contextMenu, promptText, toast } from './dom.js';
 import { Overview } from './waveform.js';
 import { TEMPO_RANGES, BEAT_LOOP_SIZES, BEAT_JUMP_SIZES } from '../audio/deck.js';
@@ -45,7 +46,7 @@ export class DeckView {
     this.tempoEl = h('div.deck-tempo');
     this.timeEl = h('div.deck-time');
     this.remainEl = h('div.deck-remain');
-    this.masterBtn = btn('MASTER', 'master', () => app.engine.setMasterDeck(d.index), 'Make this deck the tempo master');
+    this.masterBtn = btn('MASTER', 'master', () => app.engine.setMasterDeck(d.index), tx('Make this deck the tempo master'));
     this.overviewCanvas = h('canvas.overview');
     this.overview = new Overview(this.overviewCanvas, d, (t) => d.seek(t));
 
@@ -56,12 +57,12 @@ export class DeckView {
     this.playBtn = h('button.transport.play', { onclick: () => d.playPause(), title: 'PLAY/PAUSE' }, '▶❚❚');
 
     // BEAT SYNC and KEY SYNC side by side, like rekordbox.
-    this.syncBtn = btn('BEAT SYNC', 'sync', () => d.toggleSync(), 'Beat sync: tempo (and beats) follow the master deck');
-    this.keySyncBtn = btn('KEY SYNC', 'keysync', () => d.toggleKeySync(), 'Key sync: shift the key to match the master deck (or its relative key)');
+    this.syncBtn = btn('BEAT SYNC', 'sync', () => d.toggleSync(), tx('Beat sync: tempo (and beats) follow the master deck'));
+    this.keySyncBtn = btn('KEY SYNC', 'keysync', () => d.toggleKeySync(), tx('Key sync: shift the key to match the master deck (or its relative key)'));
     this.qBtn = btn('Q', 'q', () => d.toggleQuantize(), 'Quantize');
-    this.mtBtn = btn('MT', 'mt', () => d.toggleKeyLock(), 'Master Tempo (key lock)');
-    this.slipBtn = btn('SLIP', 'slip', () => d.toggleSlip(), 'Slip mode');
-    this.revBtn = btn('REV', 'rev', () => d.setReverse(!d.reverse), 'Reverse');
+    this.mtBtn = btn('MT', 'mt', () => d.toggleKeyLock(), tx('Master Tempo (key lock)'));
+    this.slipBtn = btn('SLIP', 'slip', () => d.toggleSlip(), tx('Slip mode'));
+    this.revBtn = btn('REV', 'rev', () => d.setReverse(!d.reverse), tx('Reverse'));
 
     // 8 performance pads; what they do depends on the pad page.
     this.bank = 0;
@@ -78,33 +79,33 @@ export class DeckView {
       pad.addEventListener('contextmenu', (e) => { e.preventDefault(); if (this.padMode === 'HOT CUE') this.padMenu(e, this.bank * 8 + i); });
       return pad;
     });
-    this.bankBtn = btn('A–H', 'bank', () => { this.bank = 1 - this.bank; if (this.padMode === 'SAMPLER') this.samplerBank = this.bank; this.refresh(); }, 'Pad bank');
+    this.bankBtn = btn('A–H', 'bank', () => { this.bank = 1 - this.bank; if (this.padMode === 'SAMPLER') this.samplerBank = this.bank; this.refresh(); }, tx('Pad bank'));
     // Pad page dropdown.
     this.modeLabel = h('span.padmode-label');
-    this.modeBtn = h('button.dbtn.padmode', { title: 'Pad mode (a pad mode button on the controller opens its page)', onclick: () => this.modeMenu() }, this.modeLabel, h('span.padmode-caret', {}, '▾'));
+    this.modeBtn = h('button.dbtn.padmode', { title: tx('Pad mode (a pad mode button on the controller opens its page)'), onclick: () => this.modeMenu() }, this.modeLabel, h('span.padmode-caret', {}, '▾'));
     this.pageBar = h('div.row.page');
     // Stems: VOCAL / INST / BASS / DRUMS (indices into [drums, bass, other, vocals]).
     this.stemBtns = STEM_BUTTONS.map(([label, idx]) => {
-      const b = h(`button.dbtn.small.stem.stem-${label.toLowerCase()}`, { title: `${label}: click = mute/unmute, Shift+click = solo` }, label);
+      const b = h(`button.dbtn.small.stem.stem-${label.toLowerCase()}`, { title: tx`${label}: click = mute/unmute, Shift+click = solo` }, label);
       b.onclick = (e) => { if (e.shiftKey) d.soloStem(idx); else d.setStemOn(idx, d.stemGains[idx] === 0); };
       return b;
     });
     this.stemSepBtn = h('button.dbtn.small.stem-sep', {
-      title: 'Separate this track into stems (cached)',
+      title: tx('Separate this track into stems (cached)'),
       onclick: () => d.track && app.separateStems(d.track.id, { deck: d, ...(d.stemsComplete && d.stemQuality === 'fast' ? { quality: 'hq' } : {}) }),
     }, 'STEMS');
     this.stemRow = h('div.row.stems', {}, this.stemSepBtn, ...this.stemBtns);
-    this.censorBtn = h('button.dbtn.censor', { title: 'Censor (hold): plays reverse, returns via slip' }, 'CENSOR');
+    this.censorBtn = h('button.dbtn.censor', { title: tx('Censor (hold): plays reverse, returns via slip') }, 'CENSOR');
     this.censorBtn.addEventListener('pointerdown', () => d.censorDown());
     this.censorBtn.addEventListener('pointerup', () => d.censorUp());
     this.censorBtn.addEventListener('pointerleave', () => d.censorUp());
 
     this.loopSize = h('span.val');
-    this.loopBtn = btn('', 'loop-size', () => d.beatLoop(d.beatLoopSize), 'Auto beat loop (starts on the closest beat with Quantize)');
+    this.loopBtn = btn('', 'loop-size', () => d.beatLoop(d.beatLoopSize), tx('Auto beat loop (starts on the closest beat with Quantize)'));
     this.loopBtn.append(this.loopSize);
-    this.inBtn = btn('IN', '', () => d.loopIn(), 'Loop in');
-    this.outBtn = btn('OUT', '', () => d.loopOut(), 'Loop out');
-    this.exitBtn = btn('RELOOP', 'reloop', () => d.reloopExit(), 'Reloop / Exit');
+    this.inBtn = btn('IN', '', () => d.loopIn(), tx('Loop in'));
+    this.outBtn = btn('OUT', '', () => d.loopOut(), tx('Loop out'));
+    this.exitBtn = btn('RELOOP', 'reloop', () => d.reloopExit(), tx('Reloop / Exit'));
     this.jumpSize = h('span.val');
     /** Next loop size up / down from any length (a manual loop of 3 beats goes to 2 or 4). */
     const loopStep = (cur, dir) => (dir > 0 ? BEAT_LOOP_SIZES.find((s) => s > cur + 1e-6) ?? BEAT_LOOP_SIZES.at(-1)
@@ -114,14 +115,14 @@ export class DeckView {
     this.tempoFader = fader({ min: -1, max: 1, step: 0.0005, value: 0, vertical: true, cls: 'tempo', reset: 0,
       // Vertical range: top = min. Like a CDJ, pulling the fader down (towards you) speeds up.
       onInput: (v) => d.userTempo(v * d.tempoRange) });
-    this.rangeBtn = btn('', 'range', () => d.setTempoRange(TEMPO_RANGES[(TEMPO_RANGES.indexOf(d.tempoRange) + 1) % TEMPO_RANGES.length]), 'Tempo range');
+    this.rangeBtn = btn('', 'range', () => d.setTempoRange(TEMPO_RANGES[(TEMPO_RANGES.indexOf(d.tempoRange) + 1) % TEMPO_RANGES.length]), tx('Tempo range'));
 
     // Layout after rekordbox's PERFORMANCE deck: header (number, artwork, title, key, BPM,
     // MASTER / BEAT SYNC / KEY SYNC), time + overview, then [jog, CUE/PLAY] [pads] [tempo slider].
     this.art = h('div.deck-art');
     this.playBtn.innerHTML = '';
     this.playBtn.append(icon('playpause'));
-    this.keyBox = h('button.deck-keybox', { title: 'Key: click to shift it (semitones) or sync it', onclick: () => this.keyPanel() }, h('div.deck-label', {}, 'KEY'), this.keyEl);
+    this.keyBox = h('button.deck-keybox', { title: tx('Key: click to shift it (semitones) or sync it'), onclick: () => this.keyPanel() }, h('div.deck-label', {}, 'KEY'), this.keyEl);
     this.el = h(`section.deck.deck${d.index + 1}`, { dataset: { deck: d.index } },
       h('div.deck-head', {},
         h('div.deck-num', {}, String(d.index + 1)),
@@ -140,19 +141,19 @@ export class DeckView {
           this.stemRow,
           h('div.row.loops', {},
             h('div.seg', {},
-              btn('1/2X', 'loop-half', () => d.resizeLoop(0.5), 'Loop halve (the loop playing, else the next one)'),
+              btn('1/2X', 'loop-half', () => d.resizeLoop(0.5), tx('Loop halve (the loop playing, else the next one)')),
               // Size arrows change the playing loop too, not only the next one.
-              btn('◀', 'small', () => { d.setBeatLoopSize(loopStep(d.currentLoopBeats(), -1)); this.refresh(); }, 'Smaller loop (the current one too)'),
+              btn('◀', 'small', () => { d.setBeatLoopSize(loopStep(d.currentLoopBeats(), -1)); this.refresh(); }, tx('Smaller loop (the current one too)')),
               this.loopBtn,
-              btn('▶', 'small', () => { d.setBeatLoopSize(loopStep(d.currentLoopBeats(), 1)); this.refresh(); }, 'Bigger loop (the current one too)'),
-              btn('2X', 'loop-double', () => d.resizeLoop(2), 'Loop double (the loop playing, else the next one)')),
+              btn('▶', 'small', () => { d.setBeatLoopSize(loopStep(d.currentLoopBeats(), 1)); this.refresh(); }, tx('Bigger loop (the current one too)')),
+              btn('2X', 'loop-double', () => d.resizeLoop(2), tx('Loop double (the loop playing, else the next one)'))),
             h('div.seg', {}, this.inBtn, this.outBtn, this.exitBtn),
             h('span.spacer'),
             h('div.seg', {},
-              btn('◀', 'small', () => d.beatJump(-d.beatJumpSize), 'Beat jump back'),
-              h('button.dbtn.jump-label', { title: 'Beat jump size (click to change)', onclick: () => { d.beatJumpSize = BEAT_JUMP_SIZES[(BEAT_JUMP_SIZES.indexOf(d.beatJumpSize) + 1) % BEAT_JUMP_SIZES.length]; this.refresh(); } }, 'JUMP ', this.jumpSize),
-              btn('▶', 'small', () => d.beatJump(d.beatJumpSize), 'Beat jump forward')))),
-        h('div.deck-tempo-col', {}, this.rangeBtn, this.tempoEl, this.tempoFader, btn('RESET', 'small', () => { d.setTempoPct(0); }, 'Tempo reset'))));
+              btn('◀', 'small', () => d.beatJump(-d.beatJumpSize), tx('Beat jump back')),
+              h('button.dbtn.jump-label', { title: tx('Beat jump size (click to change)'), onclick: () => { d.beatJumpSize = BEAT_JUMP_SIZES[(BEAT_JUMP_SIZES.indexOf(d.beatJumpSize) + 1) % BEAT_JUMP_SIZES.length]; this.refresh(); } }, 'JUMP ', this.jumpSize),
+              btn('▶', 'small', () => d.beatJump(d.beatJumpSize), tx('Beat jump forward'))))),
+        h('div.deck-tempo-col', {}, this.rangeBtn, this.tempoEl, this.tempoFader, btn('RESET', 'small', () => { d.setTempoPct(0); }, tx('Tempo reset')))));
 
     // Drop tracks onto the deck
     this.el.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('application/x-rb-tracks')) { e.preventDefault(); this.el.classList.add('drop'); } });
@@ -196,7 +197,7 @@ export class DeckView {
   modeMenu() {
     const r = this.modeBtn.getBoundingClientRect();
     contextMenu(r.left, r.bottom + 2, PAD_MODES.map((m) => ({
-      label: UNAVAILABLE.has(m) ? `${m} (not available yet)` : m,
+      label: UNAVAILABLE.has(m) ? tx`${m} (not available yet)` : m,
       checked: m === this.padMode,
       disabled: UNAVAILABLE.has(m),
       action: () => this.setPadMode(m),
@@ -213,43 +214,43 @@ export class DeckView {
     if (padPages(this.padMode) > 1) {
       this.pageLabel = h('span.val');
       parts.push(h('div.seg', {},
-        btn('◀', 'small', () => this.setPadPage(this.padPage - 1), 'Previous pad page'),
-        h('button.dbtn.page-label', { title: 'Pad page (8 of 16 values)', onclick: () => this.setPadPage(1 - this.padPage) }, 'PAGE ', this.pageLabel),
-        btn('▶', 'small', () => this.setPadPage(this.padPage + 1), 'Next pad page')));
+        btn('◀', 'small', () => this.setPadPage(this.padPage - 1), tx('Previous pad page')),
+        h('button.dbtn.page-label', { title: tx('Pad page (8 of 16 values)'), onclick: () => this.setPadPage(1 - this.padPage) }, 'PAGE ', this.pageLabel),
+        btn('▶', 'small', () => this.setPadPage(this.padPage + 1), tx('Next pad page'))));
     }
     switch (this.padMode) {
-      case 'HOT CUE': parts.push(this.bankBtn, hint('Empty pad: set · Shift+click: delete · right-click: name, colour')); break;
-      case 'PAD FX': parts.push(this.bankBtn, hint('Hold a pad: effect on this deck, at its beat')); break;
-      case 'SLICER': parts.push(hint('Hold a pad: loops that 8th of the current 2 bars, playback returns (slip)')); break;
-      case 'BEAT JUMP': parts.push(hint('Pad = jump by that many beats on the grid (loops move along)')); break;
+      case 'HOT CUE': parts.push(this.bankBtn, hint(tx('Empty pad: set · Shift+click: delete · right-click: name, colour'))); break;
+      case 'PAD FX': parts.push(this.bankBtn, hint(tx('Hold a pad: effect on this deck, at its beat'))); break;
+      case 'SLICER': parts.push(hint(tx('Hold a pad: loops that 8th of the current 2 bars, playback returns (slip)'))); break;
+      case 'BEAT JUMP': parts.push(hint(tx('Pad = jump by that many beats on the grid (loops move along)'))); break;
       case 'BEAT LOOP':
         parts.push(h('div.seg', {},
-          btn('1/2X', '', () => d.resizeLoop(0.5), 'Loop halve'),
-          btn('2X', '', () => d.resizeLoop(2), 'Loop double')), hint('Pad = loop of that many beats, on the closest beat · again: exit'));
+          btn('1/2X', '', () => d.resizeLoop(0.5), tx('Loop halve')),
+          btn('2X', '', () => d.resizeLoop(2), tx('Loop double'))), hint(tx('Pad = loop of that many beats, on the closest beat · again: exit')));
         break;
-      case 'SAMPLER': parts.push(this.bankBtn, hint('Empty pad: captures this deck\'s loop (audible stems only) · loaded: play')); break;
+      case 'SAMPLER': parts.push(this.bankBtn, hint(tx('Empty pad: captures this deck\'s loop (audible stems only) · loaded: play'))); break;
       case 'KEYBOARD':
-        this.kbBtn = btn('', 'small', () => { this.kbCue = (this.kbCue + 1) % 8; this.refresh(); }, 'Hot cue the keyboard plays from (click to change)');
-        parts.push(h('span.seg-label', {}, 'FROM'), this.kbBtn, hint('Pad = play the hot cue transposed'));
+        this.kbBtn = btn('', 'small', () => { this.kbCue = (this.kbCue + 1) % 8; this.refresh(); }, tx('Hot cue the keyboard plays from (click to change)'));
+        parts.push(h('span.seg-label', {}, 'FROM'), this.kbBtn, hint(tx('Pad = play the hot cue transposed')));
         break;
       case 'KEY SHIFT':
         parts.push(h('div.seg.keyshift', {}, h('span.seg-label', {}, 'KEY'),
-          btn('−', 'small', () => d.setKeyShift(d.keyShift - 1), 'Key shift down (semitone)'),
+          btn('−', 'small', () => d.setKeyShift(d.keyShift - 1), tx('Key shift down (semitone)')),
           this.keyShiftVal,
-          btn('+', 'small', () => d.setKeyShift(d.keyShift + 1), 'Key shift up (semitone)'),
-          btn('RESET', 'small', () => d.setKeyShift(0), 'Key reset')), hint('Pad = shift by that many semitones'));
+          btn('+', 'small', () => d.setKeyShift(d.keyShift + 1), tx('Key shift up (semitone)')),
+          btn('RESET', 'small', () => d.setKeyShift(0), tx('Key reset'))), hint(tx('Pad = shift by that many semitones')));
         break;
-      case 'STEMS': parts.push(hint('Pads 1–4: mute / unmute a part · 5–8: Beat FX on that part only')); break;
+      case 'STEMS': parts.push(hint(tx('Pads 1–4: mute / unmute a part · 5–8: Beat FX on that part only'))); break;
       case 'MEMORY CUE':
         parts.push(h('div.seg', {},
-          btn('MEMORY', '', () => d.addMemoryCue(), 'Add a memory cue at the play head (or the loop)'),
-          btn('◀', 'small', () => d.callMemoryCue(-1), 'Previous memory cue'),
-          btn('▶', 'small', () => d.callMemoryCue(1), 'Next memory cue'),
-          btn('DEL', 'small', () => d.deleteMemoryCueNear(), 'Delete the nearest memory cue')), hint('Pad = go to memory cue · Shift+click: delete'));
+          btn('MEMORY', '', () => d.addMemoryCue(), tx('Add a memory cue at the play head (or the loop)')),
+          btn('◀', 'small', () => d.callMemoryCue(-1), tx('Previous memory cue')),
+          btn('▶', 'small', () => d.callMemoryCue(1), tx('Next memory cue')),
+          btn('DEL', 'small', () => d.deleteMemoryCueNear(), tx('Delete the nearest memory cue'))), hint(tx('Pad = go to memory cue · Shift+click: delete')));
         break;
       case 'GROOVE':
-        parts.push(btn('DRUMS…', '', () => this.app.openDrumSwapEditor?.(d.index), 'Choose the drums of the DRUM SWAP slots (built-in loops, files, captures)'),
-          hint('Swap 1–4 · bank · CAP then a slot: capture · roll · release FX'));
+        parts.push(btn('DRUMS…', '', () => this.app.openDrumSwapEditor?.(d.index), tx('Choose the drums of the DRUM SWAP slots (built-in loops, files, captures)')),
+          hint(tx('Swap 1–4 · bank · CAP then a slot: capture · roll · release FX')));
         break;
       default: break;
     }
@@ -265,15 +266,15 @@ export class DeckView {
     const btn = (label, cls, onclick, title) => h(`button.dbtn${cls ? `.${cls}` : ''}`, { onclick, title }, label);
     this.keyPopVal = h('span.key-pop-val');
     this.keyPopKeys = h('div.key-pop-keys');
-    this.keyPopSync = btn('KEY SYNC', 'keysync', () => d.toggleKeySync(), 'Match the master deck\'s key');
+    this.keyPopSync = btn('KEY SYNC', 'keysync', () => d.toggleKeySync(), tx('Match the master deck\'s key'));
     const pop = h('div.key-pop', {},
       h('div.key-pop-title', {}, 'KEY SHIFT'),
       this.keyPopKeys,
       h('div.key-pop-row', {},
-        btn('▼', '', () => d.setKeyShift(d.keyShift - 1), 'One semitone down'),
+        btn('▼', '', () => d.setKeyShift(d.keyShift - 1), tx('One semitone down')),
         this.keyPopVal,
-        btn('▲', '', () => d.setKeyShift(d.keyShift + 1), 'One semitone up')),
-      h('div.key-pop-row', {}, btn('RESET', 'small', () => d.setKeyShift(0), 'Original key'), this.keyPopSync));
+        btn('▲', '', () => d.setKeyShift(d.keyShift + 1), tx('One semitone up'))),
+      h('div.key-pop-row', {}, btn('RESET', 'small', () => d.setKeyShift(0), tx('Original key')), this.keyPopSync));
     document.body.append(pop);
     const r = this.keyBox.getBoundingClientRect();
     pop.style.left = `${Math.max(4, Math.min(r.left, innerWidth - pop.offsetWidth - 4))}px`;
@@ -298,14 +299,14 @@ export class DeckView {
     const cue = d.hotCue(slot);
     if (!cue) return;
     contextMenu(e.clientX, e.clientY, [
-      { label: 'Rename…', action: async () => {
-        const name = await promptText('Hot cue name', cue.name ?? '');
+      { label: tx('Rename…'), action: async () => {
+        const name = await promptText(tx('Hot cue name'), cue.name ?? '');
         if (name !== null) d.setCues(d.track.cues.map((c) => (c === cue ? { ...c, name } : c)));
       } },
-      { label: 'Color', submenu: HOT_COLORS.map((css, i) => ({ label: TRACK_COLORS[i].name, checked: cue.color === css,
+      { label: tx('Color'), submenu: HOT_COLORS.map((css, i) => ({ label: TRACK_COLORS[i].name, checked: cue.color === css,
         action: () => d.setCues(d.track.cues.map((c) => (c === cue ? { ...c, color: css } : c))) })) },
       '-',
-      { label: 'Delete', action: () => d.deleteHotCue(slot) },
+      { label: tx('Delete'), action: () => d.deleteHotCue(slot) },
     ]);
   }
 
@@ -339,7 +340,7 @@ export class DeckView {
     const d = this.deck;
     const t = d.track;
     const notation = this.app.library.settings.keyNotation;
-    this.title.textContent = t ? t.title || '(untitled)' : 'No track';
+    this.title.textContent = t ? t.title || tx('(untitled)') : tx('No track');
     this.artist.textContent = t ? t.artist || '' : '';
     const key = d.key;
     const shifted = d.keyShift ? transposeKey(key, d.keyShift) : key;
@@ -347,7 +348,7 @@ export class DeckView {
     this.keyEl.classList.toggle('shifted', !!d.keyShift);
     this.bpm.textContent = d.originalBpm ? d.currentBpm.toFixed(2) : '---.--';
     this.bpmSub.textContent = `${d.tempoPct >= 0 ? '+' : ''}${d.tempoPct.toFixed(2)}%`;
-    this.bpmSub.title = d.originalBpm ? `Track BPM ${d.originalBpm.toFixed(2)}` : '';
+    this.bpmSub.title = d.originalBpm ? tx`Track BPM ${d.originalBpm.toFixed(2)}` : '';
     this.tempoEl.textContent = `${d.tempoPct >= 0 ? '+' : ''}${d.tempoPct.toFixed(1)}%`;
     // Artwork (embedded cover), or a placeholder tinted from the title.
     const artKey = t ? `${t.id}|${t.artwork ?? ''}` : '';
@@ -381,7 +382,7 @@ export class DeckView {
     if (this.pageLabel) this.pageLabel.textContent = `${this.padPage + 1}/2`;
     if (this.keyPop) {
       this.keyPopVal.textContent = semis;
-      this.keyPopKeys.textContent = key ? `${displayKey(key, notation)} → ${displayKey(shifted, notation)}` : 'No key';
+      this.keyPopKeys.textContent = key ? `${displayKey(key, notation)} → ${displayKey(shifted, notation)}` : tx('No key');
       this.keyPopSync.classList.toggle('on', d.keySync);
     }
     this.renderPads();
@@ -401,16 +402,16 @@ export class DeckView {
       b.textContent = job.state === 'queued' ? `${job.quality.toUpperCase()} …` : `${job.quality.toUpperCase()} ${pct}%`;
       b.style.setProperty('--p', `${pct}%`);
       b.disabled = true;
-      b.title = job.state === 'queued' ? 'Waiting for the stem engine' : `Separating stems (${job.quality.toUpperCase()}) — usable where the bar below the overview is filled`;
+      b.title = job.state === 'queued' ? tx('Waiting for the stem engine') : tx`Separating stems (${job.quality.toUpperCase()}) — usable where the bar below the overview is filled`;
     } else if (d.stemsComplete) {
       b.textContent = (d.stemQuality ?? 'hq').toUpperCase();
       b.disabled = d.stemQuality === 'hq';
-      b.title = d.stemQuality === 'hq' ? 'Stems: high quality (HT-Demucs)' : 'Stems: fast (Spleeter). Click to upgrade to high quality (HT-Demucs)';
+      b.title = d.stemQuality === 'hq' ? tx('Stems: high quality (HT-Demucs)') : tx('Stems: fast (Spleeter). Click to upgrade to high quality (HT-Demucs)');
       b.style.removeProperty('--p');
     } else {
       b.textContent = 'STEMS';
       b.disabled = !d.loaded;
-      b.title = 'Separate this track into stems (starts at the play head, cached)';
+      b.title = tx('Separate this track into stems (starts at the play head, cached)');
       b.style.removeProperty('--p');
     }
     this.stemBtns.forEach((b, k) => {
@@ -562,11 +563,11 @@ export class DeckView {
       pad.classList.toggle('active', active);
       pad.classList.toggle('fx', mode === 'PAD FX');
       pad.style.setProperty('--pad', color);
-      pad.title = mode === 'HOT CUE' ? 'Hot cue (Shift+click delete, right-click for options)'
+      pad.title = mode === 'HOT CUE' ? tx('Hot cue (Shift+click delete, right-click for options)')
         : mode === 'GROOVE' ? ['DRUM SWAP 1', 'DRUM SWAP 2', 'DRUM SWAP 3', 'DRUM SWAP 4', 'Bank A/B', 'DRUM CAPTURE: on, then press a slot (Shift+click: 4/8/16/32 beats)', 'DRUM ROLL 1/4 (hold)', 'DRUM RELEASE FX (hold, Shift+click: type)'][i]
           : mode === 'STEMS' ? `${i < 4 ? 'ACTIVE PART' : 'FX PART SELECT'} ${STEM_PADS[i % 4][0]}`
-            : mode === 'PAD FX' ? `${(PAD_FX[slot] ?? PAD_FX[0])[0]} (hold)`
-              : mode === 'MEMORY CUE' ? 'Memory cue (Shift+click delete)' : mode;
+            : mode === 'PAD FX' ? tx`${(PAD_FX[slot] ?? PAD_FX[0])[0]} (hold)`
+              : mode === 'MEMORY CUE' ? tx('Memory cue (Shift+click delete)') : mode;
     });
   }
 

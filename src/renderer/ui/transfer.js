@@ -1,5 +1,6 @@
 // "Send to another Reboxed" (export the music and an XML to a USB drive) and "Import from another
 // Reboxed" (copy that music into a local folder, keep cues, grids, tags and playlists).
+import { errText, tx } from '../../shared/i18n.js';
 import { h, modal, toast } from './dom.js';
 import { exportRekordboxXml, importRekordboxXml } from '../../shared/rekordbox-xml.js';
 import { collectForTransfer, needsCopy, transferCandidates, pickFound, TRANSFER_MUSIC, TRANSFER_STEMS } from '../../shared/transfer.js';
@@ -23,21 +24,21 @@ export async function openTransferExport(app, preselect = null, opts = {}) {
       rows.push(h('label.transfer-row', { style: { paddingLeft: `${depth * 14}px` } }, box, h('span', {}, n.name), h('span.dim', {}, ` ${count}`)));
     });
     walk(lib.playlists, 0);
-    list.replaceChildren(...(rows.length ? rows : [h('p.dim', {}, 'No playlists yet.')]));
+    list.replaceChildren(...(rows.length ? rows : [h('p.dim', {}, tx('No playlists yet.'))]));
   };
   const radio = (v) => h('input', { type: 'radio', name: 'transfer-scope', value: v, checked: scope.value === v, onchange: () => { scope.value = v; } });
   const radios = { all: radio('all'), some: radio('some') };
   renderList();
   const copy = h('input', { type: 'checkbox', checked: true });
-  const ok = await modal('Send to another Reboxed', h('div.transfer', {},
-    h('p', {}, 'Puts your music and everything about it (playlists, cues, grids, ratings, tags) on a USB drive. On the other computer: ⋯ ▸ "Import from another Reboxed…".'),
-    h('label.transfer-row', {}, radios.all, h('b', {}, 'The whole collection'), h('span.dim', {}, ` ${lib.tracks.size} tracks, every playlist`)),
-    h('label.transfer-row', {}, radios.some, h('b', {}, 'Only these playlists')),
+  const ok = await modal(tx('Send to another Reboxed'), h('div.transfer', {},
+    h('p', {}, tx('Puts your music and everything about it (playlists, cues, grids, ratings, tags) on a USB drive. On the other computer: ⋯ ▸ "Import from another Reboxed…".')),
+    h('label.transfer-row', {}, radios.all, h('b', {}, tx('The whole collection')), h('span.dim', {}, tx` ${lib.tracks.size} tracks, every playlist`)),
+    h('label.transfer-row', {}, radios.some, h('b', {}, tx('Only these playlists'))),
     list,
-    h('label.transfer-row', {}, copy, h('span', {}, 'Copy the music onto the drive '), h('span.dim', {}, '(tracks already on that drive are not copied again)'))),
-  [{ label: opts.dir ? 'Send' : 'Choose the drive or folder…', primary: true, value: true }, { label: 'Cancel', value: null }]);
+    h('label.transfer-row', {}, copy, h('span', {}, tx('Copy the music onto the drive ')), h('span.dim', {}, tx('(tracks already on that drive are not copied again)')))),
+  [{ label: opts.dir ? tx('Send') : tx('Choose the drive or folder…'), primary: true, value: true }, { label: tx('Cancel'), value: null }]);
   if (!ok) return null;
-  if (scope.value === 'some' && !picked.size) { toast('Tick at least one playlist'); return null; }
+  if (scope.value === 'some' && !picked.size) { toast(tx('Tick at least one playlist')); return null; }
   const dir = opts.dir ?? (await window.rb.openFolder())[0];
   if (!dir) return null;
   const folder = `${dir.replace(/[\\/]+$/, '')}\\Reboxed Transfer`;
@@ -45,9 +46,9 @@ export async function openTransferExport(app, preselect = null, opts = {}) {
   const out = [];
   let failed = 0; let withStems = 0;
   const stemDirs = new Set();
-  const status = toast(`Copying 0 / ${tracks.length}…`, 600000);
+  const status = toast(tx`Copying 0 / ${tracks.length}…`, 600000);
   for (const [i, t] of tracks.entries()) {
-    status.textContent = `Copying the music ${i + 1} / ${tracks.length}…`;
+    status.textContent = tx`Copying the music ${i + 1} / ${tracks.length}…`;
     let path = t.path;
     if (copy.checked && needsCopy(t.path, folder)) {
       try { path = await window.rb.copyInto(t.path, `${folder}\\${TRANSFER_MUSIC}`); } catch { failed++; continue; }
@@ -69,7 +70,7 @@ export async function openTransferExport(app, preselect = null, opts = {}) {
   const xmlPath = `${folder}\\reboxed-transfer.xml`;
   await window.rb.writeFile(xmlPath, exportRekordboxXml({ tracks: out, playlists }, { productVersion: await window.rb.version() }));
   status.remove();
-  toast(`${out.length} track(s)${withStems ? ` (${withStems} with their stems)` : ''} and ${countPlaylists(playlists)} playlist(s) sent to ${folder}${failed ? ` · ${failed} file(s) could not be copied` : ''}`, 8000);
+  toast(tx`${out.length} track(s)${withStems ? tx` (${withStems} with their stems)` : ''} and ${countPlaylists(playlists)} playlist(s) sent to ${folder}${failed ? tx` · ${failed} file(s) could not be copied` : ''}`, 8000);
   if (!opts.dir) window.rb.showItem(xmlPath);
   return { xmlPath, tracks: out.length, failed, withStems };
 }
@@ -84,25 +85,25 @@ export async function openTransferImport(app, opts = {}) {
   const xmlPath = opts.xmlPath ?? (await window.rb.openFiles('xml'))[0];
   if (!xmlPath) return null;
   let parsed;
-  try { parsed = importRekordboxXml(await window.rb.readText(xmlPath)); } catch (err) { toast(`Not a Reboxed / DJ library XML: ${err.message}`, 6000); return null; }
+  try { parsed = importRekordboxXml(await window.rb.readText(xmlPath)); } catch (err) { toast(tx`Not a Reboxed / DJ library XML: ${errText(err)}`, 6000); return null; }
   const paths = parsed.tracks.map((t) => t.path).filter(Boolean);
   const candidates = paths.map((p) => transferCandidates(p, xmlPath));
   const found = pickFound(paths, candidates, await window.rb.existsMany(candidates.flat()));
   const { music } = await window.rb.paths();
   let dest = opts.dest ?? `${music}\\Reboxed Imports`;
   const destEl = h('code.path', {}, dest);
-  const ok = await modal('Import from another Reboxed', h('div.transfer', {},
-    h('p', {}, `${parsed.tracks.length} track(s), ${countPlaylists(parsed.playlists)} playlist(s). Music found: ${found.size} / ${paths.length}.`),
-    h('p', {}, 'The music is copied to this folder (so it stays here once the USB drive is gone):'),
-    h('div', {}, destEl, ' ', h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { dest = d; destEl.textContent = d; } } }, 'Change…')),
-    h('p.dim', {}, 'Everything is kept. Playlists go into a folder "Imported <date>", and tracks you already have are updated.')),
-  [{ label: 'Copy and import', primary: true, value: true }, { label: 'Cancel', value: null }]);
+  const ok = await modal(tx('Import from another Reboxed'), h('div.transfer', {},
+    h('p', {}, tx`${parsed.tracks.length} track(s), ${countPlaylists(parsed.playlists)} playlist(s). Music found: ${found.size} / ${paths.length}.`),
+    h('p', {}, tx('The music is copied to this folder (so it stays here once the USB drive is gone):')),
+    h('div', {}, destEl, ' ', h('button.dbtn.small', { onclick: async () => { const [d] = await window.rb.openFolder(); if (d) { dest = d; destEl.textContent = d; } } }, tx('Change…'))),
+    h('p.dim', {}, tx('Everything is kept. Playlists go into a folder "Imported <date>", and tracks you already have are updated.'))),
+  [{ label: tx('Copy and import'), primary: true, value: true }, { label: tx('Cancel'), value: null }]);
   if (!ok) return null;
   const relocated = new Map();
-  const status = toast('Copying…', 600000);
+  const status = toast(tx('Copying…'), 600000);
   let k = 0;
   for (const [key, from] of found) {
-    status.textContent = `Copying the music ${++k} / ${found.size}…`;
+    status.textContent = tx`Copying the music ${++k} / ${found.size}…`;
     try { relocated.set(key, await window.rb.copyInto(from, dest)); } catch { /* reported as missing */ }
   }
   status.remove();
@@ -112,9 +113,9 @@ export async function openTransferImport(app, opts = {}) {
   report.stems = 0;
   const xmlDir = xmlPath.replace(/[\\/][^\\/]*$/, '');
   const withStems = parsed.tracks.filter((x) => x.rbStems && x.rbStemsDir);
-  const stemStatus = withStems.length ? toast('Bringing the stems…', 600000) : null;
+  const stemStatus = withStems.length ? toast(tx('Bringing the stems…'), 600000) : null;
   for (const [i, x] of withStems.entries()) {
-    stemStatus.textContent = `Bringing the stems ${i + 1} / ${withStems.length}…`;
+    stemStatus.textContent = tx`Bringing the stems ${i + 1} / ${withStems.length}…`;
     const path = relocated.get(/^[A-Za-z]:\\/.test(x.path) ? x.path.toLowerCase() : x.path);
     const id = path && app.library.idForPath(path);
     if (!id) continue;
@@ -127,6 +128,6 @@ export async function openTransferImport(app, opts = {}) {
   const fresh = app.library.all().filter((t) => !t.analyzed && [...relocated.values()].includes(t.path)).map((t) => t.id);
   if (fresh.length && app.library.settings.autoAnalyze) app.analyzeTracks(fresh);
   if (report.folderId) app.browser.select(report.folderId);
-  toast(`Imported ${today()}: ${report.added} new, ${report.updated} updated, ${report.playlists} playlist(s)${report.stems ? `, ${report.stems} with their stems` : ''}${report.missing ? ` · ${report.missing} track(s) not found on the drive` : ''}`, 8000);
+  toast(tx`Imported ${today()}: ${report.added} new, ${report.updated} updated, ${report.playlists} playlist(s)${report.stems ? tx`, ${report.stems} with their stems` : ''}${report.missing ? tx` · ${report.missing} track(s) not found on the drive` : ''}`, 8000);
   return report;
 }

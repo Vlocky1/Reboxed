@@ -1,5 +1,6 @@
 // Updates from GitHub: checked at startup (unless turned off), a pill in the top bar when a newer
 // version exists, and a dialog that downloads the installer and restarts Reboxed on the new version.
+import { errText, tx } from '../../shared/i18n.js';
 import { h, toast } from './dom.js';
 import { licenseSection } from './license.js';
 
@@ -9,10 +10,10 @@ export async function checkForUpdates(app, { silent = false } = {}) {
     const info = await window.rb.update.check();
     app.updateInfo = info;
     app.refreshUpdatePill?.();
-    if (!silent && !info.newer) toast(info.latest ? `Reboxed ${info.current} is up to date` : 'No release found on GitHub');
+    if (!silent && !info.newer) toast(info.latest ? tx`Reboxed ${info.current} is up to date` : tx('No release found on GitHub'));
     return info;
   } catch (err) {
-    if (!silent) toast(`Could not check for updates: ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`, 6000);
+    if (!silent) toast(tx`Could not check for updates: ${errText(err)}`, 6000);
     return null;
   }
 }
@@ -23,36 +24,36 @@ export function openUpdateDialog(app, info = app.updateInfo) {
   return new Promise((resolve) => {
     const body = h('div.dialog-body.update-body');
     const buttons = h('div.dialog-buttons');
-    const overlay = h('div.overlay', {}, h('div.dialog.update-dialog', { role: 'dialog' }, h('h2', {}, `Reboxed ${info.latest} is available`), body, buttons));
+    const overlay = h('div.overlay', {}, h('div.dialog.update-dialog', { role: 'dialog' }, h('h2', {}, tx`Reboxed ${info.latest} is available`), body, buttons));
     const close = (v) => { overlay.remove(); resolve(v); };
     overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !busy) close(null); e.stopPropagation(); });
     let busy = false;
-    const notes = h('pre.update-notes', {}, info.notes || 'See the release page for the changes.');
+    const notes = h('pre.update-notes', {}, info.notes || tx('See the release page for the changes.'));
     const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
     body.replaceChildren(
-      h('p', {}, `You have ${info.current}. The update (${info.asset?.size ? mb(info.asset.size) : ''}) installs itself and restarts Reboxed. Your library and settings are kept.`),
+      h('p', {}, tx`You have ${info.current}. The update (${info.asset?.size ? mb(info.asset.size) : ''}) installs itself and restarts Reboxed. Your library and settings are kept.`),
       notes);
-    const later = h('button', { onclick: () => close(null) }, 'Later');
-    const page = h('button', { onclick: () => window.rb.openExternal(info.page) }, 'Release page');
-    const go = h('button.primary', {}, 'Download and install');
+    const later = h('button', { onclick: () => close(null) }, tx('Later'));
+    const page = h('button', { onclick: () => window.rb.openExternal(info.page) }, tx('Release page'));
+    const go = h('button.primary', {}, tx('Download and install'));
     go.onclick = async () => {
       busy = true;
       const bar = h('progress', { max: 1, value: 0 });
-      const line = h('p.dim', {}, 'Downloading…');
+      const line = h('p.dim', {}, tx('Downloading…'));
       body.replaceChildren(line, bar);
       buttons.replaceChildren();
-      const off = window.rb.update.onProgress((got, total) => { bar.value = total ? got / total : 0; line.textContent = `Downloading… ${mb(got)}${total ? ` / ${mb(total)}` : ''}`; });
+      const off = window.rb.update.onProgress((got, total) => { bar.value = total ? got / total : 0; line.textContent = tx`Downloading… ${mb(got)}${total ? ` / ${mb(total)}` : ''}`; });
       try {
         const file = await window.rb.update.download(info.asset);
         off();
-        line.textContent = 'Installing… Reboxed closes and reopens on the new version.';
+        line.textContent = tx('Installing… Reboxed closes and reopens on the new version.');
         await app.library.saveNow?.();
         await window.rb.update.install(file);
       } catch (err) {
         off();
         busy = false;
-        body.replaceChildren(h('p.rbi-error', {}, `Update failed: ${err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`));
-        buttons.replaceChildren(page, h('button', { onclick: () => close(null) }, 'Close'));
+        body.replaceChildren(h('p.rbi-error', {}, tx`Update failed: ${errText(err)}`));
+        buttons.replaceChildren(page, h('button', { onclick: () => close(null) }, tx('Close')));
       }
     };
     buttons.append(page, later, go);
@@ -74,18 +75,18 @@ export function aboutSection(app, version) {
   const s = app.library.settings;
   const status = h('div.about-status');
   const showInfo = (info) => {
-    if (!info) { status.replaceChildren(h('span.rbi-error', {}, 'Could not reach GitHub. Check the connection and try again.')); return; }
+    if (!info) { status.replaceChildren(h('span.rbi-error', {}, tx('Could not reach GitHub. Check the connection and try again.'))); return; }
     status.replaceChildren(info.newer
-      ? h('div.about-new', {}, h('span', {}, `Reboxed ${info.latest} is available (you have ${info.current}).`),
-        h('button.dbtn.primary', { type: 'button', onclick: () => openUpdateDialog(app, info) }, `Install ${info.latest}…`))
-      : h('span.about-ok', {}, !info.latest ? 'No release found on GitHub.'
-        : info.latest === info.current ? `✓ Reboxed ${info.current} is the latest version.`
-          : `✓ Up to date (you have ${info.current}, the latest release is ${info.latest}).`));
+      ? h('div.about-new', {}, h('span', {}, tx`Reboxed ${info.latest} is available (you have ${info.current}).`),
+        h('button.dbtn.primary', { type: 'button', onclick: () => openUpdateDialog(app, info) }, tx`Install ${info.latest}…`))
+      : h('span.about-ok', {}, !info.latest ? tx('No release found on GitHub.')
+        : info.latest === info.current ? tx`✓ Reboxed ${info.current} is the latest version.`
+          : tx`✓ Up to date (you have ${info.current}, the latest release is ${info.latest}).`));
   };
-  const check = h('button.dbtn.primary.about-check', { type: 'button' }, 'Check for updates');
+  const check = h('button.dbtn.primary.about-check', { type: 'button' }, tx('Check for updates'));
   check.onclick = async () => {
     check.disabled = true;
-    status.replaceChildren(h('span.dim', {}, 'Checking GitHub…'));
+    status.replaceChildren(h('span.dim', {}, tx('Checking GitHub…')));
     showInfo(await checkForUpdates(app, { silent: true }));
     check.disabled = false;
   };
@@ -97,17 +98,17 @@ export function aboutSection(app, version) {
       h('div', {},
         h('div.about-name', {}, 're', h('b', {}, 'box'), 'ed'),
         h('div.about-version', {}, `Version ${version}`),
-        h('div.dim', {}, 'DJ software for Windows.'))),
-    h('h4', {}, 'Licence'),
+        h('div.dim', {}, tx('DJ software for Windows.')))),
+    h('h4', {}, tx('Licence')),
     licenseSection(app),
-    h('h4', {}, 'Updates'),
+    h('h4', {}, tx('Updates')),
     h('div.form-grid', {},
-      h('label', {}, 'New version'), h('div', {}, h('div.frow', {}, check), status),
-      h('label', {}, 'Check at startup'), h('input', { type: 'checkbox', checked: s.checkUpdates !== false, onchange: (e) => app.library.setSetting('checkUpdates', e.target.checked) })),
-    h('h4', {}, 'Links'),
-    h('div.about-links', {}, link('Website', LINKS.website), link('GitHub', LINKS.github), link('Release notes', LINKS.releases), link('Report a bug', LINKS.issues), link('Instagram @rebox.ed', LINKS.instagram)),
-    h('h4', {}, 'Credits'),
-    h('p.dim', {}, 'Stems: Spleeter (Deezer), HT-Demucs (Meta), ONNX Runtime.'),
-    h('p.dim', {}, 'Downloads: yt-dlp, ffmpeg, deno (fetched from their own releases).'),
-    h('p.dim', {}, 'Independent software, not affiliated with AlphaTheta / Pioneer DJ.'));
+      h('label', {}, tx('New version')), h('div', {}, h('div.frow', {}, check), status),
+      h('label', {}, tx('Check at startup')), h('input', { type: 'checkbox', checked: s.checkUpdates !== false, onchange: (e) => app.library.setSetting('checkUpdates', e.target.checked) })),
+    h('h4', {}, tx('Links')),
+    h('div.about-links', {}, link(tx('Website'), LINKS.website), link('GitHub', LINKS.github), link(tx('Release notes'), LINKS.releases), link(tx('Report a bug'), LINKS.issues), link('Instagram @rebox.ed', LINKS.instagram)),
+    h('h4', {}, tx('Credits')),
+    h('p.dim', {}, tx('Stems: Spleeter (Deezer), HT-Demucs (Meta), ONNX Runtime.')),
+    h('p.dim', {}, tx('Downloads: yt-dlp, ffmpeg, deno (fetched from their own releases).')),
+    h('p.dim', {}, tx('Independent software, not affiliated with AlphaTheta / Pioneer DJ.')));
 }

@@ -1,3 +1,4 @@
+import { tx } from '../../shared/i18n.js';
 import { h, knob, contextMenu } from './dom.js';
 import { SAMPLER_SLOTS } from '../audio/sampler.js';
 
@@ -21,10 +22,10 @@ export class SamplerView {
         return b;
       };
       const actions = h('div.smp-actions', {},
-        act('⤓', 'Save as WAV…', () => app.saveSample(i)),
-        act('✎', 'Edit (trim, mode, sync, gain)…', () => app.editSample(i)),
-        act('⏏', 'Eject', () => app.ejectSample(i)));
-      const tile = h('div.smp-tile', { title: 'Empty slot: click to capture the loop playing now · loaded: click to play / stop · drop a track to load · right-click: options' },
+        act('⤓', tx('Save as WAV…'), () => app.saveSample(i)),
+        act('✎', tx('Edit (trim, mode, sync, gain)…'), () => app.editSample(i)),
+        act('⏏', tx('Eject'), () => app.ejectSample(i)));
+      const tile = h('div.smp-tile', { title: tx('Empty slot: click to capture the loop playing now · loaded: click to play / stop · drop a track to load · right-click: options') },
         h('div.smp-num', {}, String(i + 1)), name, info, actions, h('div.smp-prog', {}, bar));
       tile.addEventListener('pointerdown', (e) => { if (e.button === 0) app.samplerPress(i); });
       tile.addEventListener('contextmenu', (e) => { e.preventDefault(); this.menu(e, i); });
@@ -63,21 +64,21 @@ export class SamplerView {
     const s = this.sampler.slots[i];
     contextMenu(e.clientX, e.clientY, [
       { label: 'One shot', checked: s.mode === 'oneshot', action: () => this.sampler.update(i, { mode: 'oneshot' }) },
-      { label: 'Loop', checked: s.mode === 'loop', action: () => this.sampler.update(i, { mode: 'loop' }) },
-      { label: 'Sync to master tempo', checked: s.sync, action: () => this.sampler.update(i, { sync: !s.sync }) },
+      { label: tx('Loop'), checked: s.mode === 'loop', action: () => this.sampler.update(i, { mode: 'loop' }) },
+      { label: tx('Sync to master tempo'), checked: s.sync, action: () => this.sampler.update(i, { sync: !s.sync }) },
       { label: 'Gain', submenu: [0.5, 0.75, 1, 1.25, 1.5].map((g) => ({ label: `${Math.round(g * 100)}%`, checked: Math.abs(s.gain - g) < 0.01, action: () => this.sampler.update(i, { gain: g }) })) },
       '-',
-      { label: 'Capture the playing loop here (audible stems only)', disabled: !!s.buffer, action: () => this.app.samplerPress(i) },
-      { label: 'Save as WAV…', disabled: !s.buffer, action: () => this.app.saveSample(i) },
-      { label: 'Edit…', disabled: !s.buffer, action: () => this.app.editSample(i) },
-      { label: 'Eject', disabled: !s.buffer, action: () => this.app.ejectSample(i) },
+      { label: tx('Capture the playing loop here (audible stems only)'), disabled: !!s.buffer, action: () => this.app.samplerPress(i) },
+      { label: tx('Save as WAV…'), disabled: !s.buffer, action: () => this.app.saveSample(i) },
+      { label: tx('Edit…'), disabled: !s.buffer, action: () => this.app.editSample(i) },
+      { label: tx('Eject'), disabled: !s.buffer, action: () => this.app.ejectSample(i) },
     ]);
   }
 
   refresh() {
     this.tiles.forEach((t, i) => {
       const s = this.sampler.slots[i];
-      t.name.textContent = s.name || 'click: capture loop';
+      t.name.textContent = s.name || tx('click: capture loop');
       t.info.textContent = s.buffer ? `${s.mode === 'loop' ? 'LOOP' : '1SHOT'}${s.sync && s.bpm ? ` · ${s.bpm.toFixed(1)}` : ''}${s.gain !== 1 ? ` · ${Math.round(s.gain * 100)}%` : ''}` : '';
       t.tile.classList.toggle('loaded', !!s.buffer);
       t.tile.classList.toggle('loop', s.mode === 'loop');

@@ -1,4 +1,5 @@
 // Intelligent playlist editor and Related Tracks criteria panel.
+import { tx } from '../../shared/i18n.js';
 import { h, modal } from './dom.js';
 import { SMART_FIELDS, SMART_OPS, defaultCondition } from '../../shared/smartlist.js';
 import { TRACK_COLORS } from '../../shared/rekordbox-xml.js';
@@ -18,8 +19,8 @@ export function editSmartList(initial, ctx) {
   const list = h('div.cond-list');
   const nameInput = h('input.text', { value: state.name, oninput: (e) => { state.name = e.target.value; } });
   const matchSel = h('select', { onchange: (e) => { state.rules.match = e.target.value; } },
-    h('option', { value: 'all', selected: state.rules.match !== 'any' }, 'Match all of the conditions'),
-    h('option', { value: 'any', selected: state.rules.match === 'any' }, 'Match any of the conditions'));
+    h('option', { value: 'all', selected: state.rules.match !== 'any' }, tx('Match all of the conditions')),
+    h('option', { value: 'any', selected: state.rules.match === 'any' }, tx('Match any of the conditions')));
   const limit = h('input.num', { type: 'number', min: 0, value: state.rules.limit ?? 0, onchange: (e) => { state.rules.limit = Number(e.target.value) || 0; } });
 
   const valueInputs = (c) => {
@@ -58,18 +59,18 @@ export function editSmartList(initial, ctx) {
       const opSel = h('select', { onchange: (e) => { c.op = e.target.value; if (type === 'date' && c.op === 'range') { c.value = ''; c.value2 = ''; } render(); } },
         SMART_OPS[type].map(([k, label]) => h('option', { value: k, selected: c.op === k }, label)));
       return h('div.cond-row', {}, fieldSel, opSel, valueInputs(c),
-        h('button.dbtn.small', { title: 'Remove', onclick: () => { state.rules.conditions.splice(i, 1); render(); } }, '−'));
-    }), h('button.dbtn.small', { onclick: () => { state.rules.conditions.push(defaultCondition('bpm')); render(); } }, '+ Condition'));
+        h('button.dbtn.small', { title: tx('Remove'), onclick: () => { state.rules.conditions.splice(i, 1); render(); } }, '−'));
+    }), h('button.dbtn.small', { onclick: () => { state.rules.conditions.push(defaultCondition('bpm')); render(); } }, tx('+ Condition')));
   };
   render();
 
   const body = h('div.smart-editor', {},
-    h('div.form-grid', {}, h('label', {}, 'Name'), nameInput, h('label', {}, 'Rule'), matchSel,
-      h('label', {}, 'Limit (0 = none)'), limit),
+    h('div.form-grid', {}, h('label', {}, tx('Name')), nameInput, h('label', {}, tx('Rule')), matchSel,
+      h('label', {}, tx('Limit (0 = none)')), limit),
     list);
-  return modal('Intelligent Playlist', body, [
-    { label: 'Save', primary: true, value: () => ({ name: state.name.trim() || 'Intelligent Playlist', rules: state.rules }) },
-    { label: 'Cancel', value: null },
+  return modal(tx('Intelligent Playlist'), body, [
+    { label: tx('Save'), primary: true, value: () => ({ name: state.name.trim() || tx('Intelligent Playlist'), rules: state.rules }) },
+    { label: tx('Cancel'), value: null },
   ]);
 }
 
@@ -87,19 +88,19 @@ export function relatedPanel(criteria, seed, deckCount, onChange) {
   return h('div.filter-panel.related-panel', {},
     h('div.frow', {}, h('span.ftoggle', {}, 'TRACK'),
       h('select', { onchange: (e) => { s = e.target.value; fire(); } },
-        [['master', 'Master deck'], ...Array.from({ length: deckCount }, (_, i) => [`deck${i + 1}`, `Deck ${i + 1}`]), ['selected', 'Selected track']]
+        [['master', tx('Master deck')], ...Array.from({ length: deckCount }, (_, i) => [`deck${i + 1}`, `Deck ${i + 1}`]), ['selected', tx('Selected track')]]
           .map(([v, l]) => h('option', { value: v, selected: s === v }, l))),
       h('select', { onchange: (e) => { c.match = e.target.value; fire(); } },
-        h('option', { value: 'all', selected: c.match === 'all' }, 'Match all of the items'),
-        h('option', { value: 'any', selected: c.match === 'any' }, 'Match any of the items'))),
+        h('option', { value: 'all', selected: c.match === 'all' }, tx('Match all of the items')),
+        h('option', { value: 'any', selected: c.match === 'any' }, tx('Match any of the items')))),
     h('div.frow', {}, toggle('bpm', 'BPM'), h('span', {}, '±'), num('bpm', 'pct', { min: 0, max: 50, step: 1 }), h('span', {}, '%'),
-      h('label', {}, h('input', { type: 'checkbox', checked: c.bpm.doubleHalf, onchange: (e) => { c.bpm.doubleHalf = e.target.checked; fire(); } }), ' including double/half'),
+      h('label', {}, h('input', { type: 'checkbox', checked: c.bpm.doubleHalf, onchange: (e) => { c.bpm.doubleHalf = e.target.checked; fire(); } }), tx(' including double/half')),
       toggle('key', 'KEY'),
       h('select', { onchange: (e) => { c.key.mode = e.target.value; fire(); } },
-        h('option', { value: 'same', selected: c.key.mode === 'same' }, 'Same key'),
-        h('option', { value: 'compatible', selected: c.key.mode === 'compatible' }, 'Related keys'))),
+        h('option', { value: 'same', selected: c.key.mode === 'same' }, tx('Same key')),
+        h('option', { value: 'compatible', selected: c.key.mode === 'compatible' }, tx('Related keys')))),
     h('div.frow', {}, toggle('genre', 'GENRE'), toggle('artist', 'ARTIST'),
-      h('label', {}, h('input', { type: 'checkbox', checked: c.artist.includeFeat, onchange: (e) => { c.artist.includeFeat = e.target.checked; fire(); } }), ' incl. feat./title'),
+      h('label', {}, h('input', { type: 'checkbox', checked: c.artist.includeFeat, onchange: (e) => { c.artist.includeFeat = e.target.checked; fire(); } }), tx(' incl. feat./title')),
       toggle('label', 'LABEL'), toggle('color', 'COLOR'), toggle('myTag', 'MY TAG')),
     h('div.frow', {}, toggle('year', 'YEAR'), h('span', {}, '±'), num('year', 'range', { min: 0, max: 30 }),
       toggle('rating', 'RATING'), h('span', {}, '≥'), num('rating', 'min', { min: 0, max: 5 })));
